@@ -23,7 +23,7 @@ class ClockWidget:
         self.root.title("24h Clock")
        
         window_width = 200
-        window_height = 400
+        window_height = 450
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
         center_x = int(screen_width / 2 - window_width / 2)
@@ -37,8 +37,9 @@ class ClockWidget:
         self.show_numbers = tk.BooleanVar(value=False)
         self.show_sleep = tk.BooleanVar(value=True)
         self.show_total_bedtime = tk.BooleanVar(value=True)
-        self.show_energy = tk.BooleanVar(value=False)
+        self.show_energy = tk.BooleanVar(value=True)
         self.show_sleep_debt = tk.BooleanVar(value=True)
+        self.normalize_energy = tk.BooleanVar(value=True)
        
         # ── Fitbit Integration ────────────────────────────────────────────────
         self.fitbit = FitbitClient(
@@ -114,7 +115,7 @@ class ClockWidget:
 
         self.bedtime_toggle = tk.Checkbutton(
             self.controls_frame,
-            text="Bedtime Mode",
+            text="Time in Bed vs. Asleep Hrs.",
             variable=self.show_total_bedtime,
             command=self.draw_clock,
             bg=self.solid_bg,
@@ -140,7 +141,7 @@ class ClockWidget:
 
         self.debt_toggle = tk.Checkbutton(
             self.controls_frame,
-            text="Factor Sleep Debt",
+            text="Factor in Sleep Debt",
             variable=self.show_sleep_debt,
             command=self.draw_clock,
             bg=self.solid_bg,
@@ -150,6 +151,19 @@ class ClockWidget:
             activeforeground="white"
         )
         self.debt_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
+
+        self.normalize_toggle = tk.Checkbutton(
+            self.controls_frame,
+            text="Normalize Energy",
+            variable=self.normalize_energy,
+            command=self.draw_clock,
+            bg=self.solid_bg,
+            fg="white",
+            selectcolor="#3c3c3c",
+            activebackground=self.solid_bg,
+            activeforeground="white"
+        )
+        self.normalize_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
        
         self.sunrise_hour = 6.0
         self.sunset_hour = 18.0
@@ -221,6 +235,7 @@ class ClockWidget:
             self.bedtime_toggle.pack_forget()
             self.energy_toggle.pack_forget()
             self.debt_toggle.pack_forget()
+            self.normalize_toggle.pack_forget()
         else:
             if self.root.winfo_viewable():
                 self.root.geometry(f"+{rx - bx}+{ry - by}")
@@ -231,6 +246,7 @@ class ClockWidget:
             self.bedtime_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
             self.energy_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
             self.debt_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
+            self.normalize_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
            
         # Re-apply topmost which can sometimes be lost on Windows when toggling overrideredirect
         self.root.attributes('-topmost', self.always_on_top.get())
@@ -560,6 +576,7 @@ class ClockWidget:
             # Factor in debt only if toggle is on
             current_debt = self.sleep_debt_hours if self.show_sleep_debt.get() else 0.0
             self.energy_curve.sleep_debt_hours = current_debt
+            self.energy_curve.normalize = self.normalize_energy.get()
             self.energy_curve.draw(center_x, center_y, radius, self.wake_hour)
 
         self.canvas.create_oval(

@@ -215,6 +215,7 @@ class EnergyCurve:
         self.sleep_debt_hours  = 0.0
         self.sleep_duration    = 7.5
         self.bathyphase_hour   = None
+        self.normalize         = True
 
     def interpolate_color(self, val: float) -> str:
         val = max(0.0, min(1.0, val))
@@ -226,21 +227,42 @@ class EnergyCurve:
     def draw(self, cx: float, cy: float, radius: float, wake_hour: float):
         self.wake_hour = wake_hour
         steps = 144
-        last_px = last_py = None
+        
+        # 1. First pass: Collect all energy levels for 24h to allow normalization
+        levels = []
         for i in range(steps + 1):
             h = (i / float(steps)) * 24.0
-            energy = get_energy_level(
+            e = get_energy_level(
                 h,
                 self.wake_hour,
                 self.sleep_debt_hours,
                 self.sleep_duration,
                 self.bathyphase_hour,
             )
-            current_r = (0.10 + 0.80 * energy) * radius
-            angle     = (18.0 - h) * 15.0
-            rad       = math.radians(angle)
+            levels.append(e)
+
+        e_min = min(levels)
+        e_max = max(levels)
+        e_range = e_max - e_min
+
+        # 2. Second pass: Draw the segments
+        last_px = last_py = None
+        for i, energy in enumerate(levels):
+            h = (i / float(steps)) * 24.0
+            
+            if self.normalize and e_range > 0.01:
+                # Scale so the 24h cycle always spans 10% to 90% radius
+                display_energy = (energy - e_min) / e_range
+                current_r = (0.10 + 0.80 * display_energy) * radius
+            else:
+                # Absolute mapping: Energy 0.0 -> center, 1.0 -> 100% radius
+                current_r = energy * radius
+
+            angle = (18.0 - h) * 15.0
+            rad   = math.radians(angle)
             px = cx + current_r * math.cos(rad)
             py = cy - current_r * math.sin(rad)
+            
             if last_px is not None:
                 self.canvas.create_line(
                     last_px, last_py, px, py,
