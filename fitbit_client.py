@@ -323,6 +323,7 @@ class FitbitClient:
             (s for s in sleep_logs if s.get('dateOfSleep') == today_str),
             None
         )
+        is_real_today = (today_record is not None)
 
         # Fallback: use the most recent record available if today's is missing
         if not today_record and sleep_logs:
@@ -395,22 +396,26 @@ class FitbitClient:
         }
 
         # Save to separate cache files for pragmatic data handling
-        try:
-            # 1. Summary Cache (Lightweight, used for UI startup)
-            with open(summary_cache, 'w') as f:
-                json.dump({'date': today_str, 'inputs': inputs}, f)
-            
-            # 2. Raw Sleep Logs (Medium)
-            with open(sleep_cache, 'w') as f:
-                json.dump({'date': today_str, 'sleep_logs': sleep_logs}, f)
-            
-            # 3. Raw Intraday HR (Heavy)
-            with open(hr_cache, 'w') as f:
-                json.dump({'date': today_str, 'hr_points': hr_points}, f)
+        # ONLY save to disk if we found an actual record for today!
+        if is_real_today:
+            try:
+                # 1. Summary Cache (Lightweight, used for UI startup)
+                with open(summary_cache, 'w') as f:
+                    json.dump({'date': today_str, 'inputs': inputs}, f)
+                
+                # 2. Raw Sleep Logs (Medium)
+                with open(sleep_cache, 'w') as f:
+                    json.dump({'date': today_str, 'sleep_logs': sleep_logs}, f)
+                
+                # 3. Raw Intraday HR (Heavy)
+                with open(hr_cache, 'w') as f:
+                    json.dump({'date': today_str, 'hr_points': hr_points}, f)
 
-            print(f"[get_all_energy_inputs] Saved results to separate cache files for {today_str}")
-        except Exception as e:
-            print(f"[get_all_energy_inputs] Failed to save cache: {e}")
+                print(f"[get_all_energy_inputs] Saved results to separate cache files for {today_str}")
+            except Exception as e:
+                print(f"[get_all_energy_inputs] Failed to save cache: {e}")
+        else:
+            print(f"[get_all_energy_inputs] Using fallback data (not today's record); skipping disk cache.")
 
         # Ensure returned dict has everything expected
         inputs['raw_sleep_logs'] = sleep_logs
