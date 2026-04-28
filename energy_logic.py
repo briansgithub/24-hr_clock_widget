@@ -53,8 +53,8 @@ class EnergyCurve:
             energy = self.get_energy_level(h, wake_hour)
             
             # Map energy to a radius extension
-            # Lowest energy (0.0) -> 1/4 radius (0.25)
-            # Highest energy (1.0) -> 3/4 radius (0.75)
+            # Lowest energy (0.0) -> 10% radius
+            # Highest energy (1.0) -> 90% radius
             current_r = (0.10 + 0.80 * energy) * radius
             
             # Convert hour to angle (matching 24h clock rotation)
