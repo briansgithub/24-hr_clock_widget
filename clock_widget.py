@@ -682,85 +682,88 @@ class ClockWidget:
         now = datetime.datetime.now()
         current_hour = now.hour + now.minute / 60.0 + now.second / 3600.0
 
-# --- 1. COORDINATE SETUP ---
-        # Icons sit just outside the circumference
-        icon_size = max(12, int(radius / 7))
-        orbit_radius = radius + (icon_size / 2) + 8 
-        
-        now_utc = datetime.datetime.now(datetime.timezone.utc)
-        # Ensure lat/lon are available from the fetch_sun_times method
-        user_lat = getattr(self, 'lat', 0)
-        user_lon = getattr(self, 'lon', 0)
+        # --- SUN & MOON ICONS ---
+        if self.show_sun_moon.get():
+            # --- 1. COORDINATE SETUP ---
+            # Icons sit just outside the circumference
+            icon_size = max(12, int(radius / 7))
+            orbit_radius = radius + (icon_size / 2) + 8 
+            
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
+            # Ensure lat/lon are available from the fetch_sun_times method
+            user_lat = getattr(self, 'lat', 0)
+            user_lon = getattr(self, 'lon', 0)
 
-        try:
-            from astral import Observer
-            from astral.sun import azimuth as sun_azimuth
-            from astral.moon import phase, azimuth as moon_azimuth
-            
-            user_lat = getattr(self, 'lat', None)
-            user_lon = getattr(self, 'lon', None)
-            
-            if user_lat is None or user_lon is None:
-                raise ValueError("Lat/Lon not yet available")
-
-            obs = Observer(latitude=user_lat, longitude=user_lon)
-            
-            # --- 2. ACCURATE SUN POSITION ---
-            s_az = sun_azimuth(obs, now_utc)
-            
-            # Map Azimuth to Clock:
-            # On our clock: 18:00 is 0°, 12:00 is 90°, 06:00 is 180°, 00:00 is 270°
-            # Standard Azimuth: N=0, E=90, S=180, W=270
-            # To put Noon at Top (90°):
-            # In Northern Hemisphere, Noon is South (180°). So 180° Az -> 90° Clock.
-            # In Southern Hemisphere, Noon is North (0°). So 0° Az -> 90° Clock.
-            if user_lat >= 0:
-                sun_clock_angle = (270 - s_az) % 360
-            else:
-                sun_clock_angle = (90 + s_az) % 360
+            try:
+                from astral import Observer
+                from astral.sun import azimuth as sun_azimuth
+                from astral.moon import phase, azimuth as moon_azimuth
                 
-            sun_rad = math.radians(sun_clock_angle)
+                user_lat = getattr(self, 'lat', None)
+                user_lon = getattr(self, 'lon', None)
+                
+                if user_lat is None or user_lon is None:
+                    raise ValueError("Lat/Lon not yet available")
+
+                obs = Observer(latitude=user_lat, longitude=user_lon)
+                
+                # --- 2. ACCURATE SUN POSITION ---
+                s_az = sun_azimuth(obs, now_utc)
+                
+                # Map Azimuth to Clock:
+                # On our clock: 18:00 is 0°, 12:00 is 90°, 06:00 is 180°, 00:00 is 270°
+                # Standard Azimuth: N=0, E=90, S=180, W=270
+                # To put Noon at Top (90°):
+                # In Northern Hemisphere, Noon is South (180°). So 180° Az -> 90° Clock.
+                # In Southern Hemisphere, Noon is North (0°). So 0° Az -> 90° Clock.
+                if user_lat >= 0:
+                    sun_clock_angle = (270 - s_az) % 360
+                else:
+                    sun_clock_angle = (90 + s_az) % 360
+                    
+                sun_rad = math.radians(sun_clock_angle)
+                
+                # --- 3. ACCURATE MOON POSITION & PHASE ---
+                m_az = moon_azimuth(obs, now_utc)
+                if user_lat >= 0:
+                    moon_clock_angle = (270 - m_az) % 360
+                else:
+                    moon_clock_angle = (90 + m_az) % 360
+                moon_rad = math.radians(moon_clock_angle)
+                
+                m_phase_val = phase(datetime.date.today())
+
+            except Exception as e:
+                # Fallback to geometric math if astral calls fail
+                sun_rad = math.radians((18 - current_hour) * 15)
+                m_phase_val = 0
+                moon_hour = (current_hour - (m_phase_val / 29.53) * 24) % 24
+                moon_rad = math.radians((18 - moon_hour) * 15)
+
+            # --- 4. DRAW SUN ---
+            sx = center_x + orbit_radius * math.cos(sun_rad)
+            sy = center_y - orbit_radius * math.sin(sun_rad)
+            sun_r = icon_size / 1.6
+            self.canvas.create_oval(
+                sx - sun_r, sy - sun_r, sx + sun_r, sy + sun_r,
+                fill="#FFD700", outline="#FFA500", width=2
+            )
+
+            # --- 5. DRAW MOON ---
+            mx = center_x + orbit_radius * math.cos(moon_rad)
+            my = center_y - orbit_radius * math.sin(moon_rad)
             
-            # --- 3. ACCURATE MOON POSITION & PHASE ---
-            m_az = moon_azimuth(obs, now_utc)
-            if user_lat >= 0:
-                moon_clock_angle = (270 - m_az) % 360
-            else:
-                moon_clock_angle = (90 + m_az) % 360
-            moon_rad = math.radians(moon_clock_angle)
-            
-            m_phase_val = phase(datetime.date.today())
+            moon_phases = ["🌕", "🌖", "🌗", "🌘", "🌑", "🌒", "🌓", "🌔"]
+            # Round UP to the upcoming phase
+            phase_idx = math.ceil((m_phase_val / 29.530588) * 8) % 8
 
-        except Exception as e:
-            # Fallback to geometric math if astral calls fail
-            sun_rad = math.radians((18 - current_hour) * 15)
-            m_phase_val = 0
-            moon_hour = (current_hour - (m_phase_val / 29.53) * 24) % 24
-            moon_rad = math.radians((18 - moon_hour) * 15)
+            self.canvas.create_text(
+                mx, my,
+                text=moon_phases[phase_idx],
+                font=("Segoe UI Emoji", icon_size),
+                fill="#E0E0E0"
+            )
 
-        # --- 4. DRAW SUN ---
-        sx = center_x + orbit_radius * math.cos(sun_rad)
-        sy = center_y - orbit_radius * math.sin(sun_rad)
-        sun_r = icon_size / 1.6
-        self.canvas.create_oval(
-            sx - sun_r, sy - sun_r, sx + sun_r, sy + sun_r,
-            fill="#FFD700", outline="#FFA500", width=2
-        )
-
-        # --- 5. DRAW MOON ---
-        mx = center_x + orbit_radius * math.cos(moon_rad)
-        my = center_y - orbit_radius * math.sin(moon_rad)
-        
-        moon_phases = ["🌕", "🌖", "🌗", "🌘", "🌑", "🌒", "🌓", "🌔"]
-        # Round UP to the upcoming phase
-        phase_idx = math.ceil((m_phase_val / 29.530588) * 8) % 8
-
-        self.canvas.create_text(
-            mx, my,
-            text=moon_phases[phase_idx],
-            font=("Segoe UI Emoji", icon_size),
-            fill="#E0E0E0"
-        )
          
         # --- DRAW CLOCK HAND ---
         hand_angle = (18 - current_hour) * 15
