@@ -14,7 +14,7 @@ A collection of desktop widgets built with Python and Tkinter, featuring a uniqu
 - **Sleep Arc**: Visualizes your last night's sleep directly on the clock face. 
 - **Bedtime Mode**: Toggle between "Time in Bed" (total window) vs "Actual Sleep Time" (minus wake-ups) to see how efficient your rest was.
 - **Circadian Energy Curve**: A color-coded gradient (Cyan to Red) that visualizes your alertness throughout the day.
-- **Sleep Debt Factor**: Toggle the impact of your rolling 14-day sleep debt on your energy levels.
+- **Weighted Sleep Debt**: Models the impact of your last 14 days of sleep with a 90% daily decay factor, making recent rest (and naps) more influential.
 - **Normalization**: Switch between an absolute "Alertness" view and a normalized view that fills the clock face for better visibility.
 
 ## File Overview
@@ -27,6 +27,10 @@ The core mathematical engine for the energy curve. It implements a **Two-Process
 - **Process C (Circadian)**: Driven by your Fitbit-detected **Bathyphase** (lowest heart rate point) to accurately map your natural peaks and dips.
 - **Process S (Homeostatic)**: Models sleep pressure build-up based on your actual sleep duration and accumulated debt.
 - **Rendering**: Generates a smooth gradient path representing your predicted alertness.
+- **Weighted Sleep Debt & Nap Logic**:
+    - **Recency Bias**: Recent nights are significantly more impactful. A nap taken yesterday is ~4.3x more effective at reducing your debt penalty than a nap taken 14 days ago (90% daily decay).
+    - **Nap Summing**: Multiple sleep sessions (naps) on the same date are grouped together to calculate the total daily rest against your personal goal.
+    - **Dynamic Sensitivity**: Uses a high-sensitivity divisor (25.0) to ensure consistent deficits are visible while allowing for rapid recovery after a "catch-up" nap.
 
 ### [fitbit_client.py](fitbit_client.py)
 A specialized client for the Fitbit Web API (OAuth 2.0).

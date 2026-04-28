@@ -90,7 +90,7 @@ def two_process_energy(
     inertia_gate = 1.0 - math.exp(-t / tau_inertia)
     
     # -- 5. DEBT PENALTY (shifts floor down) ----------------------------------
-    debt_penalty = min(0.35, sleep_debt_hours / 70.0)
+    debt_penalty = min(0.35, sleep_debt_hours / 25.0)
     
     alertness = (raw * inertia_gate) - debt_penalty
     
@@ -160,49 +160,41 @@ def compute_sleep_debt(
     include_naps: bool = True
 ) -> float:
     """
-    Computes rolling 14-night sleep debt from Fitbit Sleep API response.
-    Groups multiple sessions (naps) by date to calculate total daily rest.
+    Computes a weighted 14-night sleep debt.
+    Recent nights have a higher impact on the final score.
     """
-    print(f"\n{'-'*50}")
-    print(f"[compute_sleep_debt] sleep_need_hours = {sleep_need_hours:.2f} h")
-    print(f"[compute_sleep_debt] include_naps     = {include_naps}")
-
     # Group sleep by date
-    daily_sleep: dict[str, float] = {}
+    daily_sleep = {}
     for log in sleep_logs:
         date = log.get("dateOfSleep")
-        if not date: continue
-        
-        # If naps excluded, only process main sleep
-        if not include_naps and not log.get("isMainSleep", False):
+        if not date or (not include_naps and not log.get("isMainSleep", False)):
             continue
-            
-        mins = log.get("minutesAsleep", 0)
-        daily_sleep[date] = daily_sleep.get(date, 0.0) + (mins / 60.0)
+        daily_sleep[date] = daily_sleep.get(date, 0.0) + (log.get("minutesAsleep", 0) / 60.0)
 
-    # Calculate debt for the last 14 unique dates found
-    # CRITICAL: Ignore today if no sleep is recorded yet (don't penalize for a day in progress)
+    # Sort dates to ensure we process from most recent to oldest
     from datetime import datetime
     today_str = datetime.now().strftime("%Y-%m-%d")
+    sorted_dates = sorted([d for d in daily_sleep.keys() if d != today_str or daily_sleep[d] > 0], reverse=True)
     
-    sorted_dates = sorted(daily_sleep.keys())
-    # Filter out today if it has 0 sleep (means we haven't slept yet)
-    active_dates = [d for d in sorted_dates if d != today_str or daily_sleep[d] > 0]
+    window_dates = sorted_dates[:14]
     
-    # Take the last 14 completed/recorded days
-    window_dates = active_dates[-14:]
+    weighted_debt = 0.0
+    decay_factor = 0.9  # Each day back is 90% as impactful as the day after it
     
-    total_debt = 0.0
-    for date in window_dates:
+    print(f"\n[compute_sleep_debt] Calculating Weighted Debt (Decay={decay_factor}):")
+    for i, date in enumerate(window_dates):
         actual = daily_sleep[date]
         nightly_debt = max(0.0, sleep_need_hours - actual)
-        total_debt  += nightly_debt
-        status = "OK " if nightly_debt == 0 else f"DEBT +{nightly_debt:.2f} h"
-        print(f"  {date}  slept {actual:.2f} h total  ->  {status}")
+        
+        # Apply weight: i=0 (last night) has weight 0.9^0 = 1.0
+        weight = math.pow(decay_factor, i)
+        contribution = nightly_debt * weight
+        weighted_debt += contribution
+        
+        print(f"  {date} (t-{i}): {actual:.2f}h sleep | Debt: {nightly_debt:.2f}h | Weight: {weight:.2f}")
 
-    print(f"[compute_sleep_debt] TOTAL DEBT = {total_debt:.2f} h (over {len(window_dates)} days)")
-    print(f"{'-'*50}\n")
-    return total_debt
+    print(f"[compute_sleep_debt] FINAL WEIGHTED DEBT = {weighted_debt:.2f} h")
+    return weighted_debt
 
 def find_bathyphase(intraday_hr: list[dict]) -> float | None:
     """
