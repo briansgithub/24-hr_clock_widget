@@ -7,6 +7,7 @@ import urllib.request
 import json
 from astral import Observer
 from astral.sun import sun
+from astral.moon import phase  # <-- Add this line
 from PIL import Image, ImageDraw, ImageTk
 import pystray
 from fitbit_client import FitbitClient
@@ -46,6 +47,7 @@ class ClockWidget:
         self.show_sleep_debt = tk.BooleanVar(value=True)
         self.normalize_energy = tk.BooleanVar(value=True)
         self.include_naps = tk.BooleanVar(value=True)
+        self.show_sun_moon = tk.BooleanVar(value=True)
        
         # ── Fitbit Integration ────────────────────────────────────────────────
         self.fitbit = FitbitClient(
@@ -184,6 +186,19 @@ class ClockWidget:
         )
         self.naps_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
 
+        self.sun_moon_toggle = tk.Checkbutton(
+            self.controls_frame,
+            text="Sun & Moon Icons",
+            variable=self.show_sun_moon,
+            command=self.draw_clock,
+            bg=self.solid_bg,
+            fg="white",
+            selectcolor="#3c3c3c",
+            activebackground=self.solid_bg,
+            activeforeground="white"
+        )
+        self.sun_moon_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
+
         self.refresh_btn = tk.Button(
             self.controls_frame,
             text="API Refresh",
@@ -271,6 +286,7 @@ class ClockWidget:
             self.debt_toggle.pack_forget()
             self.normalize_toggle.pack_forget()
             self.naps_toggle.pack_forget()
+            self.sun_moon_toggle.pack_forget()
             self.refresh_btn.pack_forget()
         else:
             if self.root.winfo_viewable():
@@ -284,6 +300,7 @@ class ClockWidget:
             self.debt_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
             self.normalize_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
             self.naps_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
+            self.sun_moon_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
             self.refresh_btn.pack(side=tk.TOP, anchor=tk.E, padx=5, pady=10)
            
         # Re-apply topmost which can sometimes be lost on Windows when toggling overrideredirect
@@ -558,7 +575,9 @@ class ClockWidget:
            
         center_x = w / 2
         center_y = h / 2
-        radius = min(w, h) / 2 - 5
+        # --- UPDATE RADIUS PADDING ---
+        # Increased the '- 5' to '- 25' to make room for the outer orbit
+        radius = min(w, h) / 2 - 25
        
         if radius < 20:
             return
@@ -660,7 +679,69 @@ class ClockWidget:
                
         now = datetime.datetime.now()
         current_hour = now.hour + now.minute / 60.0 + now.second / 3600.0
-       
+
+# --- 1. COORDINATE SETUP ---
+        # Icons sit just outside the circumference
+        icon_size = max(12, int(radius / 7))
+        orbit_radius = radius + (icon_size / 2) + 8 
+        
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        # Ensure lat/lon are available from the fetch_sun_times method
+        user_lat = getattr(self, 'lat', 0)
+        user_lon = getattr(self, 'lon', 0)
+
+        try:
+            from astral import Observer
+            from astral.sun import azimuth as sun_azimuth
+            from astral.moon import phase, azimuth as moon_azimuth
+            
+            obs = Observer(latitude=user_lat, longitude=user_lon)
+            
+            # --- 2. ACCURATE SUN POSITION ---
+            s_az = sun_azimuth(obs, now_utc)
+            # Map Azimuth to Clock: 270 (W) -> 0°, 180 (S) -> 90°, 90 (E) -> 180°
+            sun_clock_angle = (270 - s_az) % 360
+            sun_rad = math.radians(sun_clock_angle)
+            
+            # --- 3. ACCURATE MOON POSITION & PHASE ---
+            m_az = moon_azimuth(obs, now_utc)
+            moon_clock_angle = (270 - m_az) % 360
+            moon_rad = math.radians(moon_clock_angle)
+            
+            m_phase_val = phase(datetime.date.today())
+
+        except Exception as e:
+            # Fallback to geometric math if astral calls fail
+            sun_rad = math.radians((18 - current_hour) * 15)
+            m_phase_val = 0
+            moon_hour = (current_hour - (m_phase_val / 29.53) * 24) % 24
+            moon_rad = math.radians((18 - moon_hour) * 15)
+
+        # --- 4. DRAW SUN ---
+        sx = center_x + orbit_radius * math.cos(sun_rad)
+        sy = center_y - orbit_radius * math.sin(sun_rad)
+        sun_r = icon_size / 1.6
+        self.canvas.create_oval(
+            sx - sun_r, sy - sun_r, sx + sun_r, sy + sun_r,
+            fill="#FFD700", outline="#FFA500", width=2
+        )
+
+        # --- 5. DRAW MOON ---
+        mx = center_x + orbit_radius * math.cos(moon_rad)
+        my = center_y - orbit_radius * math.sin(moon_rad)
+        
+        moon_phases = ["🌕", "🌖", "🌗", "🌘", "🌑", "🌒", "🌓", "🌔"]
+        # Round UP to the upcoming phase
+        phase_idx = math.ceil((m_phase_val / 29.530588) * 8) % 8
+
+        self.canvas.create_text(
+            mx, my,
+            text=moon_phases[phase_idx],
+            font=("Segoe UI Emoji", icon_size),
+            fill="#E0E0E0"
+        )
+         
+        # --- DRAW CLOCK HAND ---
         hand_angle = (18 - current_hour) * 15
         hand_rad = math.radians(hand_angle)
        
