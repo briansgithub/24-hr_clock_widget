@@ -154,24 +154,53 @@ def get_energy_level(
 
     return two_process_energy(t, sleep_debt_hours, sleep_duration, peak_offset)
 
-def compute_sleep_debt(sleep_logs: list[dict], sleep_need_hours: float = 8.0) -> float:
+def compute_sleep_debt(
+    sleep_logs: list[dict], 
+    sleep_need_hours: float,
+    include_naps: bool = True
+) -> float:
     """
     Computes rolling 14-night sleep debt from Fitbit Sleep API response.
+    Groups multiple sessions (naps) by date to calculate total daily rest.
     """
     print(f"\n{'-'*50}")
     print(f"[compute_sleep_debt] sleep_need_hours = {sleep_need_hours:.2f} h")
-    print(f"[compute_sleep_debt] logs received     = {len(sleep_logs)} (using last 14)")
+    print(f"[compute_sleep_debt] include_naps     = {include_naps}")
 
+    # Group sleep by date
+    daily_sleep: dict[str, float] = {}
+    for log in sleep_logs:
+        date = log.get("dateOfSleep")
+        if not date: continue
+        
+        # If naps excluded, only process main sleep
+        if not include_naps and not log.get("isMainSleep", False):
+            continue
+            
+        mins = log.get("minutesAsleep", 0)
+        daily_sleep[date] = daily_sleep.get(date, 0.0) + (mins / 60.0)
+
+    # Calculate debt for the last 14 unique dates found
+    # CRITICAL: Ignore today if no sleep is recorded yet (don't penalize for a day in progress)
+    from datetime import datetime
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    
+    sorted_dates = sorted(daily_sleep.keys())
+    # Filter out today if it has 0 sleep (means we haven't slept yet)
+    active_dates = [d for d in sorted_dates if d != today_str or daily_sleep[d] > 0]
+    
+    # Take the last 14 completed/recorded days
+    window_dates = active_dates[-14:]
+    
     total_debt = 0.0
-    for log in sleep_logs[-14:]:
-        date   = log.get("dateOfSleep", "unknown date")
-        actual = log["minutesAsleep"] / 60.0
+    for date in window_dates:
+        actual = daily_sleep[date]
         nightly_debt = max(0.0, sleep_need_hours - actual)
         total_debt  += nightly_debt
         status = "OK " if nightly_debt == 0 else f"DEBT +{nightly_debt:.2f} h"
-        print(f"  {date}  slept {actual:.2f} h  ->  {status}")
+        print(f"  {date}  slept {actual:.2f} h total  ->  {status}")
 
-    print(f"[compute_sleep_debt] TOTAL DEBT = {total_debt:.2f} h")
+    print(f"[compute_sleep_debt] TOTAL DEBT = {total_debt:.2f} h (over {len(window_dates)} days)")
     print(f"{'-'*50}\n")
     return total_debt
 

@@ -16,6 +16,11 @@ class ClockWidget:
     # --- CONFIGURE YOUR FITBIT CREDENTIALS HERE ---
     FITBIT_CLIENT_ID = 'YOUR_FITBIT_CLIENT_ID'
     FITBIT_CLIENT_SECRET = 'YOUR_FITBIT_CLIENT_SECRET'
+    # -- PERSONAL GOALS ----------------------------
+    # Your target time spent in bed (9h 45m = 9.75)
+    # The app will automatically calculate your 'Sleep Need'
+    # by multiplying this by your actual efficiency.
+    BEDTIME_GOAL_HOURS = 9.75
     # ----------------------------------------------
 
     def __init__(self, root):
@@ -23,7 +28,7 @@ class ClockWidget:
         self.root.title("24h Clock")
        
         window_width = 200
-        window_height = 450
+        window_height = 520
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
         center_x = int(screen_width / 2 - window_width / 2)
@@ -40,6 +45,7 @@ class ClockWidget:
         self.show_energy = tk.BooleanVar(value=True)
         self.show_sleep_debt = tk.BooleanVar(value=True)
         self.normalize_energy = tk.BooleanVar(value=True)
+        self.include_naps = tk.BooleanVar(value=True)
        
         # ── Fitbit Integration ────────────────────────────────────────────────
         self.fitbit = FitbitClient(
@@ -164,6 +170,34 @@ class ClockWidget:
             activeforeground="white"
         )
         self.normalize_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
+
+        self.naps_toggle = tk.Checkbutton(
+            self.controls_frame,
+            text="Include Naps",
+            variable=self.include_naps,
+            command=self.update_fitbit_data,
+            bg=self.solid_bg,
+            fg="white",
+            selectcolor="#3c3c3c",
+            activebackground=self.solid_bg,
+            activeforeground="white"
+        )
+        self.naps_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
+
+        self.refresh_btn = tk.Button(
+            self.controls_frame,
+            text="API Refresh",
+            command=lambda: self.update_fitbit_data(force=True),
+            bg="#404040",
+            fg="#00ffcc",
+            activebackground="#555555",
+            activeforeground="white",
+            relief=tk.FLAT,
+            padx=10,
+            pady=2,
+            font=("Arial", 9, "bold")
+        )
+        self.refresh_btn.pack(side=tk.TOP, anchor=tk.E, padx=5, pady=10)
        
         self.sunrise_hour = 6.0
         self.sunset_hour = 18.0
@@ -236,6 +270,8 @@ class ClockWidget:
             self.energy_toggle.pack_forget()
             self.debt_toggle.pack_forget()
             self.normalize_toggle.pack_forget()
+            self.naps_toggle.pack_forget()
+            self.refresh_btn.pack_forget()
         else:
             if self.root.winfo_viewable():
                 self.root.geometry(f"+{rx - bx}+{ry - by}")
@@ -247,6 +283,8 @@ class ClockWidget:
             self.energy_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
             self.debt_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
             self.normalize_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
+            self.naps_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
+            self.refresh_btn.pack(side=tk.TOP, anchor=tk.E, padx=5, pady=10)
            
         # Re-apply topmost which can sometimes be lost on Windows when toggling overrideredirect
         self.root.attributes('-topmost', self.always_on_top.get())
@@ -356,21 +394,24 @@ class ClockWidget:
 
         threading.Thread(target=_fetch, daemon=True).start()
 
-    # ── UPDATED: replaces get_main_sleep_times() with get_all_energy_inputs() ──
-    def update_fitbit_data(self):
+    def update_fitbit_data(self, force: bool = False):
         """
-        Fetches all Fitbit data needed for the energy curve in a background
-        thread and stores results on self before triggering a redraw.
-
-        Calls FitbitClient.get_all_energy_inputs() which fetches:
-          • today's sleep record  → wake_hour, sleep_duration
-          • 14-day sleep range    → sleep_debt_hours
-          • intraday HR           → bathyphase_hour  (requires Personal app +
-                                    heartrate scope on dev.fitbit.com)
+        Background task to fetch latest Fitbit sleep & HR.
+        Calls FitbitClient and updates self.fitbit_data.
         """
         def _task():
             try:
-                inputs = self.fitbit.get_all_energy_inputs(sleep_need_hours=8.0)
+                inputs = self.fitbit.get_all_energy_inputs(
+                    bedtime_goal_hours=self.BEDTIME_GOAL_HOURS,
+                    include_naps=self.include_naps.get(),
+                    force=force
+                )
+                
+                # Print the dynamic calculation for user visibility
+                eff = inputs.get('empirical_efficiency', 1.0)
+                need = inputs.get('sleep_need_hours', self.BEDTIME_GOAL_HOURS)
+                print(f"[Fitbit] Dynamic Efficiency: {eff:.1%}")
+                print(f"[Fitbit] Dynamic Sleep Need: {need:.2f}h")
 
                 wake    = inputs.get('wake_hour')
                 start   = inputs.get('sleep_hour')   # not returned directly —

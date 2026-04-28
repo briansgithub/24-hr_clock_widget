@@ -37,6 +37,32 @@ A specialized client for the Fitbit Web API (OAuth 2.0).
   - `fitbit_hr_intraday.json`: High-resolution heart rate data for bathyphase detection.
 - **Smart Fallback**: Detects if today's sync is missing and provides a fallback to the most recent data without corrupting the permanent cache.
 
+## Smart Sync & Caching
+The application is designed to be highly responsive while minimizing API usage:
+
+- **Instant Startup**: If the app has already found today's sleep record, it loads the UI instantly from `fitbit_summary.json` without any network calls.
+- **Fast Toggles**: Changing "Include Naps" or "Factor in Sleep Debt" is instant. The app recalculates the math locally using cached 14-day sleep logs.
+- **Polling (1-Hour Rule)**: If you haven't synced your Fitbit yet today, the app uses "Fallback" data (yesterday's wake-up) to show you a curve. It will then intelligently check Fitbit **every 1 hour** in the background until your real today's sleep appears.
+- **Bathyphase Locking**: Once today's heart rate minimum (bathyphase) is found, it is cached for the rest of the day to save heart rate API quota.
+
+### API Call Conditions
+| Condition | Action |
+| :--- | :--- |
+| First launch of the day | **API Call** (Sleep Range) |
+| "Include Naps" toggled | **NO API CALL** (Uses Cache) |
+| Today's sleep not yet found | **API Call every 1 hour** until found |
+| Today's sleep already found | **NO API CALLS** for the rest of the day |
+| Midnight passes | **API Call** (Reset for new day) |
+
+### Real-World Example: Morning Sync
+1. **1:00 AM (Before Sleep)**: You open the app. No record for "today" exists yet. The app uses yesterday's wake-up as **Fallback** data and caches it with `is_real_today: False`.
+2. **2:00 AM - 9:00 AM**: You are asleep. The app remains closed or idle.
+3. **10:00 AM (After Wake-up)**: You sync your Fitbit and open the app.
+   - The app sees the cache is "Fallback" and > 1 hour old.
+   - It performs a **fresh API fetch**, discovers your new 9:30 AM wake-up time, and calculates your bathyphase.
+   - It saves the new data with `is_real_today: True`.
+4. **Rest of the Day**: Any further opens or toggle changes are **instant** and use **Zero API calls**.
+
 ## Setup & Requirements
 
 ### Dependencies
