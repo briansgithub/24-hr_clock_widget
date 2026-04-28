@@ -2,3 +2,6 @@ __pycache__/energy_logic.cpython-310.pyc
 __pycache__/energy_logic.cpython-313.pyc
 __pycache__/fitbit_client.cpython-310.pyc
 __pycache__/fitbit_client.cpython-313.pyc
+fitbit_hr_intraday.json
+fitbit_sleep_logs.json
+fitbit_summary.json

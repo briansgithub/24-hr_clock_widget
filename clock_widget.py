@@ -7,7 +7,7 @@ import urllib.request
 import json
 from astral import Observer
 from astral.sun import sun
-from astral.moon import phase  # <-- Add this line
+from astral.moon import phase  
 from PIL import Image, ImageDraw, ImageTk
 import pystray
 from fitbit_client import FitbitClient
@@ -29,7 +29,7 @@ class ClockWidget:
         self.root.title("24h Clock")
        
         window_width = 200
-        window_height = 520
+        window_height = 550
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
         center_x = int(screen_width / 2 - window_width / 2)
@@ -396,6 +396,8 @@ class ClockWidget:
                 lat, lon = tz_map[closest]
 
             try:
+                self.lat = lat
+                self.lon = lon
                 obs = Observer(latitude=lat, longitude=lon)
                 s = sun(obs, date=datetime.date.today())
                
@@ -695,17 +697,36 @@ class ClockWidget:
             from astral.sun import azimuth as sun_azimuth
             from astral.moon import phase, azimuth as moon_azimuth
             
+            user_lat = getattr(self, 'lat', None)
+            user_lon = getattr(self, 'lon', None)
+            
+            if user_lat is None or user_lon is None:
+                raise ValueError("Lat/Lon not yet available")
+
             obs = Observer(latitude=user_lat, longitude=user_lon)
             
             # --- 2. ACCURATE SUN POSITION ---
             s_az = sun_azimuth(obs, now_utc)
-            # Map Azimuth to Clock: 270 (W) -> 0°, 180 (S) -> 90°, 90 (E) -> 180°
-            sun_clock_angle = (270 - s_az) % 360
+            
+            # Map Azimuth to Clock:
+            # On our clock: 18:00 is 0°, 12:00 is 90°, 06:00 is 180°, 00:00 is 270°
+            # Standard Azimuth: N=0, E=90, S=180, W=270
+            # To put Noon at Top (90°):
+            # In Northern Hemisphere, Noon is South (180°). So 180° Az -> 90° Clock.
+            # In Southern Hemisphere, Noon is North (0°). So 0° Az -> 90° Clock.
+            if user_lat >= 0:
+                sun_clock_angle = (270 - s_az) % 360
+            else:
+                sun_clock_angle = (90 + s_az) % 360
+                
             sun_rad = math.radians(sun_clock_angle)
             
             # --- 3. ACCURATE MOON POSITION & PHASE ---
             m_az = moon_azimuth(obs, now_utc)
-            moon_clock_angle = (270 - m_az) % 360
+            if user_lat >= 0:
+                moon_clock_angle = (270 - m_az) % 360
+            else:
+                moon_clock_angle = (90 + m_az) % 360
             moon_rad = math.radians(moon_clock_angle)
             
             m_phase_val = phase(datetime.date.today())
