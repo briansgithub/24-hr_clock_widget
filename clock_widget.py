@@ -200,6 +200,9 @@ class ClockWidget:
         for widget in (self.main_frame, self.canvas):
             widget.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.root))
             widget.bind("<B1-Motion>", lambda e: self.on_drag_motion(e))
+            widget.bind("<ButtonPress-3>", self.on_right_click_start)
+            widget.bind("<B3-Motion>", self.on_right_click_motion)
+            widget.bind("<ButtonRelease-3>", self.on_right_click_end)
 
         for widget in (self.controls_frame, self.inner_controls):
             widget.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.controls_window))
@@ -437,6 +440,96 @@ class ClockWidget:
         if self.hover_timer is not None:
             self.root.after_cancel(self.hover_timer)
             self.hover_timer = None
+
+    def _get_max_energy(self):
+        if not hasattr(self, '_max_rested_energy') or getattr(self, '_max_rested_energy_args', None) != (self.wake_hour, self.bathyphase_hour):
+            max_e = 0
+            for i in range(1440):
+                h_test = (i / 1440.0) * 24.0
+                e = get_energy_level(
+                    h_test,
+                    self.wake_hour,
+                    0.0,
+                    self.BEDTIME_GOAL_HOURS,
+                    self.bathyphase_hour,
+                    clamp=False
+                )
+                if e > max_e:
+                    max_e = e
+            self._max_rested_energy = max_e
+            self._max_rested_energy_args = (self.wake_hour, self.bathyphase_hour)
+        return self._max_rested_energy
+
+    def on_right_click_start(self, event):
+        self._right_click_active = True
+        self._update_phantom_hand(event.x_root, event.y_root)
+
+    def on_right_click_motion(self, event):
+        if not getattr(self, '_right_click_active', False):
+            return
+        now_ms = int(datetime.datetime.now().timestamp() * 1000)
+        last_ms = getattr(self, '_last_phantom_update', 0)
+        if now_ms - last_ms < 30:
+            return
+        self._last_phantom_update = now_ms
+        self._update_phantom_hand(event.x_root, event.y_root)
+
+    def on_right_click_end(self, event):
+        self._right_click_active = False
+        self.canvas.delete("phantom_hand")
+
+    def _update_phantom_hand(self, x_root, y_root):
+        self.canvas.delete("phantom_hand")
+        w = self.canvas.winfo_width()
+        h = self.canvas.winfo_height()
+        cx = self.canvas.winfo_rootx() + w / 2
+        cy = self.canvas.winfo_rooty() + h / 2
+        dx = x_root - cx
+        dy = y_root - cy
+        
+        radius = min(w, h) / 2 - 25
+        if radius < 20: return
+        
+        rad = math.atan2(-dy, dx)
+        phantom_hour = (18 - math.degrees(rad) / 15) % 24
+        
+        center_x, center_y = w / 2, h / 2
+        hx = center_x + (radius * 0.75) * math.cos(rad)
+        hy = center_y - (radius * 0.75) * math.sin(rad)
+        
+        arrow_len = radius * 0.08
+        self.canvas.create_line(
+            center_x, center_y, hx, hy,
+            fill="#CC7A00", width=max(2, int(radius/25)),
+            dash=(4, 4),
+            arrow=tk.LAST, arrowshape=(arrow_len, arrow_len, arrow_len/3),
+            tags="phantom_hand"
+        )
+        
+        if self.wake_hour is not None:
+            self.energy_curve.wake_hour = self.wake_hour
+            self.energy_curve.sleep_debt_hours = self.sleep_debt_hours if self.show_sleep_debt.get() else 0.0
+            self.energy_curve.sleep_duration = self.sleep_duration
+            self.energy_curve.bathyphase_hour = self.bathyphase_hour
+            
+            current_e = self.energy_curve.get_cached_energy(phantom_hour)
+            
+            max_e = self._get_max_energy()
+            if max_e > 0:
+                pct = max(0, int(round((current_e / max_e) * 100)))
+                tip_offset = radius * 0.15
+                tx = center_x + (radius * 0.75 + tip_offset) * math.cos(rad)
+                ty = center_y - (radius * 0.75 + tip_offset) * math.sin(rad)
+                
+                font_size = max(8, int(radius / 11))
+                text_color = self.energy_curve.interpolate_color(current_e)
+                self.canvas.create_text(
+                    tx, ty,
+                    text=f"{pct}%",
+                    fill=text_color,
+                    font=("Segoe UI", font_size, "bold"),
+                    tags="phantom_hand"
+                )
 
     def fetch_sun_times(self):
         def _fetch():
@@ -682,35 +775,15 @@ class ClockWidget:
         )
         
         if self.show_energy.get() and self.wake_hour is not None:
-            current_debt = self.sleep_debt_hours if self.show_sleep_debt.get() else 0.0
-            current_e = get_energy_level(
-                current_hour,
-                self.wake_hour,
-                current_debt,
-                self.sleep_duration,
-                self.bathyphase_hour,
-                clamp=False
-            )
+            self.energy_curve.wake_hour = self.wake_hour
+            self.energy_curve.sleep_debt_hours = self.sleep_debt_hours if self.show_sleep_debt.get() else 0.0
+            self.energy_curve.sleep_duration = self.sleep_duration
+            self.energy_curve.bathyphase_hour = self.bathyphase_hour
+            
+            current_e = self.energy_curve.get_cached_energy(current_hour)
             
             # max energy today if fully rested
-            if not hasattr(self, '_max_rested_energy') or getattr(self, '_max_rested_energy_args', None) != (self.wake_hour, self.bathyphase_hour):
-                max_e = 0
-                for i in range(72):
-                    h_test = (i / 72.0) * 24.0
-                    e = get_energy_level(
-                        h_test,
-                        self.wake_hour,
-                        0.0,
-                        self.BEDTIME_GOAL_HOURS,
-                        self.bathyphase_hour,
-                        clamp=False
-                    )
-                    if e > max_e:
-                        max_e = e
-                self._max_rested_energy = max_e
-                self._max_rested_energy_args = (self.wake_hour, self.bathyphase_hour)
-            else:
-                max_e = self._max_rested_energy
+            max_e = self._get_max_energy()
                 
             if max_e > 0:
                 pct = max(0, int(round((current_e / max_e) * 100)))

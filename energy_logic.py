@@ -257,6 +257,12 @@ class EnergyCurve:
         self.sleep_duration    = 7.5
         self.bathyphase_hour   = None
         self.normalize         = True
+        
+        # Cache variables
+        self._cached_args = None
+        self._cached_levels = []
+        self._cached_e_min = 0.0
+        self._cached_e_max = 0.0
 
     def interpolate_color(self, val: float) -> str:
         val = max(0.0, min(1.0, val))
@@ -265,11 +271,16 @@ class EnergyCurve:
         b = int(255 * (1 - val) + 43  * val)
         return f'#{r:02x}{g:02x}{b:02x}'
 
-    def draw(self, cx: float, cy: float, radius: float, wake_hour: float):
-        self.wake_hour = wake_hour
-        steps = 72
-        
-        # 1. First pass: Collect all energy levels for 24h to allow normalization
+    def get_cached_energy(self, h: float, steps: int = 1440) -> float:
+        """Returns the energy level at hour `h` using a precomputed cache."""
+        args = (self.wake_hour, self.sleep_debt_hours, self.sleep_duration, self.bathyphase_hour)
+        if self._cached_args != args or not self._cached_levels or len(self._cached_levels) != steps + 1:
+            self._recompute_cache(steps)
+            
+        idx = int(round((h % 24.0) / 24.0 * steps)) % steps
+        return self._cached_levels[idx]
+
+    def _recompute_cache(self, steps: int):
         levels = []
         for i in range(steps + 1):
             h = (i / float(steps)) * 24.0
@@ -282,15 +293,27 @@ class EnergyCurve:
                 clamp=False,
             )
             levels.append(e)
+        self._cached_levels = levels
+        self._cached_e_min = min(levels)
+        self._cached_e_max = max(levels)
+        self._cached_args = (self.wake_hour, self.sleep_debt_hours, self.sleep_duration, self.bathyphase_hour)
 
-        e_min = min(levels)
-        e_max = max(levels)
+    def draw(self, cx: float, cy: float, radius: float, wake_hour: float):
+        self.wake_hour = wake_hour
+        
+        # Trigger cache update if needed
+        self.get_cached_energy(0)
+        
+        e_min = self._cached_e_min
+        e_max = self._cached_e_max
         e_range = e_max - e_min
 
-        # 2. Second pass: Draw the segments
+        # 2. Draw the segments using a reduced visual resolution (e.g., 72 steps)
+        steps = 72
         last_px = last_py = None
-        for i, energy in enumerate(levels):
+        for i in range(steps + 1):
             h = (i / float(steps)) * 24.0
+            energy = self.get_cached_energy(h)
             
             if self.normalize and e_range > 0.01:
                 # Scale so the 24h cycle always spans 10% to 90% radius
