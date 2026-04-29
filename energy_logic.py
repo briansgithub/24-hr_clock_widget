@@ -35,6 +35,7 @@ def two_process_energy(
     sleep_debt_hours: float = 0.0,
     sleep_duration: float = 7.5,
     circadian_peak_offset: float = 10.0,
+    clamp: bool = True,
 ) -> float:
     """
     Two-process model of alertness (Borbely 1982, SAFTE).
@@ -62,11 +63,27 @@ def two_process_energy(
     S_max = 1.0
     S_min = 0.05
 
-    # Residual pressure remaining when the user woke up
-    S0 = S_min + (S_max - S_min) * math.exp(-sleep_duration / tau_sleep)
+    # Steady-state boundary conditions for continuous 24h loop
+    sleep_start = 24.0 - sleep_duration
+    E_w = math.exp(-sleep_start / tau_wake)
+    E_s = math.exp(-sleep_duration / tau_sleep)
+    
+    # Avoid division by zero in pathological cases
+    divisor = 1.0 - E_w * E_s
+    if divisor < 0.0001:
+        divisor = 0.0001
+        
+    S0 = (S_max * E_s * (1.0 - E_w) + S_min * (1.0 - E_s)) / divisor
+    S_bed = S0 * E_w + S_max * (1.0 - E_w)
 
     # Pressure at time t
-    S_t = S0 + (S_max - S0) * (1.0 - math.exp(-t / tau_wake))
+    if t < sleep_start:
+        # Awake: pressure builds
+        S_t = S0 + (S_max - S0) * (1.0 - math.exp(-t / tau_wake))
+    else:
+        # Asleep: pressure discharges
+        t_sleep = t - sleep_start
+        S_t = S_min + (S_bed - S_min) * math.exp(-t_sleep / tau_sleep)
 
     # -- 2. PROCESS C - Circadian Alerting Signal -----------------------------
     # Primary 24 h cosine peaks at circadian_peak_offset hours after wake.
@@ -77,10 +94,10 @@ def two_process_energy(
     C_primary   = 0.55 * math.cos(
         (math.pi / 12) * (t - circadian_peak_offset)
     )
-    C_secondary = 0.15 * math.cos(
+    C_secondary = -0.15 * math.cos(
         (math.pi / 6)  * (t - 8.0)          # trough near 8 h, crest near 14 h
     )
-    C_t = 0.50 + C_primary + C_secondary    # centred at 0.50
+    C_t = 1.10 + C_primary + C_secondary    # shifted so morning energy is positive
 
     # -- 3. RAW ALERTNESS = C(t) - S(t) ---------------------------------------
     raw = C_t - S_t
@@ -94,7 +111,9 @@ def two_process_energy(
     
     alertness = (raw * inertia_gate) - debt_penalty
     
-    return max(0.0, min(1.0, alertness))
+    if clamp:
+        return max(0.0, min(1.0, alertness))
+    return alertness
 
 _energy_summary_printed = False
 
@@ -104,6 +123,7 @@ def get_energy_level(
     sleep_debt_hours: float = 0.0,
     sleep_duration: float = 7.5,
     bathyphase_hour: float = None,
+    clamp: bool = True,
 ) -> float:
     """
     Wrapper for UI that maps wall-clock time to hours-since-wake.
@@ -138,7 +158,7 @@ def get_energy_level(
                        wake_hour+13, wake_hour+16]:
             spot_h_wrapped = spot_h % 24
             spot_t = (spot_h_wrapped - wake_hour) % 24
-            spot_e = two_process_energy(spot_t, sleep_debt_hours, sleep_duration, peak_offset)
+            spot_e = two_process_energy(spot_t, sleep_debt_hours, sleep_duration, peak_offset, clamp)
             label_map = {
                 wake_hour % 24:        "wake",
                 (wake_hour+1.5) % 24:  "inertia clears",
@@ -152,7 +172,7 @@ def get_energy_level(
         print(f"{'-'*50}\n")
         _energy_summary_printed = True
 
-    return two_process_energy(t, sleep_debt_hours, sleep_duration, peak_offset)
+    return two_process_energy(t, sleep_debt_hours, sleep_duration, peak_offset, clamp)
 
 def compute_sleep_debt(
     sleep_logs: list[dict], 
@@ -259,6 +279,7 @@ class EnergyCurve:
                 self.sleep_debt_hours,
                 self.sleep_duration,
                 self.bathyphase_hour,
+                clamp=False,
             )
             levels.append(e)
 
@@ -276,8 +297,9 @@ class EnergyCurve:
                 display_energy = (energy - e_min) / e_range
                 current_r = (0.10 + 0.80 * display_energy) * radius
             else:
-                # Absolute mapping: Energy 0.0 -> center, 1.0 -> 100% radius
-                current_r = energy * radius
+                # Absolute mapping: clamp to 1.0, scale to 95% radius to avoid exceeding circumference
+                clamped_energy = max(0.0, min(1.0, energy))
+                current_r = clamped_energy * (radius * 0.95)
 
             angle = (18.0 - h) * 15.0
             rad   = math.radians(angle)
