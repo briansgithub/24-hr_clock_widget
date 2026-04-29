@@ -7,6 +7,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import time
 from datetime import datetime, timedelta
+from energy_logic import compute_sleep_debt, find_bathyphase
 
 
 class FitbitClient:
@@ -355,7 +356,6 @@ class FitbitClient:
                     # 2. Recalculate debt using cached raw logs but current toggle/need
                     raw_logs = res.get('raw_sleep_logs', sleep_logs)
                     try:
-                        from energy_logic import compute_sleep_debt
                         new_debt = compute_sleep_debt(raw_logs, sleep_need_hours, include_naps)
                         res['sleep_debt_hours'] = new_debt
                     except Exception as e:
@@ -405,7 +405,6 @@ class FitbitClient:
 
         # -- 3. Sleep debt -------------------------------------------------
         try:
-            from energy_logic import compute_sleep_debt
             sleep_debt = compute_sleep_debt(sleep_logs, sleep_need_hours, include_naps)
         except ImportError:
             sleep_debt = sum(
@@ -422,7 +421,6 @@ class FitbitClient:
             hr_points = self.get_intraday_hr_during_sleep(today_record, force=force)
             if hr_points:
                 try:
-                    from energy_logic import find_bathyphase
                     bathyphase_hour = find_bathyphase(hr_points)
                 except ImportError:
                     buckets: dict[int, list[float]] = {}

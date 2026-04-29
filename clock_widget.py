@@ -6,8 +6,8 @@ import threading
 import urllib.request
 import json
 from astral import Observer
-from astral.sun import sun
-from astral.moon import phase  
+from astral.sun import sun, azimuth as sun_azimuth
+from astral.moon import phase, azimuth as moon_azimuth
 from PIL import Image, ImageDraw, ImageTk
 import pystray
 from fitbit_client import FitbitClient
@@ -67,6 +67,8 @@ class ClockWidget:
         self.solid_bg = "#2b2b2b"
         self.is_transparent = False
         self.hover_timer = None
+        self._last_drawn_minute = None
+        self._celestial_cache = None
        
         # Make the key color fully transparent on Windows
         self.root.attributes("-transparentcolor", self.transparent_key)
@@ -329,7 +331,7 @@ class ClockWidget:
         if mx < rx - margin or mx > rx + rw + margin or my < ry - margin or my > ry + rh + margin:
             self.make_transparent()
         else:
-            self.root.after(100, self.check_nearby)
+            self.root.after(250, self.check_nearby)
 
     def on_enter(self, event):
         if self.hover_timer is not None:
@@ -543,14 +545,29 @@ class ClockWidget:
             pass
 
     def on_resize(self, event):
-        self.draw_clock()
+        if event.widget == self.canvas:
+            new_size = (event.width, event.height)
+            if getattr(self, '_last_canvas_size', None) != new_size:
+                self._last_canvas_size = new_size
+                self.draw_clock()
 
     def update_clock(self):
-        self.draw_clock()
         now = datetime.datetime.now()
-       
-        if not hasattr(self, 'last_tray_minute') or self.last_tray_minute != now.minute:
-            self.last_tray_minute = now.minute
+        current_minute = now.hour * 60 + now.minute
+        
+        if not hasattr(self, '_last_drawn_minute'):
+            self._last_drawn_minute = -1
+        
+        if self._last_drawn_minute != current_minute:
+            self._last_drawn_minute = current_minute
+            self.draw_clock()
+        else:
+            self._update_hand_only(now)
+            
+        if not hasattr(self, 'last_tray_update'):
+            self.last_tray_update = -1
+        if now.minute % 5 == 0 and self.last_tray_update != now.minute:
+            self.last_tray_update = now.minute
             img = self.create_tray_image(now)
             if hasattr(self, 'tray_icon') and self.tray_icon is not None:
                 try:
@@ -566,6 +583,70 @@ class ClockWidget:
         seconds_to_next_mark = 10 - (now.second % 10)
         ms_to_next_mark = seconds_to_next_mark * 1000 - int(now.microsecond / 1000)
         self.root.after(max(100, ms_to_next_mark + 50), self.update_clock)
+
+    def _update_hand_only(self, now):
+        """Lightweight redraw: only move the clock hand between full redraws."""
+        self.canvas.delete("clock_hand")
+        w = self.canvas.winfo_width()
+        h = self.canvas.winfo_height()
+        center_x, center_y = w / 2, h / 2
+        radius = min(w, h) / 2 - 25
+        if radius < 20:
+            return
+        current_hour = now.hour + now.minute / 60.0 + now.second / 3600.0
+        hand_angle = (18 - current_hour) * 15
+        hand_rad = math.radians(hand_angle)
+        hx = center_x + (radius * 0.75) * math.cos(hand_rad)
+        hy = center_y - (radius * 0.75) * math.sin(hand_rad)
+        arrow_len = radius * 0.08
+        self.canvas.create_line(
+            center_x, center_y, hx, hy,
+            fill="#FF9F1C", width=max(2, int(radius / 25)),
+            arrow=tk.LAST, arrowshape=(arrow_len, arrow_len, arrow_len / 3),
+            tags="clock_hand"
+        )
+
+    def _get_celestial_positions(self, current_hour):
+        """Return (sun_rad, moon_rad, m_phase_val), cached for 5 minutes."""
+        now = datetime.datetime.now()
+        if self._celestial_cache:
+            s_r, m_r, m_ph, ts = self._celestial_cache
+            if (now - ts).total_seconds() < 300:
+                return s_r, m_r, m_ph
+
+        try:
+            user_lat = getattr(self, 'lat', None)
+            user_lon = getattr(self, 'lon', None)
+            if user_lat is None or user_lon is None:
+                raise ValueError("Lat/Lon not yet available")
+
+            obs = Observer(latitude=user_lat, longitude=user_lon)
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
+
+            s_az = sun_azimuth(obs, now_utc)
+            if user_lat >= 0:
+                sun_clock_angle = (270 - s_az) % 360
+            else:
+                sun_clock_angle = (90 + s_az) % 360
+            s_rad = math.radians(sun_clock_angle)
+
+            m_az = moon_azimuth(obs, now_utc)
+            if user_lat >= 0:
+                moon_clock_angle = (270 - m_az) % 360
+            else:
+                moon_clock_angle = (90 + m_az) % 360
+            m_rad = math.radians(moon_clock_angle)
+
+            m_phase_val = phase(datetime.date.today())
+
+        except Exception:
+            s_rad = math.radians((18 - current_hour) * 15)
+            m_phase_val = 0
+            moon_hour = (current_hour - (m_phase_val / 29.53) * 24) % 24
+            m_rad = math.radians((18 - moon_hour) * 15)
+
+        self._celestial_cache = (s_rad, m_rad, m_phase_val, now)
+        return s_rad, m_rad, m_phase_val
 
     def draw_clock(self):
         self.canvas.delete("all")
@@ -647,11 +728,11 @@ class ClockWidget:
             outline="black", width=2
         )
        
-        for h_tick in range(24):
+        for h_tick in range(0, 24, 2):
             angle = (18 - h_tick) * 15
             rad = math.radians(angle)
            
-            tick_len = radius * 0.12 if h_tick % 6 == 0 else (radius * 0.08 if h_tick % 2 == 0 else radius * 0.05)
+            tick_len = radius * 0.12 if h_tick % 6 == 0 else radius * 0.08
            
             x1 = center_x + (radius - tick_len) * math.cos(rad)
             y1 = center_y - (radius - tick_len) * math.sin(rad)
@@ -689,56 +770,7 @@ class ClockWidget:
             icon_size = max(12, int(radius / 7))
             orbit_radius = radius + (icon_size / 2) + 8 
             
-            now_utc = datetime.datetime.now(datetime.timezone.utc)
-            # Ensure lat/lon are available from the fetch_sun_times method
-            user_lat = getattr(self, 'lat', 0)
-            user_lon = getattr(self, 'lon', 0)
-
-            try:
-                from astral import Observer
-                from astral.sun import azimuth as sun_azimuth
-                from astral.moon import phase, azimuth as moon_azimuth
-                
-                user_lat = getattr(self, 'lat', None)
-                user_lon = getattr(self, 'lon', None)
-                
-                if user_lat is None or user_lon is None:
-                    raise ValueError("Lat/Lon not yet available")
-
-                obs = Observer(latitude=user_lat, longitude=user_lon)
-                
-                # --- 2. ACCURATE SUN POSITION ---
-                s_az = sun_azimuth(obs, now_utc)
-                
-                # Map Azimuth to Clock:
-                # On our clock: 18:00 is 0°, 12:00 is 90°, 06:00 is 180°, 00:00 is 270°
-                # Standard Azimuth: N=0, E=90, S=180, W=270
-                # To put Noon at Top (90°):
-                # In Northern Hemisphere, Noon is South (180°). So 180° Az -> 90° Clock.
-                # In Southern Hemisphere, Noon is North (0°). So 0° Az -> 90° Clock.
-                if user_lat >= 0:
-                    sun_clock_angle = (270 - s_az) % 360
-                else:
-                    sun_clock_angle = (90 + s_az) % 360
-                    
-                sun_rad = math.radians(sun_clock_angle)
-                
-                # --- 3. ACCURATE MOON POSITION & PHASE ---
-                m_az = moon_azimuth(obs, now_utc)
-                if user_lat >= 0:
-                    moon_clock_angle = (270 - m_az) % 360
-                else:
-                    moon_clock_angle = (90 + m_az) % 360
-                moon_rad = math.radians(moon_clock_angle)
-                
-                m_phase_val = phase(datetime.date.today())
-
-            except Exception as e:
-                # Fallback to geometric math if astral calls fail
-                sun_rad = math.radians((18 - current_hour) * 15)
-                m_phase_val = 0
-                moon_hour = (current_hour - (m_phase_val / 29.53) * 24) % 24
-                moon_rad = math.radians((18 - moon_hour) * 15)
+            sun_rad, moon_rad, m_phase_val = self._get_celestial_positions(current_hour)
 
             # --- 4. DRAW SUN ---
             sx = center_x + orbit_radius * math.cos(sun_rad)
@@ -776,7 +808,8 @@ class ClockWidget:
         self.canvas.create_line(
             center_x, center_y, hx, hy,
             fill="#FF9F1C", width=max(2, int(radius/25)),
-            arrow=tk.LAST, arrowshape=(arrow_len, arrow_len, arrow_len/3)
+            arrow=tk.LAST, arrowshape=(arrow_len, arrow_len, arrow_len/3),
+            tags="clock_hand"
         )
 
 

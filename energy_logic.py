@@ -247,7 +247,7 @@ class EnergyCurve:
 
     def draw(self, cx: float, cy: float, radius: float, wake_hour: float):
         self.wake_hour = wake_hour
-        steps = 144
+        steps = 72
         
         # 1. First pass: Collect all energy levels for 24h to allow normalization
         levels = []
