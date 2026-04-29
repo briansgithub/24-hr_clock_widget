@@ -11,7 +11,7 @@ from astral.moon import phase, elevation as moon_elevation
 from PIL import Image, ImageDraw, ImageTk
 import pystray
 from fitbit_client import FitbitClient
-from energy_logic import EnergyCurve
+from energy_logic import EnergyCurve, get_energy_level
 
 class ClockWidget:
     # --- CONFIGURE YOUR FITBIT CREDENTIALS HERE ---
@@ -45,6 +45,7 @@ class ClockWidget:
         self.show_total_bedtime = tk.BooleanVar(value=True)
         self.show_energy = tk.BooleanVar(value=True)
         self.show_sleep_debt = tk.BooleanVar(value=True)
+        self.show_sleep_debt_text = tk.BooleanVar(value=True)
         self.normalize_energy = tk.BooleanVar(value=True)
         self.include_naps = tk.BooleanVar(value=True)
         self.show_sun_moon = tk.BooleanVar(value=True)
@@ -161,6 +162,19 @@ class ClockWidget:
             activeforeground="white"
         )
         self.debt_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
+
+        self.debt_text_toggle = tk.Checkbutton(
+            self.controls_frame,
+            text="Sleep Debt",
+            variable=self.show_sleep_debt_text,
+            command=self.draw_clock,
+            bg=self.solid_bg,
+            fg="white",
+            selectcolor="#3c3c3c",
+            activebackground=self.solid_bg,
+            activeforeground="white"
+        )
+        self.debt_text_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
 
         self.normalize_toggle = tk.Checkbutton(
             self.controls_frame,
@@ -286,6 +300,7 @@ class ClockWidget:
             self.bedtime_toggle.pack_forget()
             self.energy_toggle.pack_forget()
             self.debt_toggle.pack_forget()
+            self.debt_text_toggle.pack_forget()
             self.normalize_toggle.pack_forget()
             self.naps_toggle.pack_forget()
             self.sun_moon_toggle.pack_forget()
@@ -300,6 +315,7 @@ class ClockWidget:
             self.bedtime_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
             self.energy_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
             self.debt_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
+            self.debt_text_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
             self.normalize_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
             self.naps_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
             self.sun_moon_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
@@ -593,18 +609,71 @@ class ClockWidget:
         radius = min(w, h) / 2 - 25
         if radius < 20:
             return
+        
+        self._draw_clock_hand(now, center_x, center_y, radius)
+
+    def _draw_clock_hand(self, now, center_x, center_y, radius):
         current_hour = now.hour + now.minute / 60.0 + now.second / 3600.0
         hand_angle = (18 - current_hour) * 15
         hand_rad = math.radians(hand_angle)
+       
         hx = center_x + (radius * 0.75) * math.cos(hand_rad)
         hy = center_y - (radius * 0.75) * math.sin(hand_rad)
+       
         arrow_len = radius * 0.08
         self.canvas.create_line(
             center_x, center_y, hx, hy,
-            fill="#FF9F1C", width=max(2, int(radius / 25)),
-            arrow=tk.LAST, arrowshape=(arrow_len, arrow_len, arrow_len / 3),
+            fill="#FF9F1C", width=max(2, int(radius/25)),
+            arrow=tk.LAST, arrowshape=(arrow_len, arrow_len, arrow_len/3),
             tags="clock_hand"
         )
+        
+        if self.show_energy.get() and self.wake_hour is not None:
+            current_debt = self.sleep_debt_hours if self.show_sleep_debt.get() else 0.0
+            current_e = get_energy_level(
+                current_hour,
+                self.wake_hour,
+                current_debt,
+                self.sleep_duration,
+                self.bathyphase_hour,
+                clamp=False
+            )
+            
+            # max energy today if fully rested
+            if not hasattr(self, '_max_rested_energy') or getattr(self, '_max_rested_energy_args', None) != (self.wake_hour, self.bathyphase_hour):
+                max_e = 0
+                for i in range(72):
+                    h_test = (i / 72.0) * 24.0
+                    e = get_energy_level(
+                        h_test,
+                        self.wake_hour,
+                        0.0,
+                        self.BEDTIME_GOAL_HOURS,
+                        self.bathyphase_hour,
+                        clamp=False
+                    )
+                    if e > max_e:
+                        max_e = e
+                self._max_rested_energy = max_e
+                self._max_rested_energy_args = (self.wake_hour, self.bathyphase_hour)
+            else:
+                max_e = self._max_rested_energy
+                
+            if max_e > 0:
+                pct = max(0, int(round((current_e / max_e) * 100)))
+                # Text at the tip of the hand
+                tip_offset = radius * 0.15
+                tx = center_x + (radius * 0.75 + tip_offset) * math.cos(hand_rad)
+                ty = center_y - (radius * 0.75 + tip_offset) * math.sin(hand_rad)
+                
+                font_size = max(8, int(radius / 11))
+                self.canvas.create_text(
+                    tx, ty,
+                    text=f"{pct}%",
+                    fill="#FF9F1C",
+                    font=("Segoe UI", font_size, "bold"),
+                    tags="clock_hand"
+                )
 
     def _get_celestial_positions(self, current_hour):
         """Return (sun_rad, moon_rad, m_phase_val), cached for 5 minutes."""
@@ -809,21 +878,25 @@ class ClockWidget:
                 fill="#E0E0E0"
             )
 
+        # --- DRAW SLEEP DEBT ---
+        if self.show_sleep_debt_text.get() and self.sleep_debt_hours is not None:
+            # 24:00 (Midnight) is at the bottom (-90 degrees)
+            midnight_angle = math.radians(-90)
+            text_dist = radius * 0.5  # Place it between center and bottom
+            dx = center_x + text_dist * math.cos(midnight_angle)
+            dy = center_y - text_dist * math.sin(midnight_angle)
+            
+            debt_int = int(round(self.sleep_debt_hours))
+            self.canvas.create_text(
+                dx, dy,
+                text=f"{debt_int}h",
+                font=("Segoe UI", max(10, int(radius / 10)), "bold"),
+                fill="#FFFFFF" 
+            )
+
          
         # --- DRAW CLOCK HAND ---
-        hand_angle = (18 - current_hour) * 15
-        hand_rad = math.radians(hand_angle)
-       
-        hx = center_x + (radius * 0.75) * math.cos(hand_rad)
-        hy = center_y - (radius * 0.75) * math.sin(hand_rad)
-       
-        arrow_len = radius * 0.08
-        self.canvas.create_line(
-            center_x, center_y, hx, hy,
-            fill="#FF9F1C", width=max(2, int(radius/25)),
-            arrow=tk.LAST, arrowshape=(arrow_len, arrow_len, arrow_len/3),
-            tags="clock_hand"
-        )
+        self._draw_clock_hand(now, center_x, center_y, radius)
 
 
 if __name__ == "__main__":

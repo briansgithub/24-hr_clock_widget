@@ -16,6 +16,10 @@ A collection of desktop widgets built with Python and Tkinter, featuring a uniqu
 - **Circadian Energy Curve**: A color-coded gradient (Cyan to Red) that visualizes your alertness throughout the day.
 - **Weighted Sleep Debt**: Models the impact of your last 14 days of sleep with a 90% daily decay factor, making recent rest (and naps) more influential.
 - **Normalization**: Switch between an absolute "Alertness" view and a normalized view that fills the clock face for better visibility.
+- **Energy Percentage**: Displays your current alertness as a percentage (0-100%) at the tip of the clock hand.
+    - **100%** represents your theoretical peak alertness today if you were fully rested (0 sleep debt and 9.75 hours of sleep).
+    - **0%** represents the floor of the Two-Process model, typically reached during your circadian trough (3-5 AM) or under extreme sleep deprivation.
+    - **Toggle Sensitivity**: The percentage respects the "Factor in Sleep Debt" and "Include Naps" toggles but remains absolute regardless of the "Normalize Energy" setting.
 
 ## File Overview
 
