@@ -85,138 +85,54 @@ class ClockWidget:
         self.controls_frame = tk.Frame(self.main_frame, bg=self.solid_bg)
         self.controls_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=0)
        
-        self.top_toggle = tk.Checkbutton(
-            self.controls_frame,
-            text="Always On Top",
-            variable=self.always_on_top,
-            command=self.toggle_topmost,
-            bg=self.solid_bg,
-            fg="white",
-            selectcolor="#3c3c3c",
-            activebackground=self.solid_bg,
-            activeforeground="white"
-        )
-        self.top_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
+        self._control_widgets = []
+        self.inner_controls = tk.Frame(self.controls_frame, bg=self.solid_bg)
+        self.inner_controls.pack(anchor=tk.CENTER)
 
-        self.numbers_toggle = tk.Checkbutton(
-            self.controls_frame,
-            text="Numbers",
-            variable=self.show_numbers,
-            command=self.draw_clock,
-            bg=self.solid_bg,
-            fg="white",
-            selectcolor="#3c3c3c",
-            activebackground=self.solid_bg,
-            activeforeground="white"
-        )
-        self.numbers_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
+        def add_divider(text):
+            if self._control_widgets:
+                sep = tk.Frame(self.inner_controls, bg="#444444", height=1)
+                sep.pack(fill=tk.X, pady=(5, 5))
+                self._control_widgets.append(sep)
+            
+            lbl = tk.Label(self.inner_controls, text=text, bg=self.solid_bg, fg="#aaaaaa", font=("Arial", 8, "bold"))
+            lbl.pack(side=tk.TOP, anchor=tk.W, pady=(0, 2))
+            self._control_widgets.append(lbl)
 
-        self.sleep_toggle = tk.Checkbutton(
-            self.controls_frame,
-            text="Sleep",
-            variable=self.show_sleep,
-            command=self.draw_clock,
-            bg=self.solid_bg,
-            fg="white",
-            selectcolor="#3c3c3c",
-            activebackground=self.solid_bg,
-            activeforeground="white"
-        )
-        self.sleep_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
+        def add_toggle(text, var, cmd):
+            cb = tk.Checkbutton(
+                self.inner_controls,
+                text=text,
+                variable=var,
+                command=cmd,
+                bg=self.solid_bg,
+                fg="white",
+                selectcolor="#3c3c3c",
+                activebackground=self.solid_bg,
+                activeforeground="white"
+            )
+            cb.pack(side=tk.TOP, anchor=tk.W)
+            self._control_widgets.append(cb)
+            return cb
 
-        self.bedtime_toggle = tk.Checkbutton(
-            self.controls_frame,
-            text="Time in Bed vs. Asleep Hrs.",
-            variable=self.show_total_bedtime,
-            command=self.draw_clock,
-            bg=self.solid_bg,
-            fg="white",
-            selectcolor="#3c3c3c",
-            activebackground=self.solid_bg,
-            activeforeground="white"
-        )
-        self.bedtime_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
+        add_divider("DISPLAY")
+        self.top_toggle = add_toggle("Always On Top", self.always_on_top, self.toggle_topmost)
+        self.numbers_toggle = add_toggle("Numbers", self.show_numbers, self.draw_clock)
+        self.sun_moon_toggle = add_toggle("Sun & Moon Icons", self.show_sun_moon, self.draw_clock)
 
-        self.energy_toggle = tk.Checkbutton(
-            self.controls_frame,
-            text="Energy Curve",
-            variable=self.show_energy,
-            command=self.draw_clock,
-            bg=self.solid_bg,
-            fg="white",
-            selectcolor="#3c3c3c",
-            activebackground=self.solid_bg,
-            activeforeground="white"
-        )
-        self.energy_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
+        add_divider("SLEEP")
+        self.sleep_toggle = add_toggle("Show Sleep on Clock", self.show_sleep, self.draw_clock)
+        self.bedtime_toggle = add_toggle("Time in Bed vs. Asleep Hrs.", self.show_total_bedtime, self.draw_clock)
+        self.debt_text_toggle = add_toggle("Show Sleep Debt Text", self.show_sleep_debt_text, self.draw_clock)
 
-        self.debt_toggle = tk.Checkbutton(
-            self.controls_frame,
-            text="Factor in Sleep Debt",
-            variable=self.show_sleep_debt,
-            command=self.draw_clock,
-            bg=self.solid_bg,
-            fg="white",
-            selectcolor="#3c3c3c",
-            activebackground=self.solid_bg,
-            activeforeground="white"
-        )
-        self.debt_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
-
-        self.debt_text_toggle = tk.Checkbutton(
-            self.controls_frame,
-            text="Sleep Debt",
-            variable=self.show_sleep_debt_text,
-            command=self.draw_clock,
-            bg=self.solid_bg,
-            fg="white",
-            selectcolor="#3c3c3c",
-            activebackground=self.solid_bg,
-            activeforeground="white"
-        )
-        self.debt_text_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
-
-        self.normalize_toggle = tk.Checkbutton(
-            self.controls_frame,
-            text="Normalize Energy",
-            variable=self.normalize_energy,
-            command=self.draw_clock,
-            bg=self.solid_bg,
-            fg="white",
-            selectcolor="#3c3c3c",
-            activebackground=self.solid_bg,
-            activeforeground="white"
-        )
-        self.normalize_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
-
-        self.naps_toggle = tk.Checkbutton(
-            self.controls_frame,
-            text="Include Naps",
-            variable=self.include_naps,
-            command=self.update_fitbit_data,
-            bg=self.solid_bg,
-            fg="white",
-            selectcolor="#3c3c3c",
-            activebackground=self.solid_bg,
-            activeforeground="white"
-        )
-        self.naps_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
-
-        self.sun_moon_toggle = tk.Checkbutton(
-            self.controls_frame,
-            text="Sun & Moon Icons",
-            variable=self.show_sun_moon,
-            command=self.draw_clock,
-            bg=self.solid_bg,
-            fg="white",
-            selectcolor="#3c3c3c",
-            activebackground=self.solid_bg,
-            activeforeground="white"
-        )
-        self.sun_moon_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
+        add_divider("ENERGY")
+        self.energy_toggle = add_toggle("Show Energy Curve", self.show_energy, self.draw_clock)
+        self.normalize_toggle = add_toggle("Normalize Energy", self.normalize_energy, self.draw_clock)
+        self.debt_toggle = add_toggle("Factor in Sleep Debt", self.show_sleep_debt, self.draw_clock)
+        self.naps_toggle = add_toggle("Include Naps", self.include_naps, self.update_fitbit_data)
 
         self.refresh_btn = tk.Button(
-            self.controls_frame,
+            self.inner_controls,
             text="API Refresh",
             command=lambda: self.update_fitbit_data(force=True),
             bg="#404040",
@@ -228,7 +144,8 @@ class ClockWidget:
             pady=2,
             font=("Arial", 9, "bold")
         )
-        self.refresh_btn.pack(side=tk.TOP, anchor=tk.E, padx=5, pady=10)
+        self.refresh_btn.pack(side=tk.TOP, anchor=tk.CENTER, padx=5, pady=10)
+        self._control_widgets.append(self.refresh_btn)
        
         self.sunrise_hour = 6.0
         self.sunset_hour = 18.0
@@ -255,15 +172,7 @@ class ClockWidget:
     def toggle_topmost(self):
         self.root.attributes('-topmost', self.always_on_top.get())
 
-    def set_transparency(self, transparent):
-        self.is_transparent = transparent
-        bg_color = self.transparent_key if transparent else self.solid_bg
-        self.root.configure(bg=bg_color)
-        self.main_frame.configure(bg=bg_color)
-        self.canvas.configure(bg=bg_color)
-        self.controls_frame.configure(bg=bg_color)
-        self.top_toggle.configure(bg=bg_color, activebackground=bg_color)
-       
+
     def get_borders(self):
         if hasattr(self, '_bx'): return self._bx, self._by
         try:
@@ -283,7 +192,13 @@ class ClockWidget:
         self.main_frame.configure(bg=bg_color)
         self.canvas.configure(bg=bg_color)
         self.controls_frame.configure(bg=bg_color)
-        self.top_toggle.configure(bg=bg_color, activebackground=bg_color)
+        self.inner_controls.configure(bg=bg_color)
+        
+        for w in self._control_widgets:
+            if isinstance(w, tk.Checkbutton):
+                w.configure(bg=bg_color, activebackground=bg_color)
+            elif isinstance(w, tk.Label):
+                w.configure(bg=bg_color)
        
         rx = self.root.winfo_rootx()
         ry = self.root.winfo_rooty()
@@ -294,32 +209,21 @@ class ClockWidget:
             if self.root.winfo_viewable():
                 self.root.geometry(f"+{rx}+{ry}")
             self.root.overrideredirect(True)
-            self.top_toggle.pack_forget()
-            self.numbers_toggle.pack_forget()
-            self.sleep_toggle.pack_forget()
-            self.bedtime_toggle.pack_forget()
-            self.energy_toggle.pack_forget()
-            self.debt_toggle.pack_forget()
-            self.debt_text_toggle.pack_forget()
-            self.normalize_toggle.pack_forget()
-            self.naps_toggle.pack_forget()
-            self.sun_moon_toggle.pack_forget()
-            self.refresh_btn.pack_forget()
+            for w in self._control_widgets:
+                w.pack_forget()
         else:
             if self.root.winfo_viewable():
                 self.root.geometry(f"+{rx - bx}+{ry - by}")
             self.root.overrideredirect(False)
-            self.top_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
-            self.numbers_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
-            self.sleep_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
-            self.bedtime_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
-            self.energy_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
-            self.debt_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
-            self.debt_text_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
-            self.normalize_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
-            self.naps_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
-            self.sun_moon_toggle.pack(side=tk.TOP, anchor=tk.W, padx=5)
-            self.refresh_btn.pack(side=tk.TOP, anchor=tk.E, padx=5, pady=10)
+            for w in self._control_widgets:
+                if isinstance(w, tk.Button):
+                    w.pack(side=tk.TOP, anchor=tk.CENTER, padx=5, pady=10)
+                elif isinstance(w, tk.Label):
+                    w.pack(side=tk.TOP, anchor=tk.W, pady=(0, 2))
+                elif isinstance(w, tk.Frame):
+                    w.pack(fill=tk.X, pady=(5, 5))
+                else:
+                    w.pack(side=tk.TOP, anchor=tk.W)
            
         # Re-apply topmost which can sometimes be lost on Windows when toggling overrideredirect
         self.root.attributes('-topmost', self.always_on_top.get())
