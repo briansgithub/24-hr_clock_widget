@@ -6,8 +6,8 @@ import threading
 import urllib.request
 import json
 from astral import Observer
-from astral.sun import sun, azimuth as sun_azimuth
-from astral.moon import phase, azimuth as moon_azimuth
+from astral.sun import sun, elevation as sun_elevation
+from astral.moon import phase, elevation as moon_elevation
 from PIL import Image, ImageDraw, ImageTk
 import pystray
 from fitbit_client import FitbitClient
@@ -623,19 +623,32 @@ class ClockWidget:
             obs = Observer(latitude=user_lat, longitude=user_lon)
             now_utc = datetime.datetime.now(datetime.timezone.utc)
 
-            s_az = sun_azimuth(obs, now_utc)
-            if user_lat >= 0:
-                sun_clock_angle = (270 - s_az) % 360
-            else:
-                sun_clock_angle = (90 + s_az) % 360
-            s_rad = math.radians(sun_clock_angle)
+            def get_mapped_angle(body='sun'):
+                times = [now_utc + datetime.timedelta(hours=h) for h in range(-12, 13)]
+                if body == 'sun':
+                    elevs = [sun_elevation(obs, t) for t in times]
+                    cur_e = sun_elevation(obs, now_utc)
+                    next_e = sun_elevation(obs, now_utc + datetime.timedelta(minutes=5))
+                else:
+                    elevs = [moon_elevation(obs, t) for t in times]
+                    cur_e = moon_elevation(obs, now_utc)
+                    next_e = moon_elevation(obs, now_utc + datetime.timedelta(minutes=5))
+                
+                e_max, e_min = max(elevs), min(elevs)
+                is_rising = next_e > cur_e
+                
+                if cur_e >= 0:
+                    val = min(1.0, max(-1.0, cur_e / (e_max if e_max > 0 else 1.0)))
+                    angle = math.degrees(math.asin(val))
+                    if is_rising: angle = 180 - angle
+                else:
+                    val = min(1.0, max(-1.0, cur_e / abs(e_min if e_min < 0 else -1.0)))
+                    angle = math.degrees(math.asin(val))
+                    if is_rising: angle = 180 - angle
+                return angle % 360
 
-            m_az = moon_azimuth(obs, now_utc)
-            if user_lat >= 0:
-                moon_clock_angle = (270 - m_az) % 360
-            else:
-                moon_clock_angle = (90 + m_az) % 360
-            m_rad = math.radians(moon_clock_angle)
+            s_rad = math.radians(get_mapped_angle('sun'))
+            m_rad = math.radians(get_mapped_angle('moon'))
 
             m_phase_val = phase(datetime.date.today())
 
