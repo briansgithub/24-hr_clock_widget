@@ -29,7 +29,7 @@ class ClockWidget:
         self.root.title("24h Clock")
        
         window_width = 200
-        window_height = 550
+        window_height = 250
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
         center_x = int(screen_width / 2 - window_width / 2)
@@ -66,7 +66,8 @@ class ClockWidget:
         # Transparency State
         self.transparent_key = "#010203"
         self.solid_bg = "#2b2b2b"
-        self.is_transparent = False
+        self.is_clock_transparent = False
+        self.is_controls_visible = False
         self.hover_timer = None
         self._last_drawn_minute = None
         self._celestial_cache = None
@@ -82,8 +83,14 @@ class ClockWidget:
         self.canvas = tk.Canvas(self.main_frame, bg=self.solid_bg, highlightthickness=0)
         self.canvas.pack(fill=tk.BOTH, expand=True)
        
-        self.controls_frame = tk.Frame(self.main_frame, bg=self.solid_bg)
-        self.controls_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=0)
+        self.controls_window = tk.Toplevel(self.root)
+        self.controls_window.title("Controls")
+        self.controls_window.configure(bg=self.solid_bg)
+        self.controls_window.overrideredirect(True)
+        self.controls_window.withdraw()
+        
+        self.controls_frame = tk.Frame(self.controls_window, bg=self.solid_bg)
+        self.controls_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
        
         self._control_widgets = []
         self.inner_controls = tk.Frame(self.controls_frame, bg=self.solid_bg)
@@ -95,7 +102,7 @@ class ClockWidget:
                 sep.pack(fill=tk.X, pady=(5, 5))
                 self._control_widgets.append(sep)
             
-            lbl = tk.Label(self.inner_controls, text=text, bg=self.solid_bg, fg="#aaaaaa", font=("Arial", 8, "bold"))
+            lbl = tk.Label(self.inner_controls, text=text, bg=self.solid_bg, fg="white", font=("Arial", 8, "bold underline"))
             lbl.pack(side=tk.TOP, anchor=tk.W, pady=(0, 2))
             self._control_widgets.append(lbl)
 
@@ -130,6 +137,38 @@ class ClockWidget:
         self.normalize_toggle = add_toggle("Normalize Energy", self.normalize_energy, self.draw_clock)
         self.debt_toggle = add_toggle("Factor in Sleep Debt", self.show_sleep_debt, self.draw_clock)
         self.naps_toggle = add_toggle("Include Naps", self.include_naps, self.update_fitbit_data)
+        
+        add_divider("SETTINGS")
+        settings_frame = tk.Frame(self.inner_controls, bg=self.solid_bg)
+        settings_frame.pack(side=tk.TOP, fill=tk.X, pady=2)
+        
+        tk.Label(settings_frame, text="Hover Delay (s):", bg=self.solid_bg, fg="white", font=("Arial", 8)).pack(side=tk.LEFT)
+        
+        self.hover_delay_var = tk.StringVar(value="1.0")
+        
+        def validate_num(P):
+            if P == "": return True
+            try:
+                if P == ".": return True
+                float(P)
+                return True
+            except ValueError:
+                return False
+        
+        vcmd = (self.root.register(validate_num), '%P')
+        
+        self.hover_delay_entry = tk.Entry(
+            settings_frame, 
+            textvariable=self.hover_delay_var, 
+            width=5, 
+            validate='key', 
+            validatecommand=vcmd,
+            bg="#404040",
+            fg="white",
+            insertbackground="white",
+            relief=tk.FLAT
+        )
+        self.hover_delay_entry.pack(side=tk.LEFT, padx=5)
 
         self.refresh_btn = tk.Button(
             self.inner_controls,
@@ -153,13 +192,18 @@ class ClockWidget:
         self.canvas.bind("<Configure>", self.on_resize)
        
         # Bind hover events
-        self.root.bind("<Enter>", self.on_enter)
-        self.root.bind("<Leave>", self.on_leave)
+        for widget in (self.root, self.controls_window):
+            widget.bind("<Enter>", self.on_enter)
+            widget.bind("<Leave>", self.on_leave)
        
-        # Bind drag events to main_frame and canvas
+        # Bind drag events
         for widget in (self.main_frame, self.canvas):
-            widget.bind("<ButtonPress-1>", self.on_drag_start)
-            widget.bind("<B1-Motion>", self.on_drag_motion)
+            widget.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.root))
+            widget.bind("<B1-Motion>", lambda e: self.on_drag_motion(e))
+
+        for widget in (self.controls_frame, self.inner_controls):
+            widget.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.controls_window))
+            widget.bind("<B1-Motion>", lambda e: self.on_drag_motion(e))
        
         # Initialize Energy Curve logic
         self.energy_curve = EnergyCurve(self.canvas)
@@ -171,6 +215,8 @@ class ClockWidget:
 
     def toggle_topmost(self):
         self.root.attributes('-topmost', self.always_on_top.get())
+        if hasattr(self, 'controls_window'):
+            self.controls_window.attributes('-topmost', self.always_on_top.get())
 
 
     def get_borders(self):
@@ -185,60 +231,84 @@ class ClockWidget:
             self._bx, self._by = 8, 31
         return self._bx, self._by
 
-    def set_transparency(self, transparent):
-        self.is_transparent = transparent
-        bg_color = self.transparent_key if transparent else self.solid_bg
+    def make_clock_solid(self):
+        if not self.is_clock_transparent: return
+        self.is_clock_transparent = False
+        
+        bg_color = self.solid_bg
         self.root.configure(bg=bg_color)
         self.main_frame.configure(bg=bg_color)
         self.canvas.configure(bg=bg_color)
-        self.controls_frame.configure(bg=bg_color)
-        self.inner_controls.configure(bg=bg_color)
         
-        for w in self._control_widgets:
-            if isinstance(w, tk.Checkbutton):
-                w.configure(bg=bg_color, activebackground=bg_color)
-            elif isinstance(w, tk.Label):
-                w.configure(bg=bg_color)
-       
         rx = self.root.winfo_rootx()
         ry = self.root.winfo_rooty()
-       
         bx, by = self.get_borders()
-       
-        if transparent:
-            if self.root.winfo_viewable():
-                self.root.geometry(f"+{rx}+{ry}")
-            self.root.overrideredirect(True)
-            for w in self._control_widgets:
-                w.pack_forget()
-        else:
-            if self.root.winfo_viewable():
-                self.root.geometry(f"+{rx - bx}+{ry - by}")
-            self.root.overrideredirect(False)
-            for w in self._control_widgets:
-                if isinstance(w, tk.Button):
-                    w.pack(side=tk.TOP, anchor=tk.CENTER, padx=5, pady=10)
-                elif isinstance(w, tk.Label):
-                    w.pack(side=tk.TOP, anchor=tk.W, pady=(0, 2))
-                elif isinstance(w, tk.Frame):
-                    w.pack(fill=tk.X, pady=(5, 5))
-                else:
-                    w.pack(side=tk.TOP, anchor=tk.W)
-           
-        # Re-apply topmost which can sometimes be lost on Windows when toggling overrideredirect
+        
+        if self.root.winfo_viewable():
+            self.root.geometry(f"+{rx - bx}+{ry - by}")
+        self.root.overrideredirect(False)
         self.root.attributes('-topmost', self.always_on_top.get())
 
+    def make_clock_transparent(self):
+        if self.is_clock_transparent: return
+        self.is_clock_transparent = True
+        
+        bg_color = self.transparent_key
+        self.root.configure(bg=bg_color)
+        self.main_frame.configure(bg=bg_color)
+        self.canvas.configure(bg=bg_color)
+        
+        rx = self.root.winfo_rootx()
+        ry = self.root.winfo_rooty()
+        
+        if self.root.winfo_viewable():
+            self.root.geometry(f"+{rx}+{ry}")
+        self.root.overrideredirect(True)
+        self.root.attributes('-topmost', self.always_on_top.get())
+
+    def make_controls_visible(self):
+        if not hasattr(self, 'controls_window'): return
+        if getattr(self, 'is_controls_visible', False): return
+        self.is_controls_visible = True
+        
+        if not getattr(self, '_controls_detached', False):
+            rx = self.root.winfo_rootx()
+            ry = self.root.winfo_rooty()
+            rw = self.root.winfo_width()
+            self.controls_window.geometry(f"+{rx + rw + 10}+{ry}")
+            
+        self.controls_window.deiconify()
+        self.controls_window.lift()
+        self.controls_window.attributes('-topmost', self.always_on_top.get())
+
+    def make_controls_hidden(self):
+        if not hasattr(self, 'controls_window'): return
+        if not getattr(self, 'is_controls_visible', False): return
+        self.is_controls_visible = False
+        self.controls_window.withdraw()
+
     def make_solid(self):
-        self.set_transparency(False)
-        self.check_nearby()
+        self.make_clock_solid()
+        self.make_controls_visible()
+        if not getattr(self, '_checking_nearby', False):
+            self._checking_nearby = True
+            self.check_nearby()
 
     def make_transparent(self):
-        self.set_transparency(True)
+        self._checking_nearby = False
+        if getattr(self, '_clock_hide_timer_started', False):
+            self.root.after_cancel(self._clock_hide_timer_id)
+            self._clock_hide_timer_started = False
+        if getattr(self, '_controls_hide_timer_started', False):
+            self.root.after_cancel(self._controls_hide_timer_id)
+            self._controls_hide_timer_started = False
+        self.make_clock_transparent()
+        self.make_controls_hidden()
 
     def check_nearby(self):
-        if self.is_transparent:
+        if not getattr(self, '_checking_nearby', False):
             return
-           
+            
         mx = self.root.winfo_pointerx()
         my = self.root.winfo_pointery()
        
@@ -247,43 +317,121 @@ class ClockWidget:
         rw = self.root.winfo_width()
         rh = self.root.winfo_height()
        
-        margin = 60
-        if mx < rx - margin or mx > rx + rw + margin or my < ry - margin or my > ry + rh + margin:
-            self.make_transparent()
+        margin = 10
+        in_root = not (mx < rx - margin or mx > rx + rw + margin or my < ry - margin or my > ry + rh + margin)
+        
+        in_controls = False
+        if getattr(self, 'controls_window', None) and self.controls_window.winfo_viewable():
+            cx = self.controls_window.winfo_rootx()
+            cy = self.controls_window.winfo_rooty()
+            cw = self.controls_window.winfo_width()
+            ch = self.controls_window.winfo_height()
+            in_controls = not (mx < cx - margin or mx > cx + cw + margin or my < cy - margin or my > cy + ch + margin)
+
+        if in_root and in_controls:
+            top_widget = self.root.winfo_containing(mx, my)
+            if top_widget is not None:
+                top_win = top_widget.winfo_toplevel()
+                if top_win == self.root:
+                    in_controls = False
+                elif top_win == getattr(self, 'controls_window', None):
+                    in_root = False
+
+        # Clock Timeout Logic
+        if in_controls:
+            if getattr(self, '_clock_hide_timer_started', False):
+                self.root.after_cancel(self._clock_hide_timer_id)
+                self._clock_hide_timer_started = False
+            self.make_clock_transparent()
+        elif not in_root:
+            if not getattr(self, '_clock_hide_timer_started', False):
+                self._clock_hide_timer_started = True
+                self._clock_hide_timer_id = self.root.after(1500, self.make_clock_transparent)
         else:
-            self.root.after(250, self.check_nearby)
+            if getattr(self, '_clock_hide_timer_started', False):
+                self.root.after_cancel(self._clock_hide_timer_id)
+                self._clock_hide_timer_started = False
+            self.make_clock_solid()
+
+        # Controls Timeout Logic
+        if not in_controls and not in_root:
+            if not getattr(self, '_controls_hide_timer_started', False):
+                self._controls_hide_timer_started = True
+                self._controls_hide_timer_id = self.root.after(2500, self.make_controls_hidden)
+        else:
+            if getattr(self, '_controls_hide_timer_started', False):
+                self.root.after_cancel(self._controls_hide_timer_id)
+                self._controls_hide_timer_started = False
+            self.make_controls_visible()
+
+        # Stop polling only if both are hidden
+        if getattr(self, 'is_clock_transparent', False) and not getattr(self, 'is_controls_visible', False):
+            self._checking_nearby = False
+            return
+
+        self.root.after(250, self.check_nearby)
 
     def on_enter(self, event):
         if self.hover_timer is not None:
             self.root.after_cancel(self.hover_timer)
             self.hover_timer = None
-        if self.is_transparent:
-            self.hover_timer = self.root.after(750, self.make_solid)
+            
+        toplevel = event.widget.winfo_toplevel()
+        if toplevel == self.root:
+            if getattr(self, 'is_clock_transparent', False):
+                try:
+                    delay = int(float(self.hover_delay_var.get()) * 1000)
+                except:
+                    delay = 750
+                self.hover_timer = self.root.after(delay, self.make_solid)
+            else:
+                if not getattr(self, '_checking_nearby', False):
+                    self._checking_nearby = True
+                    self.check_nearby()
+        else:
+            if not getattr(self, '_checking_nearby', False):
+                self._checking_nearby = True
+                self.check_nearby()
 
-    def on_drag_start(self, event):
-        if self.is_transparent:
+    def on_drag_start(self, event, target_window=None):
+        if target_window is None:
+            target_window = self.root
+            
+        if target_window == self.root and getattr(self, 'is_clock_transparent', False):
             self._drag_data = None
             return
            
-        w = self.root.winfo_width()
-        h = self.root.winfo_height()
-        margin = 20
+        w = target_window.winfo_width()
+        h = target_window.winfo_height()
        
-        rx = event.x_root - self.root.winfo_rootx()
-        ry = event.y_root - self.root.winfo_rooty()
+        rx = event.x_root - target_window.winfo_rootx()
+        ry = event.y_root - target_window.winfo_rooty()
        
-        if rx < margin or rx > w - margin or ry < margin or ry > h - margin:
-            self._drag_data = None
-            return
+        if target_window == self.root:
+            margin = 20
+            if rx < margin or rx > w - margin or ry < margin or ry > h - margin:
+                self._drag_data = None
+                return
+        else:
+            self._controls_detached = True
            
         self._drag_data = {'x': event.x_root, 'y': event.y_root,
-                           'wx': self.root.winfo_x(), 'wy': self.root.winfo_y()}
+                           'wx': target_window.winfo_x(), 'wy': target_window.winfo_y(),
+                           'window': target_window}
 
     def on_drag_motion(self, event):
         if getattr(self, '_drag_data', None):
+            target_window = self._drag_data['window']
             dx = event.x_root - self._drag_data['x']
             dy = event.y_root - self._drag_data['y']
-            self.root.geometry(f"+{self._drag_data['wx'] + dx}+{self._drag_data['wy'] + dy}")
+            new_x = self._drag_data['wx'] + dx
+            new_y = self._drag_data['wy'] + dy
+            target_window.geometry(f"+{new_x}+{new_y}")
+            
+            if target_window == self.root and hasattr(self, 'controls_window') and self.controls_window.winfo_viewable():
+                if not getattr(self, '_controls_detached', False):
+                    rw = self.root.winfo_width()
+                    self.controls_window.geometry(f"+{new_x + rw + 10}+{new_y}")
 
     def on_leave(self, event):
         if self.hover_timer is not None:
@@ -385,7 +533,8 @@ class ClockWidget:
         threading.Thread(target=_task, daemon=True).start()
 
     def show_initial(self):
-        self.set_transparency(True)
+        self.make_clock_transparent()
+        self.make_controls_hidden()
         self.update_fitbit_data()
         self.draw_clock()
         self.root.deiconify()
@@ -580,58 +729,71 @@ class ClockWidget:
                 )
 
     def _get_celestial_positions(self, current_hour):
-        """Return (sun_rad, moon_rad, m_phase_val), cached for 5 minutes."""
+        """Return (sun_rad, moon_rad, m_phase_val), calculating current elevation every minute but caching extremes for 5 minutes."""
         now = datetime.datetime.now()
-        if self._celestial_cache:
-            s_r, m_r, m_ph, ts = self._celestial_cache
-            if (now - ts).total_seconds() < 300:
-                return s_r, m_r, m_ph
-
-        try:
-            user_lat = getattr(self, 'lat', None)
-            user_lon = getattr(self, 'lon', None)
-            if user_lat is None or user_lon is None:
-                raise ValueError("Lat/Lon not yet available")
-
-            obs = Observer(latitude=user_lat, longitude=user_lon)
-            now_utc = datetime.datetime.now(datetime.timezone.utc)
-
-            def get_mapped_angle(body='sun'):
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        
+        # 1. Update extremes cache if needed (every 5 minutes)
+        if not hasattr(self, '_extremes_cache') or (now - self._extremes_cache['ts']).total_seconds() >= 300:
+            try:
+                user_lat = getattr(self, 'lat', None)
+                user_lon = getattr(self, 'lon', None)
+                if user_lat is None or user_lon is None:
+                    raise ValueError("Lat/Lon not yet available")
+                
+                obs = Observer(latitude=user_lat, longitude=user_lon)
                 times = [now_utc + datetime.timedelta(hours=h) for h in range(-12, 13)]
-                if body == 'sun':
-                    elevs = [sun_elevation(obs, t) for t in times]
-                    cur_e = sun_elevation(obs, now_utc)
-                    next_e = sun_elevation(obs, now_utc + datetime.timedelta(minutes=5))
-                else:
-                    elevs = [moon_elevation(obs, t) for t in times]
-                    cur_e = moon_elevation(obs, now_utc)
-                    next_e = moon_elevation(obs, now_utc + datetime.timedelta(minutes=5))
                 
-                e_max, e_min = max(elevs), min(elevs)
-                is_rising = next_e > cur_e
+                s_elevs = [sun_elevation(obs, t) for t in times]
+                m_elevs = [moon_elevation(obs, t) for t in times]
                 
-                if cur_e >= 0:
-                    val = min(1.0, max(-1.0, cur_e / (e_max if e_max > 0 else 1.0)))
-                    angle = math.degrees(math.asin(val))
-                    if is_rising: angle = 180 - angle
-                else:
-                    val = min(1.0, max(-1.0, cur_e / abs(e_min if e_min < 0 else -1.0)))
-                    angle = math.degrees(math.asin(val))
-                    if is_rising: angle = 180 - angle
-                return angle % 360
+                self._extremes_cache = {
+                    's_max': max(s_elevs),
+                    's_min': min(s_elevs),
+                    'm_max': max(m_elevs),
+                    'm_min': min(m_elevs),
+                    'm_phase': phase(datetime.date.today()),
+                    'ts': now,
+                    'obs': obs
+                }
+            except Exception:
+                # Fallback to simple time-based approximation
+                s_rad = math.radians((18 - current_hour) * 15)
+                m_phase_val = 0
+                moon_hour = (current_hour - (m_phase_val / 29.53) * 24) % 24
+                m_rad = math.radians((18 - moon_hour) * 15)
+                return s_rad, m_rad, m_phase_val
 
-            s_rad = math.radians(get_mapped_angle('sun'))
-            m_rad = math.radians(get_mapped_angle('moon'))
+        # 2. Calculate current positions every minute using cached extremes
+        cache = self._extremes_cache
+        obs = cache['obs']
+        
+        def get_current_mapped_angle(body='sun'):
+            if body == 'sun':
+                cur_e = sun_elevation(obs, now_utc)
+                next_e = sun_elevation(obs, now_utc + datetime.timedelta(seconds=1))
+                e_max, e_min = cache['s_max'], cache['s_min']
+            else:
+                cur_e = moon_elevation(obs, now_utc)
+                next_e = moon_elevation(obs, now_utc + datetime.timedelta(seconds=1))
+                e_max, e_min = cache['m_max'], cache['m_min']
+            
+            is_rising = next_e > cur_e
+            
+            if cur_e >= 0:
+                val = min(1.0, max(-1.0, cur_e / (e_max if e_max > 0 else 1.0)))
+                angle = math.degrees(math.asin(val))
+                if is_rising: angle = 180 - angle
+            else:
+                val = min(1.0, max(-1.0, cur_e / abs(e_min if e_min < 0 else -1.0)))
+                angle = math.degrees(math.asin(val))
+                if is_rising: angle = 180 - angle
+            return angle % 360
 
-            m_phase_val = phase(datetime.date.today())
-
-        except Exception:
-            s_rad = math.radians((18 - current_hour) * 15)
-            m_phase_val = 0
-            moon_hour = (current_hour - (m_phase_val / 29.53) * 24) % 24
-            m_rad = math.radians((18 - moon_hour) * 15)
-
-        self._celestial_cache = (s_rad, m_rad, m_phase_val, now)
+        s_rad = math.radians(get_current_mapped_angle('sun'))
+        m_rad = math.radians(get_current_mapped_angle('moon'))
+        m_phase_val = cache['m_phase']
+        
         return s_rad, m_rad, m_phase_val
 
     def draw_clock(self):
@@ -795,7 +957,13 @@ class ClockWidget:
                 dx, dy,
                 text=f"{debt_int}h",
                 font=("Segoe UI", max(10, int(radius / 10)), "bold"),
-                fill="#FFFFFF" 
+                fill="#EEEEEE" 
+            )
+            self.canvas.create_text(
+                dx, dy + max(12, int(radius / 8)),
+                text="Debt",
+                font=("Segoe UI", max(10, int(radius / 14)), "bold"),
+                fill="#EEEEEE" 
             )
 
          
