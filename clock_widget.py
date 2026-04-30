@@ -73,6 +73,7 @@ class ClockWidget:
         self.normalize_energy = tk.BooleanVar(value=True)
         self.include_naps = tk.BooleanVar(value=True)
         self.show_sun_moon = tk.BooleanVar(value=True)
+        self.show_manual_wake = tk.BooleanVar(value=True)
        
         # ── Fitbit Integration ────────────────────────────────────────────────
         self.fitbit = FitbitClient(
@@ -221,6 +222,16 @@ class ClockWidget:
             relief=tk.FLAT
         )
         self.manual_wake_entry.pack(side=tk.LEFT, padx=5)
+
+        tk.Checkbutton(
+            wake_frame,
+            text="",
+            variable=self.show_manual_wake,
+            command=self.draw_clock,
+            bg=self.solid_bg,
+            selectcolor="#3c3c3c",
+            activebackground=self.solid_bg,
+        ).pack(side=tk.LEFT)
 
         self.refresh_btn = tk.Button(
             self.inner_controls,
@@ -1046,30 +1057,10 @@ class ClockWidget:
         brightness = self._get_solar_irradiance()
         circle_r = radius * (2/13)
 
-        # Colour: interpolate from near-black (0) through deep amber to bright yellow-white (255)
-        if brightness == 0:
-            fill_color = "#0a0a0a"
-        else:
-            t = brightness / 255.0
-            # R: ramp from 20 to 255
-            r_val = int(20 + t * 235)
-            # G: ramp from 10 to 240 (warm yellow at peak)
-            g_val = int(10 + t * 230)
-            # B: ramp from 0 to 180 (slight blue-white at peak)
-            b_val = int(t * t * 180)          # quadratic – stays low until nearly full sun
-            fill_color = f"#{r_val:02x}{g_val:02x}{b_val:02x}"
+        # Colour: pure black at 0 brightness to pure white at 255 brightness
+        val = int(brightness)
+        fill_color = f"#{val:02x}{val:02x}{val:02x}"
 
-        # Subtle outer glow ring
-        glow_r = circle_r * 1.35
-        if brightness > 30:
-            glow_alpha = min(255, int(brightness * 0.55))
-            glow_color = f"#{glow_alpha:02x}{int(glow_alpha * 0.8):02x}00"
-            self.canvas.create_oval(
-                center_x - glow_r, center_y - glow_r,
-                center_x + glow_r, center_y + glow_r,
-                fill=glow_color, outline="",
-                tags="solar_circle"
-            )
 
         self.canvas.create_oval(
             center_x - circle_r, center_y - circle_r,
@@ -1243,6 +1234,7 @@ class ClockWidget:
                 )
 
         def draw_manual_wake_tick():
+            if not self.show_manual_wake.get(): return
             val = self.manual_wake_time.get().strip()
             if not val: return
             try:
