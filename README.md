@@ -53,6 +53,12 @@ The application is designed to be highly responsive while minimizing API usage:
 - **Polling (1-Hour Rule)**: If you haven't synced your Fitbit yet today, the app uses "Fallback" data (yesterday's wake-up) to show you a curve. It will then intelligently check Fitbit **every 1 hour** in the background until your real today's sleep appears.
 - **Bathyphase Locking**: Once today's heart rate minimum (bathyphase) is found, it is cached for the rest of the day to save heart rate API quota.
 
+### Intraday HR Cache (`fitbit_hr_intraday.json`)
+The high-resolution heart rate cache is created only when specific conditions are met to avoid unnecessary data bloat and API rate-limiting:
+- **Condition 1 (Today's Sleep):** The file is only generated when a "real" sleep record for the current calendar date is found. If the app is in "Fallback" mode (using yesterday's data), it will not create or update this file.
+- **Condition 2 (Successful Fetch):** It requires a successful fetch from Fitbit's intraday heart rate API.
+- **Condition 3 (App Type):** Your Fitbit Developer app **must** be set to `Personal` type on [dev.fitbit.com](https://dev.fitbit.com). `Server` or `Client` types are restricted from accessing intraday data for privacy reasons.
+
 ### API Call Conditions
 | Condition | Action |
 | :--- | :--- |
@@ -68,7 +74,7 @@ The application is designed to be highly responsive while minimizing API usage:
 3. **10:00 AM (After Wake-up)**: You sync your Fitbit and open the app.
    - The app sees the cache is "Fallback" and > 1 hour old.
    - It performs a **fresh API fetch**, discovers your new 9:30 AM wake-up time, and calculates your bathyphase.
-   - It saves the new data with `is_real_today: True`.
+   - It saves the new data with `is_real_today: True` and creates the `fitbit_hr_intraday.json` cache.
 4. **Rest of the Day**: Any further opens or toggle changes are **instant** and use **Zero API calls**.
 
 ## Setup & Requirements
