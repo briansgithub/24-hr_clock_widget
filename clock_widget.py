@@ -63,7 +63,8 @@ class ClockWidget:
         self.show_numbers = tk.BooleanVar(value=False)
         self.show_sleep = tk.BooleanVar(value=True)
         self.show_total_bedtime = tk.BooleanVar(value=True)
-        self.show_energy = tk.BooleanVar(value=True)
+        self.show_energy = tk.BooleanVar(value=False)
+        self.show_energy_pct = tk.BooleanVar(value=True)
         self.show_sleep_debt = tk.BooleanVar(value=True)
         self.show_sleep_debt_text = tk.BooleanVar(value=True)
         self.normalize_energy = tk.BooleanVar(value=True)
@@ -154,6 +155,7 @@ class ClockWidget:
 
         add_divider("ENERGY")
         self.energy_toggle = add_toggle("Show Energy Curve", self.show_energy, self.draw_clock)
+        self.energy_pct_toggle = add_toggle("Show Energy %", self.show_energy_pct, self.draw_clock)
         self.normalize_toggle = add_toggle("Normalize Energy", self.normalize_energy, self.draw_clock)
         self.debt_toggle = add_toggle("Factor in Sleep Debt", self.show_sleep_debt, self.draw_clock)
         self.naps_toggle = add_toggle("Include Naps", self.include_naps, self.update_fitbit_data)
@@ -847,7 +849,7 @@ class ClockWidget:
             tags="clock_hand"
         )
         
-        if self.show_energy.get() and self.wake_hour is not None:
+        if self.wake_hour is not None:
             self.energy_curve.wake_hour = self.wake_hour
             self.energy_curve.sleep_debt_hours = self.sleep_debt_hours if self.show_sleep_debt.get() else 0.0
             self.energy_curve.sleep_duration = self.sleep_duration
@@ -858,7 +860,7 @@ class ClockWidget:
             # max energy today if fully rested
             max_e = self._get_max_energy()
                 
-            if max_e > 0:
+            if max_e > 0 and self.show_energy_pct.get():
                 pct = max(0, int(round((current_e / max_e) * 100)))
                 # Text at the tip of the hand
                 icon_size = max(12, int(radius / 7))
@@ -1000,7 +1002,7 @@ class ClockWidget:
     def _draw_solar_circle(self, center_x, center_y, radius):
         """Draw the solar irradiance indicator circle at the clock center."""
         brightness = self._get_solar_irradiance()
-        circle_r = radius / 6
+        circle_r = radius * (2/13)
 
         # Colour: interpolate from near-black (0) through deep amber to bright yellow-white (255)
         if brightness == 0:
