@@ -298,31 +298,34 @@ class EnergyCurve:
         self._cached_e_max = max(levels)
         self._cached_args = (self.wake_hour, self.sleep_debt_hours, self.sleep_duration, self.bathyphase_hour)
 
+    def get_display_radius(self, energy: float, radius: float) -> float:
+        """Calculates the display radius for a given energy level and base radius."""
+        e_min = self._cached_e_min
+        e_max = self._cached_e_max
+        e_range = e_max - e_min
+        
+        if self.normalize and e_range > 0.01:
+            # Scale so the 24h cycle always spans 10% to 90% radius
+            display_energy = (energy - e_min) / e_range
+            return (0.10 + 0.80 * display_energy) * radius
+        else:
+            # Absolute mapping: clamp to 1.0, scale to 95% radius to avoid exceeding circumference
+            clamped_energy = max(0.0, min(1.0, energy))
+            return clamped_energy * (radius * 0.95)
+
     def draw(self, cx: float, cy: float, radius: float, wake_hour: float):
         self.wake_hour = wake_hour
         
         # Trigger cache update if needed
         self.get_cached_energy(0)
         
-        e_min = self._cached_e_min
-        e_max = self._cached_e_max
-        e_range = e_max - e_min
-
         # 2. Draw the segments using a reduced visual resolution (e.g., 72 steps)
         steps = 72
         last_px = last_py = None
         for i in range(steps + 1):
             h = (i / float(steps)) * 24.0
             energy = self.get_cached_energy(h)
-            
-            if self.normalize and e_range > 0.01:
-                # Scale so the 24h cycle always spans 10% to 90% radius
-                display_energy = (energy - e_min) / e_range
-                current_r = (0.10 + 0.80 * display_energy) * radius
-            else:
-                # Absolute mapping: clamp to 1.0, scale to 95% radius to avoid exceeding circumference
-                clamped_energy = max(0.0, min(1.0, energy))
-                current_r = clamped_energy * (radius * 0.95)
+            current_r = self.get_display_radius(energy, radius)
 
             angle = (18.0 - h) * 15.0
             rad   = math.radians(angle)

@@ -14,6 +14,23 @@ from fitbit_client import FitbitClient
 from energy_logic import EnergyCurve, get_energy_level
 
 class ClockWidget:
+    # -------------------------------------------------------------------------
+    # Z-INDEX / DRAWING ORDER
+    # -------------------------------------------------------------------------
+    # Rearrange this list to change which elements are drawn on top.
+    # The last element in the list will be drawn on top of everything else.
+    DRAW_ORDER = [
+        "background_face",
+        "night_shading",
+        "sleep_arc",
+        "sun_and_moon",
+        "energy_curve",
+        "perimeter_line",
+        "ticks_and_numbers",
+        "sleep_debt_text",
+        "clock_hand"
+    ]
+
     # --- CONFIGURE YOUR FITBIT CREDENTIALS HERE ---
     FITBIT_CLIENT_ID = 'YOUR_FITBIT_CLIENT_ID'
     FITBIT_CLIENT_SECRET = 'YOUR_FITBIT_CLIENT_SECRET'
@@ -28,8 +45,8 @@ class ClockWidget:
         self.root = root
         self.root.title("24h Clock")
        
-        window_width = 200
-        window_height = 250
+        window_width = 230
+        window_height = 230
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
         center_x = int(screen_width / 2 - window_width / 2)
@@ -479,7 +496,6 @@ class ClockWidget:
         self.canvas.delete("phantom_hand")
 
     def _update_phantom_hand(self, x_root, y_root):
-        self.canvas.delete("phantom_hand")
         w = self.canvas.winfo_width()
         h = self.canvas.winfo_height()
         cx = self.canvas.winfo_rootx() + w / 2
@@ -487,24 +503,16 @@ class ClockWidget:
         dx = x_root - cx
         dy = y_root - cy
         
-        radius = min(w, h) / 2 - 25
+        radius = min(w, h) / 2 - 45
         if radius < 20: return
         
         rad = math.atan2(-dy, dx)
         phantom_hour = (18 - math.degrees(rad) / 15) % 24
         
         center_x, center_y = w / 2, h / 2
-        hx = center_x + (radius * 0.75) * math.cos(rad)
-        hy = center_y - (radius * 0.75) * math.sin(rad)
         
-        arrow_len = radius * 0.08
-        self.canvas.create_line(
-            center_x, center_y, hx, hy,
-            fill="#CC7A00", width=max(2, int(radius/25)),
-            dash=(4, 4),
-            arrow=tk.LAST, arrowshape=(arrow_len, arrow_len, arrow_len/3),
-            tags="phantom_hand"
-        )
+        current_r = radius # Fallback to perimeter
+        current_e = 0.5    # Fallback energy
         
         if self.wake_hour is not None:
             self.energy_curve.wake_hour = self.wake_hour
@@ -513,23 +521,67 @@ class ClockWidget:
             self.energy_curve.bathyphase_hour = self.bathyphase_hour
             
             current_e = self.energy_curve.get_cached_energy(phantom_hour)
-            
+            current_r = self.energy_curve.get_display_radius(current_e, radius)
+
+        hx = center_x + current_r * math.cos(rad)
+        hy = center_y - current_r * math.sin(rad)
+        
+        arrow_len = radius * 0.12
+        line_width = max(2, int(radius/25))
+        if not self.canvas.find_withtag("phantom_hand_line"):
+            self.canvas.create_line(
+                center_x, center_y, hx, hy,
+                fill="#222222", width=line_width,
+                dash=(4, 4),
+                arrow=tk.LAST, arrowshape=(arrow_len, arrow_len, arrow_len/3),
+                tags=("phantom_hand", "phantom_hand_line")
+            )
+        else:
+            self.canvas.coords("phantom_hand_line", center_x, center_y, hx, hy)
+            self.canvas.itemconfig("phantom_hand_line", width=line_width, arrowshape=(arrow_len, arrow_len, arrow_len/3))
+        
+        if self.wake_hour is not None:
             max_e = self._get_max_energy()
             if max_e > 0:
                 pct = max(0, int(round((current_e / max_e) * 100)))
-                tip_offset = radius * 0.15
-                tx = center_x + (radius * 0.75 + tip_offset) * math.cos(rad)
-                ty = center_y - (radius * 0.75 + tip_offset) * math.sin(rad)
+                icon_size = max(12, int(radius / 7))
+                tip_offset = icon_size + 10
+                tx = center_x + (current_r + tip_offset) * math.cos(rad)
+                ty = center_y - (current_r + tip_offset) * math.sin(rad)
                 
                 font_size = max(8, int(radius / 11))
                 text_color = self.energy_curve.interpolate_color(current_e)
-                self.canvas.create_text(
-                    tx, ty,
-                    text=f"{pct}%",
-                    fill=text_color,
-                    font=("Segoe UI", font_size, "bold"),
-                    tags="phantom_hand"
-                )
+                
+                # Manage 4-directional outline for legibility
+                for i, (dx, dy) in enumerate([(-1, 0), (1, 0), (0, -1), (0, 1)]):
+                    tag = f"phantom_hand_outline_{i}"
+                    if not self.canvas.find_withtag(tag):
+                        self.canvas.create_text(
+                            tx + dx, ty + dy,
+                            text=f"{pct}%",
+                            fill="black",
+                            font=("Segoe UI", font_size, "bold"),
+                            tags=("phantom_hand", "phantom_hand_outline", tag)
+                        )
+                    else:
+                        self.canvas.coords(tag, tx + dx, ty + dy)
+                        self.canvas.itemconfig(tag, text=f"{pct}%", font=("Segoe UI", font_size, "bold"))
+
+                if not self.canvas.find_withtag("phantom_hand_text"):
+                    self.canvas.create_text(
+                        tx, ty,
+                        text=f"{pct}%",
+                        fill=text_color,
+                        font=("Segoe UI", font_size, "bold"),
+                        tags=("phantom_hand", "phantom_hand_text")
+                    )
+                else:
+                    self.canvas.coords("phantom_hand_text", tx, ty)
+                    self.canvas.itemconfig("phantom_hand_text", text=f"{pct}%", fill=text_color, font=("Segoe UI", font_size, "bold"))
+            else:
+                self.canvas.delete("phantom_hand_text", "phantom_hand_outline")
+        else:
+            self.canvas.delete("phantom_hand_text", "phantom_hand_outline")
 
     def fetch_sun_times(self):
         def _fetch():
@@ -752,7 +804,7 @@ class ClockWidget:
         w = self.canvas.winfo_width()
         h = self.canvas.winfo_height()
         center_x, center_y = w / 2, h / 2
-        radius = min(w, h) / 2 - 25
+        radius = min(w, h) / 2 - 45
         if radius < 20:
             return
         
@@ -763,10 +815,10 @@ class ClockWidget:
         hand_angle = (18 - current_hour) * 15
         hand_rad = math.radians(hand_angle)
        
-        hx = center_x + (radius * 0.75) * math.cos(hand_rad)
-        hy = center_y - (radius * 0.75) * math.sin(hand_rad)
+        hx = center_x + radius * math.cos(hand_rad)
+        hy = center_y - radius * math.sin(hand_rad)
        
-        arrow_len = radius * 0.08
+        arrow_len = radius * 0.12
         self.canvas.create_line(
             center_x, center_y, hx, hy,
             fill="#FF9F1C", width=max(2, int(radius/25)),
@@ -788,15 +840,28 @@ class ClockWidget:
             if max_e > 0:
                 pct = max(0, int(round((current_e / max_e) * 100)))
                 # Text at the tip of the hand
-                tip_offset = radius * 0.15
-                tx = center_x + (radius * 0.75 + tip_offset) * math.cos(hand_rad)
-                ty = center_y - (radius * 0.75 + tip_offset) * math.sin(hand_rad)
+                icon_size = max(12, int(radius / 7))
+                tip_offset = icon_size + 10
+                tx = center_x + (radius + tip_offset) * math.cos(hand_rad)
+                ty = center_y - (radius + tip_offset) * math.sin(hand_rad)
                 
                 font_size = max(8, int(radius / 11))
+                text_color = self.energy_curve.interpolate_color(current_e)
+                
+                # Draw black outline (4 directions)
+                for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    self.canvas.create_text(
+                        tx + dx, ty + dy,
+                        text=f"{pct}%",
+                        fill="black",
+                        font=("Segoe UI", font_size, "bold"),
+                        tags="clock_hand"
+                    )
+
                 self.canvas.create_text(
                     tx, ty,
                     text=f"{pct}%",
-                    fill="#FF9F1C",
+                    fill=text_color,
                     font=("Segoe UI", font_size, "bold"),
                     tags="clock_hand"
                 )
@@ -880,168 +945,178 @@ class ClockWidget:
         center_x = w / 2
         center_y = h / 2
         # --- UPDATE RADIUS PADDING ---
-        # Increased the '- 5' to '- 25' to make room for the outer orbit
-        radius = min(w, h) / 2 - 25
+        # Reduced padding to give just enough space for outer elements
+        radius = min(w, h) / 2 - 38
        
         if radius < 20:
             return
 
-        self.canvas.create_oval(
-            center_x - radius, center_y - radius,
-            center_x + radius, center_y + radius,
-            fill="#ffffff", outline="black", width=3
-        )
-       
-        night_hours = self.sunrise_hour - self.sunset_hour
-        if night_hours < 0:
-            night_hours += 24
-           
-        sunset_angle = (18 - self.sunset_hour) * 15
-        extent = - (night_hours * 15)
-       
-        self.canvas.create_arc(
-            center_x - radius, center_y - radius,
-            center_x + radius, center_y + radius,
-            start=sunset_angle, extent=extent,
-            fill="#2C3E50", outline="", style=tk.PIESLICE
-        )
-       
-        if self.show_sleep.get() and self.wake_hour is not None:
-            # Decide which start point to use
-            if self.show_total_bedtime.get():
-                # Use startTime (Time in Bed)
-                start_h = self.sleep_hour
-            else:
-                # Use wake minus duration (Actual Sleep)
-                if self.sleep_duration is not None:
-                    start_h = (self.wake_hour - self.sleep_duration) % 24
-                else:
-                    start_h = self.sleep_hour
-
-            if start_h is not None:
-                display_dur = self.wake_hour - start_h
-                if display_dur < 0:
-                    display_dur += 24
-                    
-                sleep_start_angle = (18 - start_h) * 15
-                sleep_extent = - (display_dur * 15)
-           
-            sleep_margin = radius * 0.15
-            self.canvas.create_arc(
-                center_x - (radius - sleep_margin), center_y - (radius - sleep_margin),
-                center_x + (radius - sleep_margin), center_y + (radius - sleep_margin),
-                start=sleep_start_angle, extent=sleep_extent,
-                fill="#6A5ACD", outline="", style=tk.PIESLICE
-            )
-       
-        # Energy curve — EnergyCurve instance already has debt/duration/bathyphase
-        # set on it by update_fitbit_data(); just pass wake_hour here.
-        if self.show_energy.get() and self.wake_hour is not None:
-            # Factor in debt only if toggle is on
-            current_debt = self.sleep_debt_hours if self.show_sleep_debt.get() else 0.0
-            self.energy_curve.sleep_debt_hours = current_debt
-            self.energy_curve.normalize = self.normalize_energy.get()
-            self.energy_curve.draw(center_x, center_y, radius, self.wake_hour)
-
-        self.canvas.create_oval(
-            center_x - radius, center_y - radius,
-            center_x + radius, center_y + radius,
-            outline="black", width=2
-        )
-       
-        for h_tick in range(0, 24, 2):
-            angle = (18 - h_tick) * 15
-            rad = math.radians(angle)
-           
-            tick_len = radius * 0.12 if h_tick % 6 == 0 else radius * 0.08
-           
-            x1 = center_x + (radius - tick_len) * math.cos(rad)
-            y1 = center_y - (radius - tick_len) * math.sin(rad)
-            x2 = center_x + radius * math.cos(rad)
-            y2 = center_y - radius * math.sin(rad)
-           
-            if self.sunset_hour > self.sunrise_hour:
-                is_night = (h_tick >= self.sunset_hour) or (h_tick < self.sunrise_hour)
-            else:
-                is_night = (h_tick >= self.sunset_hour) and (h_tick < self.sunrise_hour)
-               
-            tick_color = "white" if is_night else "black"
-            text_color = "white" if is_night else "black"
-           
-            self.canvas.create_line(x1, y1, x2, y2, fill=tick_color, width=3 if h_tick % 6 == 0 else 2)
-           
-            if self.show_numbers.get() and h_tick % 2 == 0:
-                text_offset = radius * 0.25
-                tx = center_x + (radius - text_offset) * math.cos(rad)
-                ty = center_y - (radius - text_offset) * math.sin(rad)
-                font_size = max(8, int(radius / 9))
-               
-                display_num = h_tick % 12
-                if display_num == 0: display_num = 12
-               
-                self.canvas.create_text(tx, ty, text=str(display_num), font=("Segoe UI", font_size, "bold"), fill=text_color)
-               
-        now = datetime.datetime.now()
-        current_hour = now.hour + now.minute / 60.0 + now.second / 3600.0
-
-        # --- SUN & MOON ICONS ---
-        if self.show_sun_moon.get():
-            # --- 1. COORDINATE SETUP ---
-            # Icons sit just outside the circumference
-            icon_size = max(12, int(radius / 7))
-            orbit_radius = radius + (icon_size / 2) + 8 
-            
-            sun_rad, moon_rad, m_phase_val = self._get_celestial_positions(current_hour)
-
-            # --- 4. DRAW SUN ---
-            sx = center_x + orbit_radius * math.cos(sun_rad)
-            sy = center_y - orbit_radius * math.sin(sun_rad)
-            sun_r = icon_size / 1.6
+        def draw_background_face():
             self.canvas.create_oval(
-                sx - sun_r, sy - sun_r, sx + sun_r, sy + sun_r,
-                fill="#FFD700", outline="#FFA500", width=2
+                center_x - radius, center_y - radius,
+                center_x + radius, center_y + radius,
+                fill="#ffffff", outline="black", width=3
             )
-
-            # --- 5. DRAW MOON ---
-            mx = center_x + orbit_radius * math.cos(moon_rad)
-            my = center_y - orbit_radius * math.sin(moon_rad)
-            
-            moon_phases = ["🌕", "🌖", "🌗", "🌘", "🌑", "🌒", "🌓", "🌔"]
-            # Round UP to the upcoming phase
-            phase_idx = math.ceil((m_phase_val / 29.530588) * 8) % 8
-
-            self.canvas.create_text(
-                mx, my,
-                text=moon_phases[phase_idx],
-                font=("Segoe UI Emoji", icon_size),
-                fill="#E0E0E0"
+           
+        def draw_night_shading():
+            night_hours = self.sunrise_hour - self.sunset_hour
+            if night_hours < 0:
+                night_hours += 24
+               
+            sunset_angle = (18 - self.sunset_hour) * 15
+            extent = - (night_hours * 15)
+           
+            self.canvas.create_arc(
+                center_x - radius, center_y - radius,
+                center_x + radius, center_y + radius,
+                start=sunset_angle, extent=extent,
+                fill="#2C3E50", outline="", style=tk.PIESLICE
             )
+           
+        def draw_sleep_arc():
+            if self.show_sleep.get() and self.wake_hour is not None:
+                if self.show_total_bedtime.get():
+                    start_h = self.sleep_hour
+                else:
+                    if self.sleep_duration is not None:
+                        start_h = (self.wake_hour - self.sleep_duration) % 24
+                    else:
+                        start_h = self.sleep_hour
 
-        # --- DRAW SLEEP DEBT ---
-        if self.show_sleep_debt_text.get() and self.sleep_debt_hours is not None:
-            # 24:00 (Midnight) is at the bottom (-90 degrees)
-            midnight_angle = math.radians(-90)
-            text_dist = radius * 0.5  # Place it between center and bottom
-            dx = center_x + text_dist * math.cos(midnight_angle)
-            dy = center_y - text_dist * math.sin(midnight_angle)
-            
-            debt_int = int(round(self.sleep_debt_hours))
-            self.canvas.create_text(
-                dx, dy,
-                text=f"{debt_int}h",
-                font=("Segoe UI", max(10, int(radius / 10)), "bold"),
-                fill="#EEEEEE" 
-            )
-            self.canvas.create_text(
-                dx, dy + max(12, int(radius / 8)),
-                text="Debt",
-                font=("Segoe UI", max(10, int(radius / 14)), "bold"),
-                fill="#EEEEEE" 
-            )
+                if start_h is not None:
+                    display_dur = self.wake_hour - start_h
+                    if display_dur < 0:
+                        display_dur += 24
+                        
+                    sleep_start_angle = (18 - start_h) * 15
+                    sleep_extent = - (display_dur * 15)
+               
+                sleep_margin = radius * 0.15
+                self.canvas.create_arc(
+                    center_x - (radius - sleep_margin), center_y - (radius - sleep_margin),
+                    center_x + (radius - sleep_margin), center_y + (radius - sleep_margin),
+                    start=sleep_start_angle, extent=sleep_extent,
+                    fill="#6A5ACD", outline="", style=tk.PIESLICE
+                )
+           
+        def draw_energy_curve():
+            if self.show_energy.get() and self.wake_hour is not None:
+                current_debt = self.sleep_debt_hours if self.show_sleep_debt.get() else 0.0
+                self.energy_curve.sleep_debt_hours = current_debt
+                self.energy_curve.normalize = self.normalize_energy.get()
+                self.energy_curve.draw(center_x, center_y, radius, self.wake_hour)
 
-         
-        # --- DRAW CLOCK HAND ---
-        self._draw_clock_hand(now, center_x, center_y, radius)
+        def draw_perimeter_line():
+            self.canvas.create_oval(
+                center_x - radius, center_y - radius,
+                center_x + radius, center_y + radius,
+                outline="black", width=2
+            )
+           
+        def draw_ticks_and_numbers():
+            for h_tick in range(0, 24, 2):
+                angle = (18 - h_tick) * 15
+                rad = math.radians(angle)
+               
+                tick_len = radius * 0.12 if h_tick % 6 == 0 else radius * 0.08
+               
+                x1 = center_x + (radius - tick_len) * math.cos(rad)
+                y1 = center_y - (radius - tick_len) * math.sin(rad)
+                x2 = center_x + radius * math.cos(rad)
+                y2 = center_y - radius * math.sin(rad)
+               
+                if self.sunset_hour > self.sunrise_hour:
+                    is_night = (h_tick >= self.sunset_hour) or (h_tick < self.sunrise_hour)
+                else:
+                    is_night = (h_tick >= self.sunset_hour) and (h_tick < self.sunrise_hour)
+                   
+                tick_color = "white" if is_night else "black"
+                text_color = "white" if is_night else "black"
+               
+                self.canvas.create_line(x1, y1, x2, y2, fill=tick_color, width=3 if h_tick % 6 == 0 else 2)
+               
+                if self.show_numbers.get() and h_tick % 2 == 0:
+                    text_offset = radius * 0.25
+                    tx = center_x + (radius - text_offset) * math.cos(rad)
+                    ty = center_y - (radius - text_offset) * math.sin(rad)
+                    font_size = max(8, int(radius / 9))
+                   
+                    display_num = h_tick % 12
+                    if display_num == 0: display_num = 12
+                   
+                    self.canvas.create_text(tx, ty, text=str(display_num), font=("Segoe UI", font_size, "bold"), fill=text_color)
+                   
+        def draw_sun_and_moon():
+            now = datetime.datetime.now()
+            current_hour = now.hour + now.minute / 60.0 + now.second / 3600.0
+            if self.show_sun_moon.get():
+                sun_rad, moon_rad, m_phase_val = self._get_celestial_positions(current_hour)
+                icon_size = max(12, int(radius / 7))
+                orbit_radius = radius + icon_size + 2
+
+                sx = center_x + orbit_radius * math.cos(sun_rad)
+                sy = center_y - orbit_radius * math.sin(sun_rad)
+                sun_r = icon_size / 1.6
+                self.canvas.create_oval(
+                    sx - sun_r, sy - sun_r, sx + sun_r, sy + sun_r,
+                    fill="#FFD700", outline="#FFA500", width=2
+                )
+
+                mx = center_x + orbit_radius * math.cos(moon_rad)
+                my = center_y - orbit_radius * math.sin(moon_rad)
+                
+                moon_phases = ["🌕", "🌖", "🌗", "🌘", "🌑", "🌒", "🌓", "🌔"]
+                phase_idx = math.ceil((m_phase_val / 29.530588) * 8) % 8
+
+                self.canvas.create_text(
+                    mx, my,
+                    text=moon_phases[phase_idx],
+                    font=("Segoe UI Emoji", icon_size),
+                    fill="#E0E0E0"
+                )
+
+        def draw_sleep_debt_text():
+            if self.show_sleep_debt_text.get() and self.sleep_debt_hours is not None:
+                midnight_angle = math.radians(-90)
+                text_dist = radius * 0.5
+                dx = center_x + text_dist * math.cos(midnight_angle)
+                dy = center_y - text_dist * math.sin(midnight_angle)
+                
+                debt_int = int(round(self.sleep_debt_hours))
+                self.canvas.create_text(
+                    dx, dy,
+                    text=f"{debt_int}h",
+                    font=("Segoe UI", max(10, int(radius / 10)), "bold"),
+                    fill="#EEEEEE" 
+                )
+                self.canvas.create_text(
+                    dx, dy + max(12, int(radius / 8)),
+                    text="Debt",
+                    font=("Segoe UI", max(10, int(radius / 14)), "bold"),
+                    fill="#EEEEEE" 
+                )
+
+        def draw_clock_hand():
+            now = datetime.datetime.now()
+            self._draw_clock_hand(now, center_x, center_y, radius)
+
+        # Map string names to their drawing functions
+        layers = {
+            "background_face": draw_background_face,
+            "night_shading": draw_night_shading,
+            "sleep_arc": draw_sleep_arc,
+            "energy_curve": draw_energy_curve,
+            "perimeter_line": draw_perimeter_line,
+            "ticks_and_numbers": draw_ticks_and_numbers,
+            "sun_and_moon": draw_sun_and_moon,
+            "sleep_debt_text": draw_sleep_debt_text,
+            "clock_hand": draw_clock_hand
+        }
+
+        # Draw in the configured order
+        for layer_name in self.DRAW_ORDER:
+            if layer_name in layers:
+                layers[layer_name]()
 
 
 if __name__ == "__main__":
