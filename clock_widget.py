@@ -29,6 +29,7 @@ class ClockWidget:
         "perimeter_line",
         "ticks_and_numbers",
         "manual_wake_tick",
+        "solar_circle",
         "sleep_debt_text",
         "clock_hand"
     ]
@@ -819,6 +820,7 @@ class ClockWidget:
     def _update_hand_only(self, now):
         """Lightweight redraw: only move the clock hand between full redraws."""
         self.canvas.delete("clock_hand")
+        self.canvas.delete("solar_circle")
         w = self.canvas.winfo_width()
         h = self.canvas.winfo_height()
         center_x, center_y = w / 2, h / 2
@@ -826,6 +828,7 @@ class ClockWidget:
         if radius < 20:
             return
         
+        self._draw_solar_circle(center_x, center_y, radius)
         self._draw_clock_hand(now, center_x, center_y, radius)
 
     def _draw_clock_hand(self, now, center_x, center_y, radius):
@@ -951,6 +954,87 @@ class ClockWidget:
         m_phase_val = cache['m_phase']
         
         return s_rad, m_rad, m_phase_val
+
+    def _get_solar_irradiance(self):
+        """Return solar irradiance brightness 0-255 based on current sun elevation.
+        
+        Uses Beer-Lambert approximation for atmospheric attenuation:
+          irradiance ∝ sin(elevation) when elevation > 0, else 0.
+        Normalised against the theoretical daily maximum elevation so that
+        the circle peaks at 255 at solar noon.
+        """
+        try:
+            user_lat = getattr(self, 'lat', None)
+            user_lon = getattr(self, 'lon', None)
+            if user_lat is None or user_lon is None:
+                raise ValueError("Lat/Lon not available")
+
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
+            obs = Observer(latitude=user_lat, longitude=user_lon)
+            elev = sun_elevation(obs, now_utc)   # degrees, negative when below horizon
+
+            if elev <= 0:
+                return 0
+
+            # Theoretical peak elevation for today (sample every 30 min)
+            if not hasattr(self, '_solar_peak_cache') or \
+               (datetime.datetime.now() - self._solar_peak_cache['ts']).total_seconds() >= 3600:
+                times = [now_utc + datetime.timedelta(minutes=30 * i) for i in range(48)]
+                elevs = [sun_elevation(obs, t) for t in times]
+                peak = max(elevs)
+                self._solar_peak_cache = {'peak': peak, 'ts': datetime.datetime.now()}
+            else:
+                peak = self._solar_peak_cache['peak']
+
+            if peak <= 0:
+                return 0
+
+            # irradiance ∝ sin(elevation); normalise to 0-1 against daily peak
+            raw = math.sin(math.radians(max(0, elev)))
+            peak_raw = math.sin(math.radians(peak))
+            brightness = int(round(255 * raw / peak_raw))
+            return max(0, min(255, brightness))
+        except Exception:
+            return 0
+
+    def _draw_solar_circle(self, center_x, center_y, radius):
+        """Draw the solar irradiance indicator circle at the clock center."""
+        brightness = self._get_solar_irradiance()
+        circle_r = radius / 6
+
+        # Colour: interpolate from near-black (0) through deep amber to bright yellow-white (255)
+        if brightness == 0:
+            fill_color = "#0a0a0a"
+        else:
+            t = brightness / 255.0
+            # R: ramp from 20 to 255
+            r_val = int(20 + t * 235)
+            # G: ramp from 10 to 240 (warm yellow at peak)
+            g_val = int(10 + t * 230)
+            # B: ramp from 0 to 180 (slight blue-white at peak)
+            b_val = int(t * t * 180)          # quadratic – stays low until nearly full sun
+            fill_color = f"#{r_val:02x}{g_val:02x}{b_val:02x}"
+
+        # Subtle outer glow ring
+        glow_r = circle_r * 1.35
+        if brightness > 30:
+            glow_alpha = min(255, int(brightness * 0.55))
+            glow_color = f"#{glow_alpha:02x}{int(glow_alpha * 0.8):02x}00"
+            self.canvas.create_oval(
+                center_x - glow_r, center_y - glow_r,
+                center_x + glow_r, center_y + glow_r,
+                fill=glow_color, outline="",
+                tags="solar_circle"
+            )
+
+        self.canvas.create_oval(
+            center_x - circle_r, center_y - circle_r,
+            center_x + circle_r, center_y + circle_r,
+            fill=fill_color,
+            outline="#888888" if brightness < 30 else "#FFD700",
+            width=1,
+            tags="solar_circle"
+        )
 
     def draw_clock(self):
         self.canvas.delete("all")
@@ -1154,6 +1238,9 @@ class ClockWidget:
             now = datetime.datetime.now()
             self._draw_clock_hand(now, center_x, center_y, radius)
 
+        def draw_solar_circle():
+            self._draw_solar_circle(center_x, center_y, radius)
+
         # Map string names to their drawing functions
         layers = {
             "background_face": draw_background_face,
@@ -1164,6 +1251,7 @@ class ClockWidget:
             "ticks_and_numbers": draw_ticks_and_numbers,
             "sun_and_moon": draw_sun_and_moon,
             "manual_wake_tick": draw_manual_wake_tick,
+            "solar_circle": draw_solar_circle,
             "sleep_debt_text": draw_sleep_debt_text,
             "clock_hand": draw_clock_hand
         }
