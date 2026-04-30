@@ -24,9 +24,9 @@ class ClockWidget:
         "background_face",
         "night_shading",
         "sun_and_moon",
-        "energy_curve",
         "sleep_arc",
         "perimeter_line",
+        "energy_curve",
         "ticks_and_numbers",
         "manual_wake_tick",
         "solar_circle",
@@ -165,7 +165,7 @@ class ClockWidget:
         tk.Label(settings_frame, text="Hover Delay (s):", bg=self.solid_bg, fg="white", font=("Arial", 8)).pack(side=tk.LEFT)
         
         self.hover_delay_var = tk.StringVar(value="1.0")
-        self.manual_wake_time = tk.StringVar(value="")
+        self.manual_wake_time = tk.StringVar(value="10:00")
         self.manual_wake_time.trace_add("write", lambda *args: self.draw_clock())
         
         def validate_num(P):
@@ -1031,7 +1031,7 @@ class ClockWidget:
             center_x - circle_r, center_y - circle_r,
             center_x + circle_r, center_y + circle_r,
             fill=fill_color,
-            outline="#888888" if brightness < 30 else "#FFD700",
+            outline="",
             width=1,
             tags="solar_circle"
         )
