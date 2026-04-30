@@ -5,3 +5,4 @@ fitbit_summary.json
 __pycache__/
 fitbit_tokens.json
 24-hr_clock_widget.code-workspace
+saved_curves/

@@ -313,7 +313,7 @@ class EnergyCurve:
             clamped_energy = max(0.0, min(1.0, energy))
             return clamped_energy * (radius * 0.95)
 
-    def draw(self, cx: float, cy: float, radius: float, wake_hour: float):
+    def draw(self, cx: float, cy: float, radius: float, wake_hour: float, draw_obj=None, width_scale=1.0):
         self.wake_hour = wake_hour
         
         # Trigger cache update if needed
@@ -333,11 +333,16 @@ class EnergyCurve:
             py = cy - current_r * math.sin(rad)
             
             if last_px is not None:
-                self.canvas.create_line(
-                    last_px, last_py, px, py,
-                    fill=self.interpolate_color(energy),
-                    width=4,
-                    capstyle=tk.ROUND,
-                    tags="energy_curve",
-                )
+                color = self.interpolate_color(energy)
+                width = int(4 * width_scale)
+                if draw_obj:
+                    draw_obj.line([(last_px, last_py), (px, py)], fill=color, width=width)
+                else:
+                    self.canvas.create_line(
+                        last_px, last_py, px, py,
+                        fill=color,
+                        width=width,
+                        capstyle=tk.ROUND,
+                        tags="energy_curve",
+                    )
             last_px, last_py = px, py

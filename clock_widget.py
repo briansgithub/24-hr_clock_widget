@@ -1,4 +1,5 @@
 import tkinter as tk
+import os
 from tkinter import ttk
 import math
 import datetime
@@ -8,7 +9,7 @@ import json
 from astral import Observer
 from astral.sun import sun, elevation as sun_elevation
 from astral.moon import phase, elevation as moon_elevation
-from PIL import Image, ImageDraw, ImageTk
+from PIL import Image, ImageDraw, ImageTk, ImageFont
 import pystray
 from fitbit_client import FitbitClient
 from energy_logic import EnergyCurve, get_energy_level
@@ -52,9 +53,11 @@ class ClockWidget:
         window_height = 230
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
-        center_x = int(screen_width / 2 - window_width / 2)
-        center_y = int(screen_height / 2 - window_height / 2)
-        self.root.geometry(f"{window_width}x{window_height}+{center_x}+{center_y}")
+        
+        # Position: upper left, part of the way down
+        initial_x = 5
+        initial_y = int(screen_height / 8)
+        self.root.geometry(f"{window_width}x{window_height}+{initial_x}+{initial_y}")
 
         self.root.minsize(120, 150)
         self.root.configure(bg="#2b2b2b")
@@ -64,7 +67,7 @@ class ClockWidget:
         self.show_sleep = tk.BooleanVar(value=True)
         self.show_total_bedtime = tk.BooleanVar(value=True)
         self.show_energy = tk.BooleanVar(value=False)
-        self.show_energy_pct = tk.BooleanVar(value=True)
+        self.show_energy_pct = tk.BooleanVar(value=False)
         self.show_sleep_debt = tk.BooleanVar(value=True)
         self.show_sleep_debt_text = tk.BooleanVar(value=True)
         self.normalize_energy = tk.BooleanVar(value=True)
@@ -81,6 +84,7 @@ class ClockWidget:
         self.sleep_duration     = 7.5   # hours; updated after first Fitbit fetch
         self.sleep_debt_hours   = 0.0   # hours; updated after first Fitbit fetch
         self.bathyphase_hour    = None  # clock hour; None until intraday HR fetched
+        self.sleep_efficiency   = None  # 0.0 to 1.0
         self.last_fitbit_update = None
         # ─────────────────────────────────────────────────────────────────────
        
@@ -159,6 +163,16 @@ class ClockWidget:
         self.normalize_toggle = add_toggle("Normalize Energy", self.normalize_energy, self.draw_clock)
         self.debt_toggle = add_toggle("Factor in Sleep Debt", self.show_sleep_debt, self.draw_clock)
         self.naps_toggle = add_toggle("Include Naps", self.include_naps, self.update_fitbit_data)
+        
+        add_divider("METRICS")
+        metrics_frame = tk.Frame(self.inner_controls, bg=self.solid_bg)
+        metrics_frame.pack(side=tk.TOP, fill=tk.X, pady=2)
+        
+        self.bathyphase_label = tk.Label(metrics_frame, text="Bathyphase: --:-- --", bg=self.solid_bg, fg="white", font=("Arial", 8, "bold"))
+        self.bathyphase_label.pack(side=tk.TOP, anchor=tk.W)
+        
+        self.efficiency_label = tk.Label(metrics_frame, text="Sleep Efficiency: --.-%", bg=self.solid_bg, fg="white", font=("Arial", 8, "bold"))
+        self.efficiency_label.pack(side=tk.TOP, anchor=tk.W)
         
         add_divider("SETTINGS")
         settings_frame = tk.Frame(self.inner_controls, bg=self.solid_bg)
@@ -681,6 +695,7 @@ class ClockWidget:
                     self.sleep_duration     = dur   # minutesAsleep / 60
                     self.sleep_debt_hours   = debt if debt is not None else 0.0
                     self.bathyphase_hour    = bathy
+                    self.sleep_efficiency   = eff
 
                     self.last_fitbit_update = datetime.datetime.now()
 
@@ -689,7 +704,10 @@ class ClockWidget:
                     self.energy_curve.sleep_duration   = self.sleep_duration
                     self.energy_curve.bathyphase_hour  = self.bathyphase_hour
 
+                    self.root.after(0, self.update_metric_labels)
                     self.root.after(0, self.draw_clock)
+                    # Save a snapshot of today's energy curve
+                    self.root.after(1000, self.save_clock_image)
                 else:
                     print("[update_fitbit_data] wake_hour still None after fetch.")
 
@@ -697,6 +715,23 @@ class ClockWidget:
                 print(f"[update_fitbit_data] Fitbit background update failed: {e}")
        
         threading.Thread(target=_task, daemon=True).start()
+
+    def update_metric_labels(self):
+        """Update the Bathyphase and Efficiency labels in the controls window."""
+        if self.bathyphase_hour is not None:
+            h = int(self.bathyphase_hour)
+            m = int((self.bathyphase_hour - h) * 60)
+            am_pm = "AM" if h < 12 else "PM"
+            h_display = h % 12
+            if h_display == 0: h_display = 12
+            self.bathyphase_label.config(text=f"Bathyphase: {h_display}:{m:02d} {am_pm}")
+        else:
+            self.bathyphase_label.config(text="Bathyphase: --:-- --")
+            
+        if self.sleep_efficiency is not None:
+            self.efficiency_label.config(text=f"Sleep Efficiency: {self.sleep_efficiency*100:.1f}%")
+        else:
+            self.efficiency_label.config(text="Sleep Efficiency: --.-%")
 
     def show_initial(self):
         self.make_clock_transparent()
@@ -1262,6 +1297,138 @@ class ClockWidget:
         for layer_name in self.DRAW_ORDER:
             if layer_name in layers:
                 layers[layer_name]()
+
+    def save_clock_image(self):
+        """Saves a high-resolution (1200x1200px) image of the clock face to 'saved_curves/'."""
+        if self.wake_hour is None:
+            return
+
+        # Ensure directory exists
+        folder = os.path.join(os.path.dirname(__file__), "saved_curves")
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+            
+        date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+        filepath = os.path.join(folder, f"energy_curve_{date_str}.png")
+        
+        # High-res rendering (1200x1200px)
+        size = 1200
+        img = Image.new('RGB', (size, size), "#2b2b2b") # Use solid_bg value
+        draw = ImageDraw.Draw(img)
+        
+        center_x = size / 2
+        center_y = size / 2
+        
+        # Proportional radius (matching the widget's aspect ratio)
+        # Widget width=230, FACE_PADDING=38 -> radius=77
+        # Scale factor = size / 230
+        scale = size / 230.0
+        radius = 77 * scale
+        
+        # Try to load a font for numbers
+        try:
+            # Common paths for Windows
+            font_path = "C:\\Windows\\Fonts\\segoeuib.ttf" # Segoe UI Bold
+            if not os.path.exists(font_path):
+                font_path = "arial.ttf"
+            font_size = int(radius / 9)
+            font = ImageFont.truetype(font_path, font_size)
+        except:
+            font = ImageFont.load_default()
+
+        # 1. Background Face
+        draw.ellipse([center_x - radius, center_y - radius, center_x + radius, center_y + radius], fill="#ffffff", outline="black", width=int(3 * scale))
+        
+        # 2. Night Shading
+        night_hours = self.sunrise_hour - self.sunset_hour
+        if night_hours < 0: night_hours += 24
+        sunset_angle_tk = (18 - self.sunset_hour) * 15
+        extent_tk = -(night_hours * 15)
+        
+        # PIL angles: start is CW from 3 o'clock.
+        # TK angles: start is CCW from 3 o'clock.
+        # PIL_start = -TK_start, PIL_end = PIL_start - TK_extent
+        pil_start = -sunset_angle_tk
+        pil_end = pil_start - extent_tk
+        draw.pieslice([center_x - radius, center_y - radius, center_x + radius, center_y + radius], start=pil_start, end=pil_end, fill="#2C3E50")
+
+        # 3. Sleep Arc
+        if self.wake_hour is not None:
+            if self.show_total_bedtime.get():
+                start_h = self.sleep_hour
+            else:
+                start_h = (self.wake_hour - self.sleep_duration) % 24 if self.sleep_duration else self.sleep_hour
+            
+            if start_h is not None:
+                display_dur = self.wake_hour - start_h
+                if display_dur < 0: display_dur += 24
+                sleep_start_angle = (18 - start_h) * 15
+                sleep_extent = -(display_dur * 15)
+                
+                margin = radius * 0.15
+                bbox_sleep = [center_x - (radius - margin), center_y - (radius - margin), 
+                              center_x + (radius - margin), center_y + (radius - margin)]
+                draw.pieslice(bbox_sleep, start=-sleep_start_angle, end=-sleep_start_angle - sleep_extent, fill="#6A5ACD")
+
+        # 4. Energy Curve (Always Normalized for the archive)
+        old_norm = self.energy_curve.normalize
+        self.energy_curve.normalize = True
+        self.energy_curve.draw(center_x, center_y, radius, self.wake_hour, draw_obj=draw, width_scale=scale)
+        self.energy_curve.normalize = old_norm
+        
+        # 5. Perimeter Line
+        draw.ellipse([center_x - radius, center_y - radius, center_x + radius, center_y + radius], outline="black", width=int(2 * scale))
+        
+        # 6. Ticks and Numbers
+        for h_tick in range(0, 24, 2):
+            angle = (18 - h_tick) * 15
+            rad = math.radians(angle)
+            tick_len = radius * 0.12 if h_tick % 6 == 0 else radius * 0.08
+            x1 = center_x + (radius - tick_len) * math.cos(rad)
+            y1 = center_y - (radius - tick_len) * math.sin(rad)
+            x2 = center_x + radius * math.cos(rad)
+            y2 = center_y - radius * math.sin(rad)
+            
+            is_night = (h_tick >= self.sunset_hour or h_tick < self.sunrise_hour) if self.sunset_hour > self.sunrise_hour else (h_tick >= self.sunset_hour and h_tick < self.sunrise_hour)
+            tick_color = "white" if is_night else "black"
+            draw.line([(x1, y1), (x2, y2)], fill=tick_color, width=int(3 * scale if h_tick % 6 == 0 else 2 * scale))
+            
+            # Numbers (matching draw_clock logic)
+            text_offset = radius * 0.25
+            tx = center_x + (radius - text_offset) * math.cos(rad)
+            ty = center_y - (radius - text_offset) * math.sin(rad)
+            
+            display_num = h_tick % 12
+            if display_num == 0: display_num = 12
+            
+            # center the text
+            txt = str(display_num)
+            bbox = draw.textbbox((tx, ty), txt, font=font, anchor="mm")
+            draw.text((tx, ty), txt, font=font, fill=tick_color, anchor="mm")
+
+        # 7. Solar Circle (Indicator)
+        brightness = self._get_solar_irradiance()
+        circle_r = radius * (2/13)
+        if brightness == 0:
+            fill_color = "#0a0a0a"
+        else:
+            t = brightness / 255.0
+            r_val, g_val, b_val = int(20 + t * 235), int(10 + t * 230), int(t * t * 180)
+            fill_color = f"#{r_val:02x}{g_val:02x}{b_val:02x}"
+        draw.ellipse([center_x - circle_r, center_y - circle_r, center_x + circle_r, center_y + circle_r], fill=fill_color)
+
+        # 8. Date Label (Corner)
+        label_font_size = int(size / 30)
+        try:
+            label_font = ImageFont.truetype("arial.ttf", label_font_size)
+        except:
+            label_font = ImageFont.load_default()
+        draw.text((20, size - 20 - label_font_size), f"Date: {date_str}", font=label_font, fill="white")
+
+        # Save the file
+        img.save(filepath)
+        print(f"[save_clock_image] Saved daily energy snapshot to: {filepath}")
+
 
 
 if __name__ == "__main__":
