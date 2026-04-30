@@ -363,6 +363,8 @@ class FitbitClient:
 
                     res.setdefault('raw_sleep_logs', raw_logs)
                     res.setdefault('raw_hr_points', [])
+                    res['from_cache'] = True
+                    res['is_real_today'] = cached.get('is_real_today', False)
                     return res
             except Exception:
                 pass
@@ -475,10 +477,11 @@ class FitbitClient:
             except Exception as e:
                 print(f"[get_all_energy_inputs] Failed to save cache: {e}")
 
-        # Ensure returned dict has everything expected
         inputs['raw_sleep_logs'] = sleep_logs
         inputs['raw_hr_points']  = hr_points
         inputs['empirical_efficiency'] = empirical_efficiency
         inputs['sleep_need_hours']     = sleep_need_hours
+        inputs['from_cache'] = False
+        inputs['is_real_today'] = is_real_today
         
         return inputs

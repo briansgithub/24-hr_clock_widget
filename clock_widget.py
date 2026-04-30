@@ -412,7 +412,7 @@ class ClockWidget:
         if not in_controls and not in_root:
             if not getattr(self, '_controls_hide_timer_started', False):
                 self._controls_hide_timer_started = True
-                self._controls_hide_timer_id = self.root.after(2500, self.make_controls_hidden)
+                self._controls_hide_timer_id = self.root.after(1750, self.make_controls_hidden)
         else:
             if getattr(self, '_controls_hide_timer_started', False):
                 self.root.after_cancel(self._controls_hide_timer_id)
@@ -706,8 +706,15 @@ class ClockWidget:
 
                     self.root.after(0, self.update_metric_labels)
                     self.root.after(0, self.draw_clock)
-                    # Save a snapshot of today's energy curve
-                    self.root.after(1000, self.save_clock_image)
+
+                    # Save a snapshot of today's energy curve ONLY if:
+                    # 1. It's fresh data from API and not stale
+                    # 2. OR no image has been created for today yet
+                    is_fresh = not inputs.get('from_cache', False)
+                    is_current = inputs.get('is_real_today', False)
+                    
+                    if (is_fresh and is_current) or not self._has_today_image():
+                        self.root.after(1000, self.save_clock_image)
                 else:
                     print("[update_fitbit_data] wake_hour still None after fetch.")
 
@@ -1308,8 +1315,8 @@ class ClockWidget:
         if not os.path.exists(folder):
             os.makedirs(folder)
             
-        date_str = datetime.datetime.now().strftime("%Y-%m-%d")
-        filepath = os.path.join(folder, f"energy_curve_{date_str}.png")
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filepath = os.path.join(folder, f"{timestamp}_energy_curve.png")
         
         # High-res rendering (1200x1200px)
         size = 1200
@@ -1320,22 +1327,9 @@ class ClockWidget:
         center_y = size / 2
         
         # Proportional radius (matching the widget's aspect ratio)
-        # Widget width=230, FACE_PADDING=38 -> radius=77
-        # Scale factor = size / 230
         scale = size / 230.0
         radius = 77 * scale
         
-        # Try to load a font for numbers
-        try:
-            # Common paths for Windows
-            font_path = "C:\\Windows\\Fonts\\segoeuib.ttf" # Segoe UI Bold
-            if not os.path.exists(font_path):
-                font_path = "arial.ttf"
-            font_size = int(radius / 9)
-            font = ImageFont.truetype(font_path, font_size)
-        except:
-            font = ImageFont.load_default()
-
         # 1. Background Face
         draw.ellipse([center_x - radius, center_y - radius, center_x + radius, center_y + radius], fill="#ffffff", outline="black", width=int(3 * scale))
         
@@ -1345,9 +1339,6 @@ class ClockWidget:
         sunset_angle_tk = (18 - self.sunset_hour) * 15
         extent_tk = -(night_hours * 15)
         
-        # PIL angles: start is CW from 3 o'clock.
-        # TK angles: start is CCW from 3 o'clock.
-        # PIL_start = -TK_start, PIL_end = PIL_start - TK_extent
         pil_start = -sunset_angle_tk
         pil_end = pil_start - extent_tk
         draw.pieslice([center_x - radius, center_y - radius, center_x + radius, center_y + radius], start=pil_start, end=pil_end, fill="#2C3E50")
@@ -1379,7 +1370,7 @@ class ClockWidget:
         # 5. Perimeter Line
         draw.ellipse([center_x - radius, center_y - radius, center_x + radius, center_y + radius], outline="black", width=int(2 * scale))
         
-        # 6. Ticks and Numbers
+        # 6. Ticks (No Numbers)
         for h_tick in range(0, 24, 2):
             angle = (18 - h_tick) * 15
             rad = math.radians(angle)
@@ -1392,42 +1383,23 @@ class ClockWidget:
             is_night = (h_tick >= self.sunset_hour or h_tick < self.sunrise_hour) if self.sunset_hour > self.sunrise_hour else (h_tick >= self.sunset_hour and h_tick < self.sunrise_hour)
             tick_color = "white" if is_night else "black"
             draw.line([(x1, y1), (x2, y2)], fill=tick_color, width=int(3 * scale if h_tick % 6 == 0 else 2 * scale))
-            
-            # Numbers (matching draw_clock logic)
-            text_offset = radius * 0.25
-            tx = center_x + (radius - text_offset) * math.cos(rad)
-            ty = center_y - (radius - text_offset) * math.sin(rad)
-            
-            display_num = h_tick % 12
-            if display_num == 0: display_num = 12
-            
-            # center the text
-            txt = str(display_num)
-            bbox = draw.textbbox((tx, ty), txt, font=font, anchor="mm")
-            draw.text((tx, ty), txt, font=font, fill=tick_color, anchor="mm")
 
-        # 7. Solar Circle (Indicator)
-        brightness = self._get_solar_irradiance()
-        circle_r = radius * (2/13)
-        if brightness == 0:
-            fill_color = "#0a0a0a"
-        else:
-            t = brightness / 255.0
-            r_val, g_val, b_val = int(20 + t * 235), int(10 + t * 230), int(t * t * 180)
-            fill_color = f"#{r_val:02x}{g_val:02x}{b_val:02x}"
-        draw.ellipse([center_x - circle_r, center_y - circle_r, center_x + circle_r, center_y + circle_r], fill=fill_color)
-
-        # 8. Date Label (Corner)
-        label_font_size = int(size / 30)
-        try:
-            label_font = ImageFont.truetype("arial.ttf", label_font_size)
-        except:
-            label_font = ImageFont.load_default()
-        draw.text((20, size - 20 - label_font_size), f"Date: {date_str}", font=label_font, fill="white")
-
-        # Save the file
         img.save(filepath)
-        print(f"[save_clock_image] Saved daily energy snapshot to: {filepath}")
+        print(f"[save_clock_image] Saved energy snapshot to: {filepath}")
+
+    def _has_today_image(self):
+        """Returns True if at least one energy curve image exists for today."""
+        folder = os.path.join(os.path.dirname(__file__), "saved_curves")
+        if not os.path.exists(folder):
+            return False
+        date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+        try:
+            for f in os.listdir(folder):
+                if f.startswith(date_str):
+                    return True
+        except:
+            pass
+        return False
 
 
 
