@@ -14,6 +14,7 @@ from fitbit_client import FitbitClient
 from energy_logic import EnergyCurve, get_energy_level
 
 class ClockWidget:
+    FACE_PADDING = 38
     # -------------------------------------------------------------------------
     # Z-INDEX / DRAWING ORDER
     # -------------------------------------------------------------------------
@@ -22,11 +23,12 @@ class ClockWidget:
     DRAW_ORDER = [
         "background_face",
         "night_shading",
-        "sleep_arc",
         "sun_and_moon",
         "energy_curve",
+        "sleep_arc",
         "perimeter_line",
         "ticks_and_numbers",
+        "manual_wake_tick",
         "sleep_debt_text",
         "clock_hand"
     ]
@@ -162,6 +164,8 @@ class ClockWidget:
         tk.Label(settings_frame, text="Hover Delay (s):", bg=self.solid_bg, fg="white", font=("Arial", 8)).pack(side=tk.LEFT)
         
         self.hover_delay_var = tk.StringVar(value="1.0")
+        self.manual_wake_time = tk.StringVar(value="")
+        self.manual_wake_time.trace_add("write", lambda *args: self.draw_clock())
         
         def validate_num(P):
             if P == "": return True
@@ -186,6 +190,20 @@ class ClockWidget:
             relief=tk.FLAT
         )
         self.hover_delay_entry.pack(side=tk.LEFT, padx=5)
+
+        wake_frame = tk.Frame(self.inner_controls, bg=self.solid_bg)
+        wake_frame.pack(side=tk.TOP, fill=tk.X, pady=2)
+        tk.Label(wake_frame, text="Wake Time (HH:MM):", bg=self.solid_bg, fg="white", font=("Arial", 8)).pack(side=tk.LEFT)
+        self.manual_wake_entry = tk.Entry(
+            wake_frame, 
+            textvariable=self.manual_wake_time, 
+            width=6, 
+            bg="#404040",
+            fg="white",
+            insertbackground="white",
+            relief=tk.FLAT
+        )
+        self.manual_wake_entry.pack(side=tk.LEFT, padx=5)
 
         self.refresh_btn = tk.Button(
             self.inner_controls,
@@ -503,7 +521,7 @@ class ClockWidget:
         dx = x_root - cx
         dy = y_root - cy
         
-        radius = min(w, h) / 2 - 45
+        radius = min(w, h) / 2 - self.FACE_PADDING
         if radius < 20: return
         
         rad = math.atan2(-dy, dx)
@@ -804,7 +822,7 @@ class ClockWidget:
         w = self.canvas.winfo_width()
         h = self.canvas.winfo_height()
         center_x, center_y = w / 2, h / 2
-        radius = min(w, h) / 2 - 45
+        radius = min(w, h) / 2 - self.FACE_PADDING
         if radius < 20:
             return
         
@@ -946,7 +964,7 @@ class ClockWidget:
         center_y = h / 2
         # --- UPDATE RADIUS PADDING ---
         # Reduced padding to give just enough space for outer elements
-        radius = min(w, h) / 2 - 38
+        radius = min(w, h) / 2 - self.FACE_PADDING
        
         if radius < 20:
             return
@@ -1096,6 +1114,42 @@ class ClockWidget:
                     fill="#EEEEEE" 
                 )
 
+        def draw_manual_wake_tick():
+            val = self.manual_wake_time.get().strip()
+            if not val: return
+            try:
+                parts = val.split(":")
+                if len(parts) == 2:
+                    h = int(parts[0])
+                    m = int(parts[1])
+                    if 0 <= h < 24 and 0 <= m < 60:
+                        wake_hour = h + m / 60.0
+                        angle = (18 - wake_hour) * 15
+                        rad = math.radians(angle)
+                        
+                        tick_len = radius * 0.25
+                        half_len = tick_len / 2
+                        
+                        # Calculate white tick points
+                        x1 = center_x + (radius - half_len) * math.cos(rad)
+                        y1 = center_y - (radius - half_len) * math.sin(rad)
+                        x2 = center_x + (radius + half_len) * math.cos(rad)
+                        y2 = center_y - (radius + half_len) * math.sin(rad)
+                        
+                        # Calculate black outline points (slightly longer to cover ends)
+                        outline_offset = 1.5
+                        bx1 = center_x + (radius - half_len - outline_offset) * math.cos(rad)
+                        by1 = center_y - (radius - half_len - outline_offset) * math.sin(rad)
+                        bx2 = center_x + (radius + half_len + outline_offset) * math.cos(rad)
+                        by2 = center_y - (radius + half_len + outline_offset) * math.sin(rad)
+                        
+                        # Black outline
+                        self.canvas.create_line(bx1, by1, bx2, by2, fill="black", width=7, capstyle=tk.BUTT)
+                        # White tick mark
+                        self.canvas.create_line(x1, y1, x2, y2, fill="white", width=4, capstyle=tk.BUTT)
+            except ValueError:
+                pass
+
         def draw_clock_hand():
             now = datetime.datetime.now()
             self._draw_clock_hand(now, center_x, center_y, radius)
@@ -1109,6 +1163,7 @@ class ClockWidget:
             "perimeter_line": draw_perimeter_line,
             "ticks_and_numbers": draw_ticks_and_numbers,
             "sun_and_moon": draw_sun_and_moon,
+            "manual_wake_tick": draw_manual_wake_tick,
             "sleep_debt_text": draw_sleep_debt_text,
             "clock_hand": draw_clock_hand
         }
