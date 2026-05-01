@@ -94,7 +94,11 @@ object EnergyCalculator {
             dailySleep[date] = dailySleep.getOrDefault(date, 0.0) + (log.minutesAsleep / 60.0)
         }
 
-        val sortedDates = dailySleep.keys.sortedDescending()
+        val todayStr = java.time.LocalDate.now().toString()
+        val sortedDates = dailySleep.keys
+            .filter { it != todayStr || (dailySleep[it] ?: 0.0) > 0.0 }
+            .sortedDescending()
+            
         val windowDates = sortedDates.take(14)
 
         var weightedDebt = 0.0

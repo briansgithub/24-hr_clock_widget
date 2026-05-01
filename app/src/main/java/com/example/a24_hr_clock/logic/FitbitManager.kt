@@ -29,6 +29,26 @@ class FitbitManager(private val context: Context) {
     private val ACCESS_TOKEN = stringPreferencesKey("access_token")
     private val REFRESH_TOKEN = stringPreferencesKey("refresh_token")
     private val LAST_SLEEP_LOGS = stringPreferencesKey("last_sleep_logs")
+    private val BATHYPHASE = androidx.datastore.preferences.core.doublePreferencesKey("bathyphase")
+    private val EFFICIENCY = androidx.datastore.preferences.core.doublePreferencesKey("efficiency")
+    private val SLEEP_NEED = androidx.datastore.preferences.core.doublePreferencesKey("sleep_need")
+
+    suspend fun saveMetrics(bathyphase: Double?, efficiency: Double, sleepNeed: Double) {
+        context.dataStore.edit { prefs ->
+            if (bathyphase != null) prefs[BATHYPHASE] = bathyphase
+            prefs[EFFICIENCY] = efficiency
+            prefs[SLEEP_NEED] = sleepNeed
+        }
+    }
+
+    suspend fun getMetrics(): Triple<Double?, Double, Double> {
+        val data = context.dataStore.data.first()
+        return Triple(
+            data[BATHYPHASE],
+            data[EFFICIENCY] ?: 1.0,
+            data[SLEEP_NEED] ?: 9.75
+        )
+    }
 
     fun getAuthUrl(): String {
         val scope = "sleep heartrate"
@@ -154,29 +174,51 @@ class FitbitManager(private val context: Context) {
         return@withContext emptyList()
     }
 
-    suspend fun fetchHeartRateIntraday(date: String, startTime: String, endTime: String): List<HeartRatePointEntry> = withContext(Dispatchers.IO) {
+    suspend fun fetchHeartRateIntraday(startTimeIso: String, endTimeIso: String): List<HeartRatePointEntry> = withContext(Dispatchers.IO) {
         val token = getAccessToken() ?: return@withContext emptyList()
-        // Fitbit intraday HR endpoint: /1/user/-/activities/heart/date/[date]/1d/1min/time/[startTime]/[endTime].json
-        val url = "https://api.fitbit.com/1/user/-/activities/heart/date/$date/1d/1min/time/$startTime/$endTime.json"
+        
+        val startDt = java.time.LocalDateTime.parse(startTimeIso.replace("Z", ""))
+        val endDt = java.time.LocalDateTime.parse(endTimeIso.replace("Z", ""))
+        
+        val datesNeeded = mutableListOf<String>()
+        var cursor = startDt.toLocalDate()
+        while (!cursor.isAfter(endDt.toLocalDate())) {
+            datesNeeded.add(cursor.toString())
+            cursor = cursor.plusDays(1)
+        }
 
-        val request = Request.Builder()
-            .url(url)
-            .addHeader("Authorization", "Bearer $token")
-            .build()
+        val allPoints = mutableListOf<HeartRatePointEntry>()
+        
+        for (dateStr in datesNeeded) {
+            val url = "https://api.fitbit.com/1/user/-/activities/heart/date/$dateStr/1d/1min.json"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer $token")
+                .build()
 
-        var response = client.newCall(request).execute()
-        if (response.code == 401) {
-            if (refreshTokens()) {
-                val newToken = getAccessToken()
-                val newRequest = request.newBuilder().header("Authorization", "Bearer $newToken").build()
-                response = client.newCall(newRequest).execute()
+            var response = client.newCall(request).execute()
+            if (response.code == 401) {
+                if (refreshTokens()) {
+                    val newToken = getAccessToken()
+                    val newRequest = request.newBuilder().header("Authorization", "Bearer $newToken").build()
+                    response = client.newCall(newRequest).execute()
+                }
+            }
+
+            if (response.isSuccessful) {
+                val body = response.body?.string() ?: continue
+                val points = json.decodeFromString<HeartRateResponse>(body).activities_heart_intraday?.dataset ?: continue
+                
+                // Filter points within the exact sleep window
+                for (p in points) {
+                    val ptTime = java.time.LocalTime.parse(p.time)
+                    val ptDt = java.time.LocalDateTime.of(java.time.LocalDate.parse(dateStr), ptTime)
+                    if (!ptDt.isBefore(startDt) && !ptDt.isAfter(endDt)) {
+                        allPoints.add(p)
+                    }
+                }
             }
         }
-
-        if (response.isSuccessful) {
-            val body = response.body?.string() ?: return@withContext emptyList()
-            return@withContext json.decodeFromString<HeartRateResponse>(body).activities_heart_intraday?.dataset ?: emptyList()
-        }
-        return@withContext emptyList()
+        return@withContext allPoints
     }
 }

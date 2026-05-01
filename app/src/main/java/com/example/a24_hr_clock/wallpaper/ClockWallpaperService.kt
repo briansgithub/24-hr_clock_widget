@@ -1,5 +1,6 @@
 package com.example.a24_hr_clock.wallpaper
 
+import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -10,6 +11,8 @@ import android.view.SurfaceHolder
 import android.util.Log
 import com.example.a24_hr_clock.logic.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import java.util.*
 
 private const val TAG = "ClockWallpaper"
@@ -61,6 +64,7 @@ class ClockWallpaperService : WallpaperService() {
 
         // Settings
         private var currentSettings = ClockSettings()
+        private val isLockedState = MutableStateFlow(false)
 
         override fun onCreate(surfaceHolder: SurfaceHolder?) {
             super.onCreate(surfaceHolder)
@@ -70,12 +74,18 @@ class ClockWallpaperService : WallpaperService() {
             // Initial default location (will be updated)
             celestialManager = CelestialManager(40.7128, -74.0060) // NYC
             
+            updateLockState()
             startDataUpdates()
             observeSettings()
             startLocationUpdates()
 
             val filter = IntentFilter("com.example.a24_hr_clock.REFRESH_DATA")
             registerReceiver(refreshReceiver, filter, RECEIVER_EXPORTED)
+        }
+
+        private fun updateLockState() {
+            val km = applicationContext.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+            isLockedState.value = km.isKeyguardLocked
         }
 
         private fun startLocationUpdates() {
@@ -117,7 +127,13 @@ class ClockWallpaperService : WallpaperService() {
         private fun observeSettings() {
             settingsJob?.cancel()
             settingsJob = scope.launch {
-                settingsManager.settingsFlow.collect { settings ->
+                combine(
+                    settingsManager.homeSettingsFlow,
+                    settingsManager.lockSettingsFlow,
+                    isLockedState
+                ) { home, lock, isLocked ->
+                    if (isLocked) lock else home
+                }.collect { settings ->
                     currentSettings = settings
                     if (isVisible) {
                         drawFrame()
@@ -128,11 +144,13 @@ class ClockWallpaperService : WallpaperService() {
 
         override fun onVisibilityChanged(visible: Boolean) {
             if (visible) {
+                updateLockState()
                 startRendering()
             } else {
                 stopRendering()
             }
         }
+
 
         private fun startRendering() {
             renderJob?.cancel()
@@ -195,14 +213,32 @@ class ClockWallpaperService : WallpaperService() {
                         wakeHour = endDt.hour + endDt.minute / 60.0
                         sleepDuration = lastLog.minutesAsleep / 60.0
                         
+                        // Dynamic Sleep Need Calculation (Matching Python version)
+                        val totalAsleepMins = logs.sumOf { it.minutesAsleep }
+                        val totalBedMins = logs.sumOf { it.timeInBed }
+                        val bedtimeGoalHours = 9.75 // This is the 'bedtime_goal_hours' from Python
+                        
+                        val empiricalEfficiency = if (totalBedMins > 0) {
+                            totalAsleepMins.toDouble() / totalBedMins.toDouble()
+                        } else {
+                            1.0
+                        }
+                        
+                        val sleepNeedHours = bedtimeGoalHours * empiricalEfficiency
+                        Log.d(TAG, "Dynamic Efficiency: ${String.format("%.1f", empiricalEfficiency * 100)}%")
+                        Log.d(TAG, "Dynamic Sleep Need: ${String.format("%.2f", sleepNeedHours)}h")
+
                         // Sleep debt calculation
                         val mappedLogs = logs.map { SleepLog(it.dateOfSleep, it.minutesAsleep, it.isMainSleep, it.timeInBed) }
-                        sleepDebt = EnergyCalculator.computeSleepDebt(mappedLogs, 9.75) // Goal 9.75
+                        sleepDebt = EnergyCalculator.computeSleepDebt(mappedLogs, sleepNeedHours)
                         
                         // Bathyphase
-                        val hrPoints = fitbitManager.fetchHeartRateIntraday(lastLog.dateOfSleep, lastLog.startTime, lastLog.endTime)
+                        val hrPoints = fitbitManager.fetchHeartRateIntraday(lastLog.startTime, lastLog.endTime)
                         val mappedHr = hrPoints.map { HeartRatePoint(it.time, it.value) }
                         bathyphaseHour = EnergyCalculator.findBathyphase(mappedHr)
+                        
+                        fitbitManager.saveMetrics(bathyphaseHour, empiricalEfficiency, sleepNeedHours)
+                        
                         Log.d(TAG, "Fitbit data updated successfully. Wake: $wakeHour, Debt: $sleepDebt")
                     }
                 }

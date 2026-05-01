@@ -1,13 +1,14 @@
 package com.example.a24_hr_clock.logic
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
 
 @Serializable
 data class FitbitTokens(
-    val access_token: String,
-    val refresh_token: String,
-    val expires_in: Int,
-    val user_id: String
+    @SerialName("access_token") val access_token: String,
+    @SerialName("refresh_token") val refresh_token: String,
+    @SerialName("expires_in") val expires_in: Int,
+    @SerialName("user_id") val user_id: String
 )
 
 @Serializable
@@ -27,6 +28,7 @@ data class SleepLogEntry(
 
 @Serializable
 data class HeartRateResponse(
+    @SerialName("activities-heart-intraday")
     val activities_heart_intraday: IntradayDataset? = null
 )
 

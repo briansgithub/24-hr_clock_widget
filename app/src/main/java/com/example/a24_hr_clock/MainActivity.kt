@@ -119,12 +119,18 @@ fun MainScreen(
     val scope = rememberCoroutineScope()
     var isLoggedIn by remember { mutableStateOf(false) }
     var sleepLogs by remember { mutableStateOf<List<SleepLogEntry>>(emptyList()) }
-    val settings by settingsManager.settingsFlow.collectAsState(initial = ClockSettings())
+    var metrics by remember { mutableStateOf<Triple<Double?, Double, Double>>(Triple(null, 1.0, 9.75)) }
+    
+    val homeSettings by settingsManager.homeSettingsFlow.collectAsState(initial = ClockSettings())
+    val lockSettings by settingsManager.lockSettingsFlow.collectAsState(initial = ClockSettings())
+    
+    var selectedTab by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
         isLoggedIn = fitbitManager.isLoggedIn()
         if (isLoggedIn) {
             sleepLogs = fitbitManager.getLastSleepLogs()
+            metrics = fitbitManager.getMetrics()
         }
     }
 
@@ -146,6 +152,27 @@ fun MainScreen(
             style = MaterialTheme.typography.bodyLarge
         )
 
+        if (isLoggedIn) {
+            val (bathy, eff, need) = metrics
+            Text(
+                text = "Overall Efficiency: ${String.format("%.1f", eff * 100)}%",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold
+            )
+            val bathyStr = if (bathy != null) {
+                val h = bathy.toInt()
+                val m = ((bathy - h) * 60).toInt()
+                val amPm = if (h < 12) "AM" else "PM"
+                val hDisp = if (h % 12 == 0) 12 else h % 12
+                String.format("%d:%02d %s", hDisp, m, amPm)
+            } else "--:--"
+            Text(
+                text = "Bathyphase: $bathyStr",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
         
         Button(onClick = onLoginClick) {
@@ -159,7 +186,6 @@ fun MainScreen(
                     scope.launch {
                         Toast.makeText(context, "Refreshing Fitbit data...", Toast.LENGTH_SHORT).show()
                         context.sendBroadcast(Intent("com.example.a24_hr_clock.REFRESH_DATA"))
-                        // Update logs in UI after a short delay
                         kotlinx.coroutines.delay(2000)
                         sleepLogs = fitbitManager.getLastSleepLogs()
                     }
@@ -173,74 +199,56 @@ fun MainScreen(
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
 
+        TabRow(selectedTabIndex = selectedTab) {
+            Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
+                Text("Home Screen", modifier = Modifier.padding(16.dp))
+            }
+            Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
+                Text("Lock Screen", modifier = Modifier.padding(16.dp))
+            }
+        }
+
+        val currentSettings = if (selectedTab == 0) homeSettings else lockSettings
+        val updateFunc: (ClockSettings) -> Unit = { updated ->
+            scope.launch {
+                if (selectedTab == 0) settingsManager.updateHomeSettings(updated)
+                else settingsManager.updateLockSettings(updated)
+            }
+        }
+
+
+
+        Spacer(modifier = Modifier.height(16.dp))
         Text(text = "DISPLAY", style = MaterialTheme.typography.labelLarge)
         
-        SettingToggle("Numbers", settings.showNumbers) { 
-            scope.launch { settingsManager.updateSettings(settings.copy(showNumbers = it)) }
+        SettingToggle("Numbers", currentSettings.showNumbers) { 
+            updateFunc(currentSettings.copy(showNumbers = it))
         }
         
-        SettingToggle("Sun & Moon Icons", settings.showSunMoon) {
-            scope.launch { settingsManager.updateSettings(settings.copy(showSunMoon = it)) }
+        SettingToggle("Sun & Moon Icons", currentSettings.showSunMoon) {
+            updateFunc(currentSettings.copy(showSunMoon = it))
         }
         
-        SettingToggle("Small Clock in Top-Right", settings.smallTopRight) {
-            scope.launch { settingsManager.updateSettings(settings.copy(smallTopRight = it)) }
+        SettingToggle("Small Clock in Top-Right", currentSettings.smallTopRight) {
+            updateFunc(currentSettings.copy(smallTopRight = it))
         }
 
         Spacer(modifier = Modifier.height(16.dp))
         Text(text = "SLEEP", style = MaterialTheme.typography.labelLarge)
 
-        SettingToggle("Show Sleep on Clock", settings.showSleep) {
-            scope.launch { settingsManager.updateSettings(settings.copy(showSleep = it)) }
+        SettingToggle("Show Sleep on Clock", currentSettings.showSleep) {
+            updateFunc(currentSettings.copy(showSleep = it))
         }
         
-        SettingToggle("Show Sleep Debt Text", settings.showSleepDebtText) {
-            scope.launch { settingsManager.updateSettings(settings.copy(showSleepDebtText = it)) }
+        SettingToggle("Show Sleep Debt Text", currentSettings.showSleepDebtText) {
+            updateFunc(currentSettings.copy(showSleepDebtText = it))
         }
 
         Spacer(modifier = Modifier.height(16.dp))
         Text(text = "ENERGY", style = MaterialTheme.typography.labelLarge)
 
-        SettingToggle("Show Energy Curve", settings.showEnergy) {
-            scope.launch { settingsManager.updateSettings(settings.copy(showEnergy = it)) }
-        }
-
-        if (isLoggedIn && sleepLogs.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(24.dp))
-            Text(text = "SLEEP LOG (Last 14 Days)", style = MaterialTheme.typography.labelLarge)
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium)
-                    .padding(8.dp)
-            ) {
-                // Header
-                Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
-                    Text("Date", modifier = Modifier.weight(1.2f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    Text("Start", modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    Text("Duration", modifier = Modifier.weight(0.8f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    Text("Main", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                }
-                
-                HorizontalDivider(modifier = Modifier.padding(bottom = 4.dp))
-
-                sleepLogs.sortedByDescending { it.dateOfSleep }.take(14).forEach { log ->
-                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                        Text(log.dateOfSleep, modifier = Modifier.weight(1.2f), style = MaterialTheme.typography.bodySmall)
-                        
-                        val startFmt = try {
-                            java.time.LocalDateTime.parse(log.startTime.replace("Z", ""))
-                                .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
-                        } catch (e: Exception) { log.startTime.take(5) }
-                        
-                        Text(startFmt, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                        Text("${String.format("%.1f", log.minutesAsleep / 60.0)}h", modifier = Modifier.weight(0.8f), style = MaterialTheme.typography.bodySmall)
-                        Text(if (log.isMainSleep) "Y" else "N", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            }
+        SettingToggle("Show Energy Curve", currentSettings.showEnergy) {
+            updateFunc(currentSettings.copy(showEnergy = it))
         }
 
         Spacer(modifier = Modifier.height(32.dp))
@@ -257,8 +265,70 @@ fun MainScreen(
         ) {
             Text("Launch Wallpaper Picker")
         }
+
+        if (isLoggedIn && sleepLogs.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(text = "SLEEP LOG (Last 14 Days)", style = MaterialTheme.typography.labelLarge)
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium)
+                    .padding(8.dp)
+            ) {
+                // Header
+                Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+                    Text("Day", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Text("Date", modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Text("Start", modifier = Modifier.weight(0.9f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Text("Dur", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Text("Eff", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Text("Debt", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                }
+                
+                HorizontalDivider(modifier = Modifier.padding(bottom = 4.dp))
+
+                sleepLogs.sortedByDescending { it.dateOfSleep }.take(14).forEach { log ->
+                    val (bathy, eff, sleepNeed) = metrics
+                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                        val dateObj = try { java.time.LocalDate.parse(log.dateOfSleep) } catch (e: Exception) { null }
+                        val dayStr = dateObj?.format(java.time.format.DateTimeFormatter.ofPattern("E")) ?: ""
+                        val dateStr = dateObj?.format(java.time.format.DateTimeFormatter.ofPattern("MM/dd")) ?: log.dateOfSleep.takeLast(5)
+                        
+                        Text(dayStr, modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall)
+                        Text(dateStr, modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.bodySmall)
+                        
+                        val startFmt = try {
+                            java.time.LocalDateTime.parse(log.startTime.replace("Z", ""))
+                                .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+                        } catch (e: Exception) { log.startTime.take(5) }
+                        
+                        Text(startFmt, modifier = Modifier.weight(0.9f), style = MaterialTheme.typography.bodySmall)
+                        
+                        val asleepH = log.minutesAsleep / 60.0
+                        Text("${String.format("%.1f", asleepH)}h", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall)
+                        
+                        val rowEff = if (log.timeInBed > 0) (log.minutesAsleep.toDouble() / log.timeInBed) * 100 else 0.0
+                        Text("${rowEff.toInt()}%", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall)
+                        
+                        val debt = if (log.isMainSleep) sleepNeed - asleepH else -asleepH
+                        val debtColor = if (debt > 0.1) Color(0xFFFF6B6B) else if (debt < -0.1) Color(0xFF6BFF6B) else MaterialTheme.colorScheme.onSurface
+                        Text(
+                            text = String.format("%+.1fh", debt),
+                            modifier = Modifier.weight(0.6f),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = debtColor
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
     }
 }
+
 
 @Composable
 fun SettingToggle(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
