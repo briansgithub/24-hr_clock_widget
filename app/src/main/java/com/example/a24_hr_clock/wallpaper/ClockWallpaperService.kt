@@ -49,6 +49,13 @@ class ClockWallpaperService : WallpaperService() {
             }
         }
 
+        private val lockStateReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                Log.d(TAG, "Lock state broadcast received: ${intent?.action}")
+                updateLockState()
+            }
+        }
+
         // Data state
         private var sunriseHour = 6.0
         private var sunsetHour = 18.0
@@ -81,6 +88,13 @@ class ClockWallpaperService : WallpaperService() {
 
             val filter = IntentFilter("com.example.a24_hr_clock.REFRESH_DATA")
             registerReceiver(refreshReceiver, filter, RECEIVER_EXPORTED)
+
+            val lockFilter = IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_USER_PRESENT)
+            }
+            registerReceiver(lockStateReceiver, lockFilter)
         }
 
         private fun updateLockState() {
@@ -279,6 +293,7 @@ class ClockWallpaperService : WallpaperService() {
         override fun onDestroy() {
             super.onDestroy()
             unregisterReceiver(refreshReceiver)
+            unregisterReceiver(lockStateReceiver)
             stopRendering()
             dataUpdateJob?.cancel()
             settingsJob?.cancel()
