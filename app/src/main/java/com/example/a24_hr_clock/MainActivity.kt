@@ -35,6 +35,7 @@ import com.example.a24_hr_clock.logic.SleepLogEntry
 import com.example.a24_hr_clock.ui.theme._24_hr_clockTheme
 import com.example.a24_hr_clock.wallpaper.ClockWallpaperService
 import kotlinx.coroutines.launch
+import kotlin.math.*
 
 class MainActivity : ComponentActivity() {
     private lateinit var fitbitManager: FitbitManager
@@ -299,21 +300,54 @@ fun MainScreen(
                     .background(MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium)
                     .padding(8.dp)
             ) {
+                val displayLogs = sleepLogs.sortedByDescending { it.dateOfSleep }.take(14)
+                val (bathy, eff, sleepNeed) = metrics
+                val avgAsleepDur = if (displayLogs.isNotEmpty()) displayLogs.map { it.minutesAsleep / 60.0 }.average() else 0.0
+                val avgEff = if (displayLogs.isNotEmpty()) {
+                    displayLogs.filter { it.timeInBed > 0 }
+                        .map { it.minutesAsleep.toDouble() / it.timeInBed }
+                        .average()
+                } else 0.0
+                var totalRaw = 0.0
+                var totalWtd = 0.0
+
+                val avgBedtime = if (displayLogs.isNotEmpty()) {
+                    var sumX = 0.0
+                    var sumY = 0.0
+                    displayLogs.forEach { log ->
+                        try {
+                            val dt = java.time.LocalDateTime.parse(log.startTime.replace("Z", ""))
+                            val h = dt.hour + dt.minute / 60.0
+                            val rad = 2.0 * PI * (h / 24.0)
+                            sumX += cos(rad)
+                            sumY += sin(rad)
+                        } catch (e: Exception) { }
+                    }
+                    val avgRad = atan2(sumY, sumX)
+                    var avgH = (avgRad * 24.0) / (2.0 * PI)
+                    if (avgH < 0) avgH += 24.0
+                    
+                    val R = sqrt(sumX * sumX + sumY * sumY) / displayLogs.size
+                    val circularSD = if (R > 0) sqrt(-2.0 * ln(R)) else Double.POSITIVE_INFINITY
+                    val sdHours = (circularSD * 24.0) / (2.0 * PI)
+                    
+                    avgH to sdHours
+                } else null
+
                 // Header
                 Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
                     Text("Day", modifier = Modifier.weight(0.4f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                     Text("Date", modifier = Modifier.weight(0.8f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    Text("Asleep", modifier = Modifier.weight(1.1f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                    Text("Asleep", modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
                     Text("Dur", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
                     Text("Eff", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
-                    Text("Raw", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
-                    Text("Wtd", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                    Text("Raw Debt", modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                    Text("Wtd Debt", modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
                 }
                 
                 HorizontalDivider(modifier = Modifier.padding(bottom = 4.dp))
 
-                sleepLogs.sortedByDescending { it.dateOfSleep }.take(14).forEachIndexed { i, log ->
-                    val (bathy, eff, sleepNeed) = metrics
+                displayLogs.forEachIndexed { i, log ->
                     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                         val dateObj = try { java.time.LocalDate.parse(log.dateOfSleep) } catch (e: Exception) { null }
                         val dayStr = dateObj?.format(java.time.format.DateTimeFormatter.ofPattern("E")) ?: ""
@@ -327,7 +361,7 @@ fun MainScreen(
                                 .format(java.time.format.DateTimeFormatter.ofPattern("h:mm a"))
                         } catch (e: Exception) { log.startTime.take(5) }
                         
-                        Text(startFmt, modifier = Modifier.weight(1.1f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End)
+                        Text(startFmt, modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End)
                         
                         val asleepH = log.minutesAsleep / 60.0
                         Text("${String.format("%.1f", asleepH)}h", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End)
@@ -336,24 +370,87 @@ fun MainScreen(
                         Text("${rowEff.toInt()}%", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End)
                         
                         val debt = if (log.isMainSleep) sleepNeed - asleepH else -asleepH
+                        val weightedDebt = debt * Math.pow(0.9, i.toDouble())
+                        
+                        totalRaw += debt
+                        totalWtd += weightedDebt
+
                         val debtColor = if (debt > 0.1) Color(0xFFFF6B6B) else if (debt < -0.1) Color(0xFF6BFF6B) else MaterialTheme.colorScheme.onSurface
+                        
                         Text(
                             text = String.format("%+.1f", debt),
-                            modifier = Modifier.weight(0.5f),
+                            modifier = Modifier.weight(0.7f),
                             style = MaterialTheme.typography.bodySmall,
-                            color = debtColor,
+                            color = debtColor.copy(alpha = 0.5f), // Darker Raw Debt
                             textAlign = TextAlign.End
                         )
 
-                        val weightedDebt = debt * Math.pow(0.9, i.toDouble())
                         Text(
                             text = String.format("%+.1f", weightedDebt),
-                            modifier = Modifier.weight(0.5f),
+                            modifier = Modifier.weight(0.7f),
                             style = MaterialTheme.typography.bodySmall,
-                            color = debtColor.copy(alpha = 0.7f),
+                            color = debtColor, // Brighter Wtd Debt
                             textAlign = TextAlign.End
                         )
                     }
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                
+                // Summary Row
+                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                    Text("AVG/TOT", modifier = Modifier.weight(1.2f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    
+                    val bedtimeStr = avgBedtime?.let { (h, sd) ->
+                        val hr = h.toInt()
+                        val mn = ((h - hr) * 60).toInt()
+                        val localTime = java.time.LocalTime.of(hr % 24, mn % 60)
+                        val timeStr = localTime.format(java.time.format.DateTimeFormatter.ofPattern("h:mm a"))
+                        if (sd.isFinite() && sd > 0.1) {
+                            "$timeStr ±${String.format("%.1f", sd)}h"
+                        } else {
+                            timeStr
+                        }
+                    } ?: ""
+                    
+                    Text(
+                        text = bedtimeStr,
+                        modifier = Modifier.weight(1.0f),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.End
+                    )
+                    
+                    Text(
+                        text = "${String.format("%.1f", avgAsleepDur)}h",
+                        modifier = Modifier.weight(0.5f),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.End
+                    )
+                    Text(
+                        text = "${(avgEff * 100).toInt()}%",
+                        modifier = Modifier.weight(0.5f),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.End
+                    )
+                    Text(
+                        text = String.format("%+.1f", totalRaw),
+                        modifier = Modifier.weight(0.7f),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.End,
+                        color = (if (totalRaw > 0.1) Color(0xFFFF6B6B) else if (totalRaw < -0.1) Color(0xFF6BFF6B) else MaterialTheme.colorScheme.onSurface).copy(alpha = 0.5f)
+                    )
+                    Text(
+                        text = String.format("%+.1f", totalWtd),
+                        modifier = Modifier.weight(0.7f),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.End,
+                        color = if (totalWtd > 0.1) Color(0xFFFF6B6B) else if (totalWtd < -0.1) Color(0xFF6BFF6B) else MaterialTheme.colorScheme.onSurface
+                    )
                 }
             }
         }
