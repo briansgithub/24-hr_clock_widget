@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -300,46 +301,57 @@ fun MainScreen(
             ) {
                 // Header
                 Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
-                    Text("Day", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    Text("Date", modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    Text("Start", modifier = Modifier.weight(0.9f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    Text("Dur", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    Text("Eff", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    Text("Debt", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Text("Day", modifier = Modifier.weight(0.4f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Text("Date", modifier = Modifier.weight(0.8f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Text("Asleep", modifier = Modifier.weight(1.1f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                    Text("Dur", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                    Text("Eff", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                    Text("Raw", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                    Text("Wtd", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
                 }
                 
                 HorizontalDivider(modifier = Modifier.padding(bottom = 4.dp))
 
-                sleepLogs.sortedByDescending { it.dateOfSleep }.take(14).forEach { log ->
+                sleepLogs.sortedByDescending { it.dateOfSleep }.take(14).forEachIndexed { i, log ->
                     val (bathy, eff, sleepNeed) = metrics
                     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                         val dateObj = try { java.time.LocalDate.parse(log.dateOfSleep) } catch (e: Exception) { null }
                         val dayStr = dateObj?.format(java.time.format.DateTimeFormatter.ofPattern("E")) ?: ""
                         val dateStr = dateObj?.format(java.time.format.DateTimeFormatter.ofPattern("MM/dd")) ?: log.dateOfSleep.takeLast(5)
                         
-                        Text(dayStr, modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall)
-                        Text(dateStr, modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.bodySmall)
+                        Text(dayStr, modifier = Modifier.weight(0.4f), style = MaterialTheme.typography.bodySmall)
+                        Text(dateStr, modifier = Modifier.weight(0.8f), style = MaterialTheme.typography.bodySmall)
                         
                         val startFmt = try {
                             java.time.LocalDateTime.parse(log.startTime.replace("Z", ""))
-                                .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+                                .format(java.time.format.DateTimeFormatter.ofPattern("h:mm a"))
                         } catch (e: Exception) { log.startTime.take(5) }
                         
-                        Text(startFmt, modifier = Modifier.weight(0.9f), style = MaterialTheme.typography.bodySmall)
+                        Text(startFmt, modifier = Modifier.weight(1.1f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End)
                         
                         val asleepH = log.minutesAsleep / 60.0
-                        Text("${String.format("%.1f", asleepH)}h", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall)
+                        Text("${String.format("%.1f", asleepH)}h", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End)
                         
                         val rowEff = if (log.timeInBed > 0) (log.minutesAsleep.toDouble() / log.timeInBed) * 100 else 0.0
-                        Text("${rowEff.toInt()}%", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall)
+                        Text("${rowEff.toInt()}%", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End)
                         
                         val debt = if (log.isMainSleep) sleepNeed - asleepH else -asleepH
                         val debtColor = if (debt > 0.1) Color(0xFFFF6B6B) else if (debt < -0.1) Color(0xFF6BFF6B) else MaterialTheme.colorScheme.onSurface
                         Text(
-                            text = String.format("%+.1fh", debt),
-                            modifier = Modifier.weight(0.6f),
+                            text = String.format("%+.1f", debt),
+                            modifier = Modifier.weight(0.5f),
                             style = MaterialTheme.typography.bodySmall,
-                            color = debtColor
+                            color = debtColor,
+                            textAlign = TextAlign.End
+                        )
+
+                        val weightedDebt = debt * Math.pow(0.9, i.toDouble())
+                        Text(
+                            text = String.format("%+.1f", weightedDebt),
+                            modifier = Modifier.weight(0.5f),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = debtColor.copy(alpha = 0.7f),
+                            textAlign = TextAlign.End
                         )
                     }
                 }
