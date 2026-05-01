@@ -631,11 +631,23 @@ class ClockWidget:
                 fill="#222222", width=line_width,
                 dash=(4, 4),
                 arrow=tk.LAST, arrowshape=(arrow_len, arrow_len, arrow_len/3),
+                capstyle=tk.ROUND,
                 tags=("phantom_hand", "phantom_hand_line")
+            )
+            # Add center dot for phantom hand
+            dot_r = line_width / 2
+            self.canvas.create_oval(
+                center_x - dot_r, center_y - dot_r,
+                center_x + dot_r, center_y + dot_r,
+                fill="#222222", outline="",
+                tags=("phantom_hand", "phantom_hand_dot")
             )
         else:
             self.canvas.coords("phantom_hand_line", center_x, center_y, hx, hy)
-            self.canvas.itemconfig("phantom_hand_line", width=line_width, arrowshape=(arrow_len, arrow_len, arrow_len/3))
+            self.canvas.itemconfig("phantom_hand_line", width=line_width, arrowshape=(arrow_len, arrow_len, arrow_len/3), capstyle=tk.ROUND)
+            dot_r = line_width / 2
+            self.canvas.coords("phantom_hand_dot", center_x - dot_r, center_y - dot_r, center_x + dot_r, center_y + dot_r)
+            self.canvas.itemconfig("phantom_hand_dot", fill="#222222")
         
         if self.wake_hour is not None:
             max_e = self._get_max_energy()
@@ -1098,10 +1110,21 @@ class ClockWidget:
         hy = center_y - radius * math.sin(hand_rad)
        
         arrow_len = radius * 0.12
+        hand_width = max(2, int(radius/25))
         self.canvas.create_line(
             center_x, center_y, hx, hy,
-            fill="#FF9F1C", width=max(2, int(radius/25)),
+            fill="#FF9F1C", width=hand_width,
             arrow=tk.LAST, arrowshape=(arrow_len, arrow_len, arrow_len/3),
+            capstyle=tk.ROUND,
+            tags="clock_hand"
+        )
+        
+        # Add a circular cap at the center for a perfectly rounded terminus
+        dot_r = hand_width / 2
+        self.canvas.create_oval(
+            center_x - dot_r, center_y - dot_r,
+            center_x + dot_r, center_y + dot_r,
+            fill="#FF9F1C", outline="",
             tags="clock_hand"
         )
         
