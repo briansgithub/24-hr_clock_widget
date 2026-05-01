@@ -26,7 +26,8 @@ class SettingsManager(private val context: Context) {
             showEnergy = true,
             showSunMoon = true,
             showSleepDebtText = true,
-            smallTopRight = true
+            smallTopRight = true,
+            showLifeCalendar = false
         )
 
         private val DEFAULT_LOCK_SETTINGS = ClockSettings(
@@ -35,8 +36,8 @@ class SettingsManager(private val context: Context) {
             showEnergy = false,
             showSunMoon = true,
             showSleepDebtText = false,
-            smallTopRight = false
-
+            smallTopRight = false,
+            showLifeCalendar = false
         )
     }
 
@@ -92,6 +93,7 @@ data class ClockSettings(
     val showEnergy: Boolean = true,
     val showSunMoon: Boolean = true,
     val showSleepDebtText: Boolean = true,
-    val smallTopRight: Boolean = false
+    val smallTopRight: Boolean = false,
+    val showLifeCalendar: Boolean = false
 )
 

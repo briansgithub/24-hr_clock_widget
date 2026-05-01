@@ -12,6 +12,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -62,8 +63,14 @@ class MainActivity : ComponentActivity() {
                         settingsManager = settingsManager,
                         modifier = Modifier.padding(innerPadding),
                         onLoginClick = { 
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(fitbitManager.getAuthUrl()))
-                            startActivity(intent)
+                            val intent = CustomTabsIntent.Builder().build()
+                            intent.launchUrl(this, Uri.parse(fitbitManager.getAuthUrl()))
+                        },
+                        onLogoutClick = {
+                            lifecycleScope.launch {
+                                fitbitManager.logout()
+                                Toast.makeText(this@MainActivity, "Logged out", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     )
                 }
@@ -74,14 +81,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkPermissions() {
-        val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
-        if (coarse != PackageManager.PERMISSION_GRANTED) {
+        val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+        if (fine != PackageManager.PERMISSION_GRANTED) {
             requestPermissionLauncher.launch(
                 arrayOf(
                     Manifest.permission.ACCESS_COARSE_LOCATION,
                     Manifest.permission.ACCESS_FINE_LOCATION
                 )
             )
+        } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            val background = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+            if (background != PackageManager.PERMISSION_GRANTED) {
+                // Background location must be requested separately on API 30+
+                // and it's best practice to explain why it's needed first.
+                Toast.makeText(this, "Please set Location to 'Allow all the time' for background updates", Toast.LENGTH_LONG).show()
+                requestPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION))
+            }
         }
     }
 
@@ -98,7 +113,9 @@ class MainActivity : ComponentActivity() {
                 lifecycleScope.launch {
                     val success = fitbitManager.handleAuthCode(code)
                     if (success) {
-                        Toast.makeText(this@MainActivity, "Fitbit Login Successful!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@MainActivity, "Fitbit Login Successful! Syncing...", Toast.LENGTH_SHORT).show()
+                        fitbitManager.refreshMetrics()
+                        Toast.makeText(this@MainActivity, "Sync Complete", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(this@MainActivity, "Fitbit Login Failed", Toast.LENGTH_SHORT).show()
                     }
@@ -113,26 +130,20 @@ fun MainScreen(
     fitbitManager: FitbitManager,
     settingsManager: SettingsManager,
     modifier: Modifier = Modifier,
-    onLoginClick: () -> Unit
+    onLoginClick: () -> Unit,
+    onLogoutClick: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var isLoggedIn by remember { mutableStateOf(false) }
-    var sleepLogs by remember { mutableStateOf<List<SleepLogEntry>>(emptyList()) }
-    var metrics by remember { mutableStateOf<Triple<Double?, Double, Double>>(Triple(null, 1.0, 9.75)) }
+    
+    val isLoggedIn by fitbitManager.loginStatusFlow.collectAsState(initial = false)
+    val sleepLogs by fitbitManager.sleepLogsFlow.collectAsState(initial = emptyList())
+    val metrics by fitbitManager.metricsFlow.collectAsState(initial = Triple(null, 1.0, 9.75))
     
     val homeSettings by settingsManager.homeSettingsFlow.collectAsState(initial = ClockSettings())
     val lockSettings by settingsManager.lockSettingsFlow.collectAsState(initial = ClockSettings())
     
     var selectedTab by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(Unit) {
-        isLoggedIn = fitbitManager.isLoggedIn()
-        if (isLoggedIn) {
-            sleepLogs = fitbitManager.getLastSleepLogs()
-            metrics = fitbitManager.getMetrics()
-        }
-    }
 
     Column(
         modifier = modifier
@@ -175,8 +186,15 @@ fun MainScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
         
-        Button(onClick = onLoginClick) {
-            Text(if (isLoggedIn) "Relink Fitbit" else "Login with Fitbit")
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onLoginClick, modifier = Modifier.weight(1f)) {
+                Text(if (isLoggedIn) "Relink Fitbit" else "Login with Fitbit")
+            }
+            if (isLoggedIn) {
+                OutlinedButton(onClick = onLogoutClick) {
+                    Text("Logout")
+                }
+            }
         }
 
         if (isLoggedIn) {
@@ -186,8 +204,7 @@ fun MainScreen(
                     scope.launch {
                         Toast.makeText(context, "Refreshing Fitbit data...", Toast.LENGTH_SHORT).show()
                         context.sendBroadcast(Intent("com.example.a24_hr_clock.REFRESH_DATA"))
-                        kotlinx.coroutines.delay(2000)
-                        sleepLogs = fitbitManager.getLastSleepLogs()
+                        fitbitManager.refreshMetrics()
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -231,6 +248,10 @@ fun MainScreen(
         
         SettingToggle("Small Clock in Top-Right", currentSettings.smallTopRight) {
             updateFunc(currentSettings.copy(smallTopRight = it))
+        }
+
+        SettingToggle("Life Calendar Background", currentSettings.showLifeCalendar) {
+            updateFunc(currentSettings.copy(showLifeCalendar = it))
         }
 
         Spacer(modifier = Modifier.height(16.dp))

@@ -283,7 +283,8 @@ class ClockWallpaperService : WallpaperService() {
                     currentSettings.showSunMoon,
                     currentSettings.showSleepDebtText,
                     currentSettings.showEnergy,
-                    currentSettings.smallTopRight
+                    currentSettings.smallTopRight,
+                    currentSettings.showLifeCalendar
                 )
             } finally {
                 surfaceHolder.unlockCanvasAndPost(canvas)

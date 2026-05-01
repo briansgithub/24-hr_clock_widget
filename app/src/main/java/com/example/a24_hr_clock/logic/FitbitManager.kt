@@ -41,6 +41,16 @@ class FitbitManager(private val context: Context) {
         }
     }
 
+    val metricsFlow = context.dataStore.data.map { data ->
+        Triple(
+            data[BATHYPHASE],
+            data[EFFICIENCY] ?: 1.0,
+            data[SLEEP_NEED] ?: 9.75
+        )
+    }
+
+    val loginStatusFlow = context.dataStore.data.map { it[ACCESS_TOKEN] != null }
+
     suspend fun getMetrics(): Triple<Double?, Double, Double> {
         val data = context.dataStore.data.first()
         return Triple(
@@ -95,10 +105,23 @@ class FitbitManager(private val context: Context) {
         return getAccessToken() != null
     }
 
+    suspend fun logout() {
+        context.dataStore.edit { it.clear() }
+    }
+
     private suspend fun saveTokens(tokens: FitbitTokens) {
         context.dataStore.edit { prefs ->
             prefs[ACCESS_TOKEN] = tokens.access_token
             prefs[REFRESH_TOKEN] = tokens.refresh_token
+        }
+    }
+
+    val sleepLogsFlow = context.dataStore.data.map { prefs ->
+        val jsonString = prefs[LAST_SLEEP_LOGS] ?: return@map emptyList<SleepLogEntry>()
+        try {
+            json.decodeFromString<List<SleepLogEntry>>(jsonString)
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 
@@ -177,8 +200,8 @@ class FitbitManager(private val context: Context) {
     suspend fun fetchHeartRateIntraday(startTimeIso: String, endTimeIso: String): List<HeartRatePointEntry> = withContext(Dispatchers.IO) {
         val token = getAccessToken() ?: return@withContext emptyList()
         
-        val startDt = java.time.LocalDateTime.parse(startTimeIso.replace("Z", ""))
-        val endDt = java.time.LocalDateTime.parse(endTimeIso.replace("Z", ""))
+        val startDt = try { java.time.LocalDateTime.parse(startTimeIso.replace("Z", "")) } catch (e: Exception) { return@withContext emptyList() }
+        val endDt = try { java.time.LocalDateTime.parse(endTimeIso.replace("Z", "")) } catch (e: Exception) { return@withContext emptyList() }
         
         val datesNeeded = mutableListOf<String>()
         var cursor = startDt.toLocalDate()
@@ -207,9 +230,10 @@ class FitbitManager(private val context: Context) {
 
             if (response.isSuccessful) {
                 val body = response.body?.string() ?: continue
-                val points = json.decodeFromString<HeartRateResponse>(body).activities_heart_intraday?.dataset ?: continue
+                val points = try {
+                    json.decodeFromString<HeartRateResponse>(body).activities_heart_intraday?.dataset
+                } catch (e: Exception) { null } ?: continue
                 
-                // Filter points within the exact sleep window
                 for (p in points) {
                     val ptTime = java.time.LocalTime.parse(p.time)
                     val ptDt = java.time.LocalDateTime.of(java.time.LocalDate.parse(dateStr), ptTime)
@@ -220,5 +244,24 @@ class FitbitManager(private val context: Context) {
             }
         }
         return@withContext allPoints
+    }
+
+    suspend fun refreshMetrics() {
+        val now = java.time.LocalDate.now()
+        val logs = fetchSleepLogs(now.minusDays(14).toString(), now.toString())
+        if (logs.isEmpty()) return
+
+        val mainSleep = logs.filter { it.isMainSleep }.maxByOrNull { it.dateOfSleep } ?: return
+        
+        // Efficiency
+        val avgEff = logs.filter { it.timeInBed > 0 }
+            .map { it.minutesAsleep.toDouble() / it.timeInBed }
+            .average()
+        
+        // Bathyphase
+        val hrPoints = fetchHeartRateIntraday(mainSleep.startTime, mainSleep.endTime)
+        val bathy = EnergyCalculator.findBathyphase(hrPoints.map { HeartRatePoint(it.time, it.value) })
+        
+        saveMetrics(bathy, if (avgEff.isNaN()) 1.0 else avgEff, 9.75)
     }
 }

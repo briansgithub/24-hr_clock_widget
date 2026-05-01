@@ -60,6 +60,9 @@ dependencies {
     // DataStore for settings and tokens
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
+    // Browser for OAuth
+    implementation("androidx.browser:browser:1.8.0")
+
     // Location services
     implementation("com.google.android.gms:play-services-location:21.3.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")

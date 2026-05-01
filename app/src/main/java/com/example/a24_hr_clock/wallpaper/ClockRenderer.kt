@@ -93,6 +93,8 @@ class ClockRenderer {
         isAntiAlias = true
     }
 
+    private val lifeCalendarRenderer = com.example.a24_hr_clock.logic.LifeCalendarRenderer()
+
     fun draw(
         canvas: Canvas,
         width: Int,
@@ -114,10 +116,15 @@ class ClockRenderer {
         showSunMoon: Boolean = true,
         showSleepDebtText: Boolean = true,
         showEnergy: Boolean = false,
-        smallTopRight: Boolean = false
+        smallTopRight: Boolean = false,
+        showLifeCalendar: Boolean = false
     ) {
         // Clear background to OLED black
         canvas.drawColor(Color.BLACK)
+
+        if (showLifeCalendar) {
+            lifeCalendarRenderer.draw(canvas, width, height)
+        }
 
         val centerX: Float
         val centerY: Float
