@@ -49,8 +49,8 @@ class ClockWidget:
         self.root = root
         self.root.title("24h Clock")
        
-        window_width = 230
-        window_height = 230
+        window_width = 200
+        window_height = 200
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
         
@@ -74,6 +74,7 @@ class ClockWidget:
         self.include_naps = tk.BooleanVar(value=True)
         self.show_sun_moon = tk.BooleanVar(value=True)
         self.show_manual_wake = tk.BooleanVar(value=True)
+        self.show_sleep_table = tk.BooleanVar(value=False)
        
         # ── Fitbit Integration ────────────────────────────────────────────────
         self.fitbit = FitbitClient(
@@ -86,7 +87,9 @@ class ClockWidget:
         self.sleep_debt_hours   = 0.0   # hours; updated after first Fitbit fetch
         self.bathyphase_hour    = None  # clock hour; None until intraday HR fetched
         self.sleep_efficiency   = None  # 0.0 to 1.0
+        self.sleep_need_hours   = self.BEDTIME_GOAL_HOURS
         self.last_fitbit_update = None
+        self.raw_sleep_logs     = []    # list of raw Fitbit sleep records
         # ─────────────────────────────────────────────────────────────────────
        
         # Transparency State
@@ -114,6 +117,14 @@ class ClockWidget:
         self.controls_window.configure(bg=self.solid_bg)
         self.controls_window.overrideredirect(True)
         self.controls_window.withdraw()
+
+        # ── Sleep Table Window ────────────────────────────────────────────────
+        self.sleep_table_window = tk.Toplevel(self.root)
+        self.sleep_table_window.title("Sleep Log")
+        self.sleep_table_window.configure(bg=self.solid_bg)
+        self.sleep_table_window.overrideredirect(True)
+        self.sleep_table_window.withdraw()
+        self._build_sleep_table()
         
         self.controls_frame = tk.Frame(self.controls_window, bg=self.solid_bg)
         self.controls_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -157,6 +168,7 @@ class ClockWidget:
         self.sleep_toggle = add_toggle("Show Sleep on Clock", self.show_sleep, self.draw_clock)
         self.bedtime_toggle = add_toggle("Time in Bed vs. Asleep Hrs.", self.show_total_bedtime, self.draw_clock)
         self.debt_text_toggle = add_toggle("Show Sleep Debt Text", self.show_sleep_debt_text, self.draw_clock)
+        self.table_toggle = add_toggle("Show Sleep Log Table", self.show_sleep_table, self.update_sleep_table_visibility)
 
         add_divider("ENERGY")
         self.energy_toggle = add_toggle("Show Energy Curve", self.show_energy, self.draw_clock)
@@ -248,14 +260,14 @@ class ClockWidget:
         )
         self.refresh_btn.pack(side=tk.TOP, anchor=tk.CENTER, padx=5, pady=10)
         self._control_widgets.append(self.refresh_btn)
-       
+
         self.sunrise_hour = 6.0
         self.sunset_hour = 18.0
        
         self.canvas.bind("<Configure>", self.on_resize)
        
         # Bind hover events
-        for widget in (self.root, self.controls_window):
+        for widget in (self.root, self.controls_window, self.sleep_table_window):
             widget.bind("<Enter>", self.on_enter)
             widget.bind("<Leave>", self.on_leave)
        
@@ -347,11 +359,43 @@ class ClockWidget:
         self.controls_window.lift()
         self.controls_window.attributes('-topmost', self.always_on_top.get())
 
+        # Position sleep table to the right of controls
+        if hasattr(self, 'sleep_table_window') and self.show_sleep_table.get():
+            self.controls_window.update_idletasks()
+            cx = self.controls_window.winfo_rootx()
+            cy = self.controls_window.winfo_rooty()
+            cw = self.controls_window.winfo_width()
+            self.sleep_table_window.geometry(f"+{cx + cw + 10}+{cy}")
+            self.sleep_table_window.deiconify()
+            self.sleep_table_window.lift()
+            self.sleep_table_window.attributes('-topmost', self.always_on_top.get())
+        elif hasattr(self, 'sleep_table_window'):
+            self.sleep_table_window.withdraw()
+
     def make_controls_hidden(self):
         if not hasattr(self, 'controls_window'): return
         if not getattr(self, 'is_controls_visible', False): return
         self.is_controls_visible = False
         self.controls_window.withdraw()
+        if hasattr(self, 'sleep_table_window'):
+            self.sleep_table_window.withdraw()
+
+    def update_sleep_table_visibility(self):
+        """Explicitly show/hide and position the sleep table based on its toggle variable."""
+        if not hasattr(self, 'sleep_table_window'): return
+        
+        if self.show_sleep_table.get() and getattr(self, 'is_controls_visible', False):
+            # Position and show
+            self.controls_window.update_idletasks()
+            cx = self.controls_window.winfo_rootx()
+            cy = self.controls_window.winfo_rooty()
+            cw = self.controls_window.winfo_width()
+            self.sleep_table_window.geometry(f"+{cx + cw + 10}+{cy}")
+            self.sleep_table_window.deiconify()
+            self.sleep_table_window.lift()
+            self.sleep_table_window.attributes('-topmost', self.always_on_top.get())
+        else:
+            self.sleep_table_window.withdraw()
 
     def make_solid(self):
         self.make_clock_solid()
@@ -393,6 +437,13 @@ class ClockWidget:
             cw = self.controls_window.winfo_width()
             ch = self.controls_window.winfo_height()
             in_controls = not (mx < cx - margin or mx > cx + cw + margin or my < cy - margin or my > cy + ch + margin)
+
+        if not in_controls and getattr(self, 'sleep_table_window', None) and self.sleep_table_window.winfo_viewable():
+            tx = self.sleep_table_window.winfo_rootx()
+            ty = self.sleep_table_window.winfo_rooty()
+            tw = self.sleep_table_window.winfo_width()
+            th = self.sleep_table_window.winfo_height()
+            in_controls = not (mx < tx - margin or mx > tx + tw + margin or my < ty - margin or my > ty + th + margin)
 
         if in_root and in_controls:
             top_widget = self.root.winfo_containing(mx, my)
@@ -707,6 +758,8 @@ class ClockWidget:
                     self.sleep_debt_hours   = debt if debt is not None else 0.0
                     self.bathyphase_hour    = bathy
                     self.sleep_efficiency   = eff
+                    self.sleep_need_hours   = need
+                    self.raw_sleep_logs     = inputs.get('raw_sleep_logs', [])
 
                     self.last_fitbit_update = datetime.datetime.now()
 
@@ -716,6 +769,7 @@ class ClockWidget:
                     self.energy_curve.bathyphase_hour  = self.bathyphase_hour
 
                     self.root.after(0, self.update_metric_labels)
+                    self.root.after(0, self.populate_sleep_table)
                     self.root.after(0, self.draw_clock)
 
                     # Save a snapshot of today's energy curve ONLY if:
@@ -733,6 +787,155 @@ class ClockWidget:
                 print(f"[update_fitbit_data] Fitbit background update failed: {e}")
        
         threading.Thread(target=_task, daemon=True).start()
+
+    def _build_sleep_table(self):
+        """Build the styled sleep log table inside sleep_table_window."""
+        ACCENT  = "#00ffcc"
+        HDR_BG  = "#1e1e1e"
+        BG      = self.solid_bg
+
+        outer = tk.Frame(self.sleep_table_window, bg=HDR_BG, bd=0)
+        outer.pack(fill=tk.BOTH, expand=True)
+
+        # Draggable title bar
+        title_bar = tk.Frame(outer, bg=HDR_BG)
+        title_bar.pack(fill=tk.X)
+        title_lbl = tk.Label(
+            title_bar, text="  Sleep Log", bg=HDR_BG, fg=ACCENT,
+            font=("Segoe UI", 10, "bold"), anchor="w", padx=4, pady=6
+        )
+        title_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        for w in (self.sleep_table_window, outer, title_bar, title_lbl):
+            w.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_table_window))
+            w.bind("<B1-Motion>", self.on_drag_motion)
+
+        # Column specs: (header_text, pixel_width, data_anchor)
+        self._table_cols = [
+            ("Day",      45,  "center"),
+            ("Date",     90,  "e"),
+            ("Start",    80,  "e"),
+            ("Duration", 65,  "e"),
+            ("Eff.",     50,  "e"),
+            ("Debt",     55,  "e"),
+        ]
+
+        # Single shared grid frame — headers at row 0, data below
+        self.table_frame = tk.Frame(outer, bg=BG)
+        self.table_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0, 6))
+
+        for col_i, (hdr_text, px_width, _) in enumerate(self._table_cols):
+            self.table_frame.columnconfigure(col_i, minsize=px_width, weight=0)
+            lbl = tk.Label(
+                self.table_frame, text=hdr_text,
+                bg=HDR_BG, fg=ACCENT,
+                font=("Segoe UI", 9, "bold"),
+                anchor="center"
+            )
+            lbl.grid(row=0, column=col_i, sticky="ew", padx=1, pady=(4, 2))
+            lbl.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_table_window))
+            lbl.bind("<B1-Motion>", self.on_drag_motion)
+
+        # Thin separator under headers
+        sep = tk.Frame(self.table_frame, bg="#444444", height=1)
+        sep.grid(row=1, column=0, columnspan=len(self._table_cols), sticky="ew")
+        sep.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_table_window))
+        sep.bind("<B1-Motion>", self.on_drag_motion)
+
+
+    def populate_sleep_table(self):
+        """Populate the sleep table from self.raw_sleep_logs."""
+        if not hasattr(self, 'table_frame') or not hasattr(self, '_table_cols'):
+            return
+
+        # Remove previous data rows (keep row 0=headers, row 1=separator)
+        for widget in self.table_frame.grid_slaves():
+            if int(widget.grid_info().get('row', 0)) >= 2:
+                widget.destroy()
+
+        TODAY_STR = datetime.datetime.now().strftime("%Y-%m-%d")
+        ROW_ODD   = "#2f2f2f"
+        ROW_EVN   = "#272727"
+        TODAY_BG  = "#2a2a4a"
+        TODAY_FG  = "#aaddff"
+        FG        = "#e0e0e0"
+
+        logs = sorted(
+            self.raw_sleep_logs,
+            key=lambda s: s.get('dateOfSleep', ''),
+            reverse=True
+        )
+
+        grid_row  = 2   # rows 0=headers, 1=separator
+        last_date = None
+
+        for i, rec in enumerate(logs):
+            date_str    = rec.get('dateOfSleep', '?')
+            start_raw   = rec.get('startTime', '')
+            mins_asleep = rec.get('minutesAsleep', 0)
+            mins_in_bed = rec.get('timeInBed', 0)
+            is_main     = rec.get('isMainSleep', True)
+
+            # White separator between different dates
+            if last_date and date_str != last_date:
+                sep = tk.Frame(self.table_frame, bg="white", height=1)
+                sep.grid(row=grid_row, column=0,
+                         columnspan=len(self._table_cols), sticky="ew")
+                sep.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_table_window))
+                sep.bind("<B1-Motion>", self.on_drag_motion)
+                grid_row += 1
+            last_date = date_str
+
+            bg_color = TODAY_BG if date_str == TODAY_STR else (ROW_ODD if i % 2 == 0 else ROW_EVN)
+            row_fg   = TODAY_FG if date_str == TODAY_STR else FG
+
+            # Format values
+            try:
+                dt_obj   = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+                day_fmt  = dt_obj.strftime("%a")
+                date_fmt = dt_obj.strftime("%m/%d/%Y")
+            except Exception:
+                day_fmt  = ""
+                date_fmt = date_str
+
+            try:
+                st        = datetime.datetime.fromisoformat(start_raw.replace('Z', ''))
+                start_fmt = st.strftime("%I:%M %p").lstrip('0')
+            except Exception:
+                start_fmt = start_raw[:5] if start_raw else '?'
+
+            asleep_h  = mins_asleep / 60.0
+            dur_fmt   = f"{asleep_h:.1f}h"
+            eff_fmt   = f"{mins_asleep / mins_in_bed * 100:.0f}%" if mins_in_bed > 0 else "—"
+            debt_val  = (self.sleep_need_hours - asleep_h) if is_main else -asleep_h
+            debt_fmt  = f"{debt_val:+.1f}h"
+            debt_fg   = "#ff6b6b" if debt_val > 0.1 else "#6bff6b" if debt_val < -0.1 else row_fg
+
+            cell_data = [
+                (day_fmt,   "center",  row_fg),
+                (date_fmt,  "e",  row_fg),
+                (start_fmt, "e",  row_fg),
+                (dur_fmt,   "e",  row_fg),
+                (eff_fmt,   "e",  row_fg),
+                (debt_fmt,  "e",  debt_fg),
+            ]
+
+            for col_i, (val, anc, fg_color) in enumerate(cell_data):
+                lbl = tk.Label(
+                    self.table_frame, text=val,
+                    bg=bg_color, fg=fg_color,
+                    font=("Segoe UI", 9),
+                    anchor=anc,
+                    padx=6
+                )
+                lbl.grid(row=grid_row, column=col_i, sticky="ew", pady=1)
+                lbl.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_table_window))
+                lbl.bind("<B1-Motion>", self.on_drag_motion)
+
+            grid_row += 1
+
+        # Shrink-wrap window to exact content size
+        self.sleep_table_window.update_idletasks()
+        self.sleep_table_window.geometry("")
 
     def update_metric_labels(self):
         """Update the Bathyphase and Efficiency labels in the controls window."""
