@@ -1405,15 +1405,51 @@ class ClockWidget:
                 mx = center_x + orbit_radius * math.cos(moon_rad)
                 my = center_y - orbit_radius * math.sin(moon_rad)
                 
-                moon_phases = ["🌕", "🌖", "🌗", "🌘", "🌑", "🌒", "🌓", "🌔"]
-                phase_idx = math.ceil((m_phase_val / 29.530588) * 8) % 8
-
-                self.canvas.create_text(
-                    mx, my,
-                    text=moon_phases[phase_idx],
-                    font=("Segoe UI Emoji", icon_size),
-                    fill="#E0E0E0"
+                # Manual drawing of the moon phase to fix rendering/coloring issues.
+                # This ensures the lit part is always light and the unlit part is dark,
+                # regardless of how the OS/font renders moon emojis.
+                p = (m_phase_val / 29.530588) % 1.0
+                m_r = icon_size / 1.6
+                
+                # Base unlit moon (shadow)
+                self.canvas.create_oval(
+                    mx - m_r, my - m_r, mx + m_r, my + m_r,
+                    fill="#444444", outline="", tags="sun_and_moon"
                 )
+                
+                # Lit part calculation
+                if 0.01 < p < 0.99: # Not a New Moon
+                    if p <= 0.5: # Waxing (lit on the right)
+                        self.canvas.create_arc(
+                            mx - m_r, my - m_r, mx + m_r, my + m_r,
+                            start=-90, extent=180,
+                            fill="#E0E0E0", outline="", style=tk.PIESLICE, tags="sun_and_moon"
+                        )
+                        mid_p = (p * 4) - 1
+                        e_width = abs(mid_p) * m_r
+                        e_color = "#444444" if mid_p < 0 else "#E0E0E0"
+                        self.canvas.create_oval(
+                            mx - e_width, my - m_r, mx + e_width, my + m_r,
+                            fill=e_color, outline="", tags="sun_and_moon"
+                        )
+                    else: # Waning (lit on the left)
+                        self.canvas.create_arc(
+                            mx - m_r, my - m_r, mx + m_r, my + m_r,
+                            start=90, extent=180,
+                            fill="#E0E0E0", outline="", style=tk.PIESLICE, tags="sun_and_moon"
+                        )
+                        mid_p = ((p - 0.5) * 4) - 1
+                        e_width = abs(mid_p) * m_r
+                        e_color = "#E0E0E0" if mid_p < 0 else "#444444"
+                        self.canvas.create_oval(
+                            mx - e_width, my - m_r, mx + e_width, my + m_r,
+                            fill=e_color, outline="", tags="sun_and_moon"
+                        )
+                elif 0.49 <= p <= 0.51: # Full Moon fallback
+                    self.canvas.create_oval(
+                        mx - m_r, my - m_r, mx + m_r, my + m_r,
+                        fill="#E0E0E0", outline="", tags="sun_and_moon"
+                    )
 
         def draw_sleep_debt_text():
             if self.show_sleep_debt_text.get() and self.sleep_debt_hours is not None:
