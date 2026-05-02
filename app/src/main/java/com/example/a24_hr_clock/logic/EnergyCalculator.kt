@@ -106,7 +106,7 @@ object EnergyCalculator {
 
         windowDates.forEachIndexed { i, date ->
             val actual = dailySleep[date] ?: 0.0
-            val nightlyDebt = max(0.0, sleepNeedHours - actual)
+            val nightlyDebt = sleepNeedHours - actual
             val weight = decayFactor.pow(i)
             weightedDebt += nightlyDebt * weight
         }

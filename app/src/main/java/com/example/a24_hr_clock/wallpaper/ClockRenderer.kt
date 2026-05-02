@@ -133,13 +133,13 @@ class ClockRenderer {
         if (smallTopRight) {
             // Small clock in top right
             radius = min(width, height) / 6f
-            centerX = width - radius - 50f
+            centerX = width - radius - 80f
             centerY = radius + 150f // Leave some space for status bar
         } else {
             // Large centered clock
             centerX = width / 2f
             centerY = height / 2f
-            radius = min(width, height) / 2f - 100f
+            radius = min(width, height) / 2f - 150f
         }
 
         if (radius < 20) return

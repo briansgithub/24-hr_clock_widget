@@ -300,38 +300,49 @@ fun MainScreen(
                     .background(MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium)
                     .padding(8.dp)
             ) {
-                val displayLogs = sleepLogs.sortedByDescending { it.dateOfSleep }.take(14)
                 val (bathy, eff, sleepNeed) = metrics
-                val avgAsleepDur = if (displayLogs.isNotEmpty()) displayLogs.map { it.minutesAsleep / 60.0 }.average() else 0.0
-                val avgEff = if (displayLogs.isNotEmpty()) {
-                    displayLogs.filter { it.timeInBed > 0 }
-                        .map { it.minutesAsleep.toDouble() / it.timeInBed }
-                        .average()
-                } else 0.0
+                
+                // Group by date
+                val dailyData = sleepLogs.groupBy { it.dateOfSleep }
+                    .toList()
+                    .sortedByDescending { it.first }
+                    .take(14)
+
                 var totalRaw = 0.0
                 var totalWtd = 0.0
 
-                val avgBedtime = if (displayLogs.isNotEmpty()) {
+                val avgAsleepDur = if (dailyData.isNotEmpty()) dailyData.map { it.second.sumOf { s -> s.minutesAsleep / 60.0 } }.average() else 0.0
+                val avgEff = if (dailyData.isNotEmpty()) {
+                    dailyData.map { it.second.sumOf { s -> s.minutesAsleep.toDouble() } / it.second.sumOf { s -> s.timeInBed.toDouble() }.coerceAtLeast(1.0) }
+                        .average()
+                } else 0.0
+
+                val avgBedtime = if (dailyData.isNotEmpty()) {
                     var sumX = 0.0
                     var sumY = 0.0
-                    displayLogs.forEach { log ->
-                        try {
-                            val dt = java.time.LocalDateTime.parse(log.startTime.replace("Z", ""))
-                            val h = dt.hour + dt.minute / 60.0
-                            val rad = 2.0 * PI * (h / 24.0)
-                            sumX += cos(rad)
-                            sumY += sin(rad)
-                        } catch (e: Exception) { }
+                    var count = 0
+                    dailyData.forEach { (_, logs) ->
+                        logs.find { it.isMainSleep }?.let { log ->
+                            try {
+                                val dt = java.time.LocalDateTime.parse(log.startTime.replace("Z", ""))
+                                val h = dt.hour + dt.minute / 60.0
+                                val rad = 2.0 * PI * (h / 24.0)
+                                sumX += cos(rad)
+                                sumY += sin(rad)
+                                count++
+                            } catch (e: Exception) { }
+                        }
                     }
-                    val avgRad = atan2(sumY, sumX)
-                    var avgH = (avgRad * 24.0) / (2.0 * PI)
-                    if (avgH < 0) avgH += 24.0
-                    
-                    val R = sqrt(sumX * sumX + sumY * sumY) / displayLogs.size
-                    val circularSD = if (R > 0) sqrt(-2.0 * ln(R)) else Double.POSITIVE_INFINITY
-                    val sdHours = (circularSD * 24.0) / (2.0 * PI)
-                    
-                    avgH to sdHours
+                    if (count > 0) {
+                        val avgRad = atan2(sumY, sumX)
+                        var avgH = (avgRad * 24.0) / (2.0 * PI)
+                        if (avgH < 0) avgH += 24.0
+                        
+                        val R = sqrt(sumX * sumX + sumY * sumY) / count
+                        val circularSD = if (R > 0) sqrt(-2.0 * ln(R)) else Double.POSITIVE_INFINITY
+                        val sdHours = (circularSD * 24.0) / (2.0 * PI)
+                        avgH to sdHours
+                    } else null
                 } else null
 
                 // Header
@@ -347,29 +358,31 @@ fun MainScreen(
                 
                 HorizontalDivider(modifier = Modifier.padding(bottom = 4.dp))
 
-                displayLogs.forEachIndexed { i, log ->
+                dailyData.forEachIndexed { i, (date, logs) ->
                     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                        val dateObj = try { java.time.LocalDate.parse(log.dateOfSleep) } catch (e: Exception) { null }
+                        val dateObj = try { java.time.LocalDate.parse(date) } catch (e: Exception) { null }
                         val dayStr = dateObj?.format(java.time.format.DateTimeFormatter.ofPattern("E")) ?: ""
-                        val dateStr = dateObj?.format(java.time.format.DateTimeFormatter.ofPattern("MM/dd")) ?: log.dateOfSleep.takeLast(5)
+                        val dateStr = dateObj?.format(java.time.format.DateTimeFormatter.ofPattern("MM/dd")) ?: date.takeLast(5)
                         
                         Text(dayStr, modifier = Modifier.weight(0.4f), style = MaterialTheme.typography.bodySmall)
                         Text(dateStr, modifier = Modifier.weight(0.8f), style = MaterialTheme.typography.bodySmall)
                         
+                        val mainSleep = logs.find { it.isMainSleep } ?: logs.first()
                         val startFmt = try {
-                            java.time.LocalDateTime.parse(log.startTime.replace("Z", ""))
+                            java.time.LocalDateTime.parse(mainSleep.startTime.replace("Z", ""))
                                 .format(java.time.format.DateTimeFormatter.ofPattern("h:mm a"))
-                        } catch (e: Exception) { log.startTime.take(5) }
+                        } catch (e: Exception) { mainSleep.startTime.take(5) }
                         
                         Text(startFmt, modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End)
                         
-                        val asleepH = log.minutesAsleep / 60.0
-                        Text("${String.format("%.1f", asleepH)}h", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End)
+                        val totalAsleepH = logs.sumOf { it.minutesAsleep / 60.0 }
+                        Text("${String.format("%.1f", totalAsleepH)}h", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End)
                         
-                        val rowEff = if (log.timeInBed > 0) (log.minutesAsleep.toDouble() / log.timeInBed) * 100 else 0.0
+                        val totalBed = logs.sumOf { it.timeInBed }
+                        val rowEff = if (totalBed > 0) (logs.sumOf { it.minutesAsleep.toDouble() } / totalBed) * 100 else 0.0
                         Text("${rowEff.toInt()}%", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End)
                         
-                        val debt = if (log.isMainSleep) sleepNeed - asleepH else -asleepH
+                        val debt = sleepNeed - totalAsleepH
                         val weightedDebt = debt * Math.pow(0.9, i.toDouble())
                         
                         totalRaw += debt
@@ -381,7 +394,7 @@ fun MainScreen(
                             text = String.format("%+.1f", debt),
                             modifier = Modifier.weight(0.7f),
                             style = MaterialTheme.typography.bodySmall,
-                            color = debtColor.copy(alpha = 0.5f), // Darker Raw Debt
+                            color = debtColor.copy(alpha = 0.5f),
                             textAlign = TextAlign.End
                         )
 
@@ -389,7 +402,7 @@ fun MainScreen(
                             text = String.format("%+.1f", weightedDebt),
                             modifier = Modifier.weight(0.7f),
                             style = MaterialTheme.typography.bodySmall,
-                            color = debtColor, // Brighter Wtd Debt
+                            color = debtColor,
                             textAlign = TextAlign.End
                         )
                     }
