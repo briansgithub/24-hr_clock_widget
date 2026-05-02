@@ -15,7 +15,7 @@ from fitbit_client import FitbitClient
 from energy_logic import EnergyCurve, get_energy_level
 
 class ClockWidget:
-    FACE_PADDING = 38
+    FACE_PADDING = 52
     # -------------------------------------------------------------------------
     # Z-INDEX / DRAWING ORDER
     # -------------------------------------------------------------------------
@@ -49,8 +49,8 @@ class ClockWidget:
         self.root = root
         self.root.title("24h Clock")
        
-        window_width = 200
-        window_height = 200
+        window_width = 240
+        window_height = 240
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
         
@@ -824,11 +824,12 @@ class ClockWidget:
         # Column specs: (header_text, pixel_width, data_anchor)
         self._table_cols = [
             ("Day",      45,  "center"),
-            ("Date",     90,  "e"),
+            ("Date",     70,  "e"),
             ("Start",    80,  "e"),
-            ("Duration", 65,  "e"),
-            ("Eff.",     50,  "e"),
-            ("Debt",     55,  "e"),
+            ("Dur.",     45,  "e"),
+            ("Eff.",     45,  "e"),
+            ("Debt",     50,  "e"),
+            ("Wtd.",     50,  "e"),
         ]
 
         # Single shared grid frame — headers at row 0, data below
@@ -865,38 +866,34 @@ class ClockWidget:
                 widget.destroy()
 
         TODAY_STR = datetime.datetime.now().strftime("%Y-%m-%d")
+        ACCENT    = "#00ffcc"
         ROW_ODD   = "#2f2f2f"
         ROW_EVN   = "#272727"
         TODAY_BG  = "#2a2a4a"
         TODAY_FG  = "#aaddff"
         FG        = "#e0e0e0"
 
-        logs = sorted(
-            self.raw_sleep_logs,
-            key=lambda s: s.get('dateOfSleep', ''),
-            reverse=True
-        )
+        # Group by date
+        daily_logs = {}
+        for rec in self.raw_sleep_logs:
+            d = rec.get('dateOfSleep', '?')
+            if d not in daily_logs: daily_logs[d] = []
+            daily_logs[d].append(rec)
+        
+        sorted_dates = sorted(daily_logs.keys(), reverse=True)[:14]
 
-        grid_row  = 2   # rows 0=headers, 1=separator
-        last_date = None
+        grid_row  = 2
+        total_raw = 0.0
+        total_wtd = 0.0
 
-        for i, rec in enumerate(logs):
-            date_str    = rec.get('dateOfSleep', '?')
-            start_raw   = rec.get('startTime', '')
-            mins_asleep = rec.get('minutesAsleep', 0)
-            mins_in_bed = rec.get('timeInBed', 0)
-            is_main     = rec.get('isMainSleep', True)
-
-            # White separator between different dates
-            if last_date and date_str != last_date:
-                sep = tk.Frame(self.table_frame, bg="white", height=1)
-                sep.grid(row=grid_row, column=0,
-                         columnspan=len(self._table_cols), sticky="ew")
-                sep.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_table_window))
-                sep.bind("<B1-Motion>", self.on_drag_motion)
-                grid_row += 1
-            last_date = date_str
-
+        for i, date_str in enumerate(sorted_dates):
+            logs = daily_logs[date_str]
+            main_sleep = next((s for s in logs if s.get('isMainSleep')), logs[0])
+            
+            start_raw   = main_sleep.get('startTime', '')
+            mins_asleep = sum(s.get('minutesAsleep', 0) for s in logs)
+            mins_in_bed = sum(s.get('timeIn_bed', s.get('timeInBed', 0)) for s in logs)
+            
             bg_color = TODAY_BG if date_str == TODAY_STR else (ROW_ODD if i % 2 == 0 else ROW_EVN)
             row_fg   = TODAY_FG if date_str == TODAY_STR else FG
 
@@ -904,7 +901,7 @@ class ClockWidget:
             try:
                 dt_obj   = datetime.datetime.strptime(date_str, "%Y-%m-%d")
                 day_fmt  = dt_obj.strftime("%a")
-                date_fmt = dt_obj.strftime("%m/%d/%Y")
+                date_fmt = dt_obj.strftime("%m/%d")
             except Exception:
                 day_fmt  = ""
                 date_fmt = date_str
@@ -918,8 +915,13 @@ class ClockWidget:
             asleep_h  = mins_asleep / 60.0
             dur_fmt   = f"{asleep_h:.1f}h"
             eff_fmt   = f"{mins_asleep / mins_in_bed * 100:.0f}%" if mins_in_bed > 0 else "—"
-            debt_val  = (self.sleep_need_hours - asleep_h) if is_main else -asleep_h
-            debt_fmt  = f"{debt_val:+.1f}h"
+            
+            debt_val  = (self.sleep_need_hours - asleep_h)
+            wtd_val   = debt_val * (0.9 ** i)
+            
+            total_raw += debt_val
+            total_wtd += wtd_val
+            
             debt_fg   = "#ff6b6b" if debt_val > 0.1 else "#6bff6b" if debt_val < -0.1 else row_fg
 
             cell_data = [
@@ -928,7 +930,8 @@ class ClockWidget:
                 (start_fmt, "e",  row_fg),
                 (dur_fmt,   "e",  row_fg),
                 (eff_fmt,   "e",  row_fg),
-                (debt_fmt,  "e",  debt_fg),
+                (f"{debt_val:+.1f}h",  "e",  debt_fg),
+                (f"{wtd_val:+.1f}h",   "e",  debt_fg),
             ]
 
             for col_i, (val, anc, fg_color) in enumerate(cell_data):
@@ -942,8 +945,37 @@ class ClockWidget:
                 lbl.grid(row=grid_row, column=col_i, sticky="ew", pady=1)
                 lbl.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_table_window))
                 lbl.bind("<B1-Motion>", self.on_drag_motion)
-
             grid_row += 1
+
+        # Summary Row
+        sep = tk.Frame(self.table_frame, bg="#444444", height=1)
+        sep.grid(row=grid_row, column=0, columnspan=len(self._table_cols), sticky="ew", pady=2)
+        grid_row += 1
+        
+        raw_fg = "#ff6b6b" if total_raw > 0.1 else "#6bff6b" if total_raw < -0.1 else ACCENT
+        wtd_fg = "#ff6b6b" if total_wtd > 0.1 else "#6bff6b" if total_wtd < -0.1 else ACCENT
+        
+        summary_data = [
+            ("TOTAL", "center", ACCENT),
+            ("", "e", FG),
+            ("", "e", FG),
+            ("", "e", FG),
+            ("", "e", FG),
+            (f"{total_raw:+.1f}h", "e", raw_fg),
+            (f"{total_wtd:+.1f}h", "e", wtd_fg),
+        ]
+        
+        for col_i, (val, anc, fg_color) in enumerate(summary_data):
+            lbl = tk.Label(
+                self.table_frame, text=val,
+                bg="#1a1a1a", fg=fg_color,
+                font=("Segoe UI", 9, "bold"),
+                anchor=anc,
+                padx=6
+            )
+            lbl.grid(row=grid_row, column=col_i, sticky="ew", pady=2)
+            lbl.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_table_window))
+            lbl.bind("<B1-Motion>", self.on_drag_motion)
 
         # Shrink-wrap window to exact content size
         self.sleep_table_window.update_idletasks()

@@ -204,7 +204,7 @@ def compute_sleep_debt(
     print(f"\n[compute_sleep_debt] Calculating Weighted Debt (Decay={decay_factor}):")
     for i, date in enumerate(window_dates):
         actual = daily_sleep[date]
-        nightly_debt = max(0.0, sleep_need_hours - actual)
+        nightly_debt = sleep_need_hours - actual
         
         # Apply weight: i=0 (last night) has weight 0.9^0 = 1.0
         weight = math.pow(decay_factor, i)
