@@ -14,3 +14,6 @@ saved_curves/
 .idea/vcs.xml
 .idea/caches/deviceStreaming.xml
 .idea/.gitignore
+
+credentials.json
+token.json
