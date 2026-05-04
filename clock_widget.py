@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw, ImageTk, ImageFont
 import pystray
 from fitbit_client import FitbitClient
 from energy_logic import EnergyCurve, get_energy_level
+from google_calendar_client import get_calendar_service, get_calendar_events
 
 class ClockWidget:
     FACE_PADDING = 52
@@ -20,11 +21,12 @@ class ClockWidget:
     # Z-INDEX / DRAWING ORDER
     # -------------------------------------------------------------------------
     # Rearrange this list to change which elements are drawn on top.
-    # The last element in the list will be drawn on top of everything else.
+    # Elements later in the list are drawn ON TOP of earlier elements.
     DRAW_ORDER = [
         "background_face",
         "night_shading",
         "sun_and_moon",
+        "calendar_events",
         "sleep_arc",
         "perimeter_line",
         "energy_curve",
@@ -75,6 +77,7 @@ class ClockWidget:
         self.show_sun_moon = tk.BooleanVar(value=True)
         self.show_manual_wake = tk.BooleanVar(value=True)
         self.show_sleep_table = tk.BooleanVar(value=True)
+        self.show_calendar = tk.BooleanVar(value=True)
 
         self.sleep_settings_file = os.path.join(os.path.dirname(__file__), "sleep_settings.json")
         self.excluded_dates = self._load_sleep_settings()
@@ -94,6 +97,11 @@ class ClockWidget:
         self.last_fitbit_update = None
         self.raw_sleep_logs     = []    # list of raw Fitbit sleep records
         self.active_sleep_date  = None  # the YYYY-MM-DD date we are currently displaying
+        
+        # ── Calendar Integration ──────────────────────────────────────────────
+        self.calendar_svc = get_calendar_service()
+        self.calendar_events = []
+        # ─────────────────────────────────────────────────────────────────────
         # ─────────────────────────────────────────────────────────────────────
        
         # Transparency State
@@ -105,8 +113,12 @@ class ClockWidget:
         self._last_drawn_minute = None
         self._celestial_cache = None
        
-        # Make the key color fully transparent on Windows
         self.root.attributes("-transparentcolor", self.transparent_key)
+        
+        # Tooltip state
+        self._calendar_item_map = {}
+        self._tooltip_id = None
+        self._tooltip_bg_id = None
        
         # Main Frame
         self.main_frame = tk.Frame(self.root, bg=self.solid_bg)
@@ -181,6 +193,25 @@ class ClockWidget:
         self.debt_toggle = add_toggle("Factor in Sleep Debt", self.show_sleep_debt, self.draw_clock)
         self.naps_toggle = add_toggle("Include Naps", self.include_naps, self.update_fitbit_data)
         
+        add_divider("CALENDAR")
+        self.calendar_toggle = add_toggle("Show Calendar Events", self.show_calendar, self.draw_clock)
+        
+        self.calendar_refresh_btn = tk.Button(
+            self.inner_controls,
+            text="Calendar API Refresh",
+            command=self.update_calendar_data,
+            bg="#404040",
+            fg="#9370DB", 
+            activebackground="#555555",
+            activeforeground="white",
+            relief=tk.FLAT,
+            padx=10,
+            pady=2,
+            font=("Arial", 8, "bold")
+        )
+        self.calendar_refresh_btn.pack(side=tk.TOP, anchor=tk.W, pady=(5, 0), padx=(20, 0))
+        self._control_widgets.append(self.calendar_refresh_btn)
+        
         add_divider("METRICS")
         metrics_frame = tk.Frame(self.inner_controls, bg=self.solid_bg)
         metrics_frame.pack(side=tk.TOP, fill=tk.X, pady=2)
@@ -251,7 +282,7 @@ class ClockWidget:
 
         self.refresh_btn = tk.Button(
             self.inner_controls,
-            text="API Refresh",
+            text="Fitbit API Refresh",
             command=lambda: self.update_fitbit_data(force=True),
             bg="#404040",
             fg="#00ffcc",
@@ -260,7 +291,7 @@ class ClockWidget:
             relief=tk.FLAT,
             padx=10,
             pady=2,
-            font=("Arial", 9, "bold")
+            font=("Arial", 8, "bold")
         )
         self.refresh_btn.pack(side=tk.TOP, anchor=tk.CENTER, padx=5, pady=10)
         self._control_widgets.append(self.refresh_btn)
@@ -282,6 +313,8 @@ class ClockWidget:
             widget.bind("<ButtonPress-3>", self.on_right_click_start)
             widget.bind("<B3-Motion>", self.on_right_click_motion)
             widget.bind("<ButtonRelease-3>", self.on_right_click_end)
+        
+        self.canvas.bind("<Motion>", self.on_canvas_motion)
 
         for widget in (self.controls_frame, self.inner_controls):
             widget.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.controls_window))
@@ -859,6 +892,21 @@ class ClockWidget:
        
         threading.Thread(target=_task, daemon=True).start()
 
+    def update_calendar_data(self):
+        """Fetch today's events from Google Calendar in the background."""
+        def _task():
+            if not self.calendar_svc:
+                return
+            try:
+                events = get_calendar_events(self.calendar_svc, 'primary')
+                self.calendar_events = events
+                print(f"[Calendar] Fetched {len(events)} events.")
+                self.root.after(0, self.draw_clock)
+            except Exception as e:
+                print(f"[Calendar] Update failed: {e}")
+        
+        threading.Thread(target=_task, daemon=True).start()
+
     def _build_sleep_table(self):
         """Build the styled sleep log table inside sleep_table_window."""
         ACCENT  = "#00ffcc"
@@ -1175,6 +1223,7 @@ class ClockWidget:
         self.make_clock_transparent()
         self.make_controls_hidden()
         self.update_fitbit_data()
+        self.update_calendar_data()
         self.draw_clock()
         self.root.deiconify()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -1273,10 +1322,12 @@ class ClockWidget:
                 print(f"[ClockWidget] Midnight reset at {now}")
                 self.fetch_sun_times()
                 self.update_fitbit_data(force=True)
+                self.update_calendar_data()
             # 2. Hourly refresh (to catch new sleep syncs/refresh fallback)
             elif now.minute == 0:
                 print(f"[ClockWidget] Hourly refresh at {now}")
                 self.update_fitbit_data()
+                self.update_calendar_data()
 
             self._last_drawn_minute = current_minute
             self.draw_clock()
@@ -1514,8 +1565,48 @@ class ClockWidget:
             tags="solar_circle"
         )
 
+    def on_canvas_motion(self, event):
+        """Handle tooltip display for calendar events."""
+        # Hide existing tooltip first
+        if self._tooltip_id:
+            self.canvas.delete(self._tooltip_id)
+            self._tooltip_id = None
+        if self._tooltip_bg_id:
+            self.canvas.delete(self._tooltip_bg_id)
+            self._tooltip_bg_id = None
+
+        # Find item under cursor
+        item = self.canvas.find_withtag("current")
+        if not item:
+            return
+            
+        item_id = item[0]
+        if item_id in self._calendar_item_map:
+            summary = self._calendar_item_map[item_id]
+            
+            # Create tooltip text
+            self._tooltip_id = self.canvas.create_text(
+                event.x, event.y - 20,
+                text=summary,
+                fill="white",
+                font=("Segoe UI", 9, "bold"),
+                anchor=tk.S,
+                state=tk.DISABLED # Transparent to clicks
+            )
+            
+            # Create tooltip background
+            bbox = self.canvas.bbox(self._tooltip_id)
+            if bbox:
+                self._tooltip_bg_id = self.canvas.create_rectangle(
+                    bbox[0]-4, bbox[1]-2, bbox[2]+4, bbox[3]+2,
+                    fill="#1a1a1a", outline="#9370DB", width=1,
+                    state=tk.DISABLED # Transparent to clicks
+                )
+                self.canvas.tag_lower(self._tooltip_bg_id, self._tooltip_id)
+
     def draw_clock(self):
         self.canvas.delete("all")
+        self._calendar_item_map.clear() # Clear item map on redraw
         w = self.canvas.winfo_width()
         h = self.canvas.winfo_height()
        
@@ -1655,6 +1746,40 @@ class ClockWidget:
                     if display_num == 0: display_num = 12
                    
                     self.canvas.create_text(tx, ty, text=str(display_num), font=("Segoe UI", font_size, "bold"), fill=text_color)
+        
+        def draw_calendar_events():
+            if not self.show_calendar.get() or not self.calendar_events:
+                return
+            
+            for event in self.calendar_events:
+                s_h = event['start_hour']
+                e_h = event['end_hour']
+                
+                duration = e_h - s_h
+                if duration < 0: duration += 24
+                
+                # Don't draw tiny/zero duration events
+                if duration < 0.05: continue
+                
+                start_angle = (18 - s_h) * 15
+                extent = -(duration * 15)
+                
+                # Shades of Dark Purple
+                color = "#4B0082" if not event.get('is_all_day') else "#7B68EE"
+                
+                # Draw further inward to avoid overlap with tick marks and sleep arcs
+                # Ticks are at margin 0.0 to 0.12, Sleep is at margin 0.15
+                margin = radius * 0.15
+                r_arc = radius - margin
+                
+                arc_id = self.canvas.create_arc(
+                    center_x - r_arc, center_y - r_arc,
+                    center_x + r_arc, center_y + r_arc,
+                    start=start_angle, extent=extent,
+                    outline=color, width=max(6, int(radius/9)), style=tk.ARC,
+                    tags="calendar_events"
+                )
+                self._calendar_item_map[arc_id] = event.get('summary', 'No Title')
                    
         def draw_sun_and_moon():
             now = datetime.datetime.now()
@@ -1790,6 +1915,7 @@ class ClockWidget:
         layers = {
             "background_face": draw_background_face,
             "night_shading": draw_night_shading,
+            "calendar_events": draw_calendar_events,
             "sleep_arc": draw_sleep_arc,
             "energy_curve": draw_energy_curve,
             "perimeter_line": draw_perimeter_line,

@@ -35,7 +35,7 @@ def get_calendar_service():
             flow = InstalledAppFlow.from_client_secrets_file(
                 "credentials.json", SCOPES
             )
-            creds = flow.run_local_server(port=0)
+            creds = flow.run_local_server(port=0, open_browser=False)
         
         # Save the credentials for the next run
         with open("token.json", "w") as token:
@@ -48,37 +48,20 @@ def get_calendar_service():
         print(f"An error occurred: {error}")
         return None
 
-def get_work_calendar_id(service):
+def get_calendar_events(service, calendar_id='primary', days=1):
     """
-    Finds the calendar ID for the calendar named 'Work'.
-    """
-    try:
-        calendar_list = service.calendarList().list().execute()
-        for calendar_entry in calendar_list.get('items', []):
-            if calendar_entry.get('summary') == 'Work':
-                return calendar_entry.get('id')
-        
-        print("Warning: 'Work' calendar not found. Falling back to primary calendar.")
-        return 'primary'
-    except HttpError as error:
-        print(f"An error occurred while fetching calendar list: {error}")
-        return 'primary'
-
-def get_today_events(service, calendar_id='primary'):
-    """
-    Fetches events for the current 24-hour period (midnight to midnight).
+    Fetches events for the specified number of days starting from today's midnight.
     Returns events in a format easy to convert to 0-24 float hours.
     """
     now = datetime.datetime.now(datetime.timezone.utc)
-    # Start of today (midnight)
     start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    # End of today (next midnight)
-    end_of_day = start_of_day + datetime.timedelta(days=1)
+    end_of_period = start_of_day + datetime.timedelta(days=days)
 
     time_min = start_of_day.isoformat()
-    time_max = end_of_day.isoformat()
+    time_max = end_of_period.isoformat()
 
     try:
+        print(f"Fetching events from {time_min} to {time_max}...")
         events_result = service.events().list(
             calendarId=calendar_id,
             timeMin=time_min,
@@ -93,21 +76,29 @@ def get_today_events(service, calendar_id='primary'):
             start = event["start"].get("dateTime", event["start"].get("date"))
             end = event["end"].get("dateTime", event["end"].get("date"))
             
-            # Skip all-day events for now or handle them specially
-            if "T" not in start:
-                continue
-                
-            start_dt = datetime.datetime.fromisoformat(start.replace("Z", "+00:00"))
-            end_dt = datetime.datetime.fromisoformat(end.replace("Z", "+00:00"))
+            # For all-day events, start/end will be YYYY-MM-DD
+            # For timed events, it's ISO format
+            is_all_day = "T" not in start
             
-            # Convert to hours past midnight (float)
-            start_hour = start_dt.hour + start_dt.minute / 60.0 + start_dt.second / 3600.0
-            end_hour = end_dt.hour + end_dt.minute / 60.0 + end_dt.second / 3600.0
+            if is_all_day:
+                # Map all-day events to the full 0-24 range
+                start_hour = 0.0
+                end_hour = 24.0
+            else:
+                start_dt = datetime.datetime.fromisoformat(start.replace("Z", "+00:00"))
+                end_dt = datetime.datetime.fromisoformat(end.replace("Z", "+00:00"))
+                
+                # We only care about the time relative to the day start for the clock
+                # If the event spans multiple days, this logic might need adjustment
+                # But for a 24h clock, we mostly care about "today's" portion
+                start_hour = start_dt.hour + start_dt.minute / 60.0
+                end_hour = end_dt.hour + end_dt.minute / 60.0
             
             processed_events.append({
                 "summary": event.get("summary", "No Title"),
                 "start_hour": start_hour,
                 "end_hour": end_hour,
+                "is_all_day": is_all_day,
                 "color_id": event.get("colorId")
             })
             
@@ -121,8 +112,12 @@ if __name__ == "__main__":
     # Test authentication and event fetching
     svc = get_calendar_service()
     if svc:
-        work_id = get_work_calendar_id(svc)
-        print(f"Using calendar ID: {work_id}")
-        today_events = get_today_events(svc, work_id)
-        for e in today_events:
-            print(f"{e['summary']}: {e['start_hour']:.2f} to {e['end_hour']:.2f}")
+        print("Successfully connected to Google Calendar API.")
+        today_events = get_calendar_events(svc, 'primary')
+        if not today_events:
+            print("No events found for today.")
+        else:
+            print(f"Found {len(today_events)} events for today:")
+            for e in today_events:
+                type_str = "[ALL DAY]" if e['is_all_day'] else ""
+                print(f" - {e['summary']} {type_str}: {e['start_hour']:.2f} to {e['end_hour']:.2f}")

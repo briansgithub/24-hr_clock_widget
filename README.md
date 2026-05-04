@@ -20,6 +20,12 @@ A collection of desktop widgets built with Python and Tkinter, featuring a uniqu
     - **100%** represents your theoretical peak alertness today if you were fully rested (0 sleep debt and 9.75 hours of sleep).
     - **0%** represents the floor of the Two-Process model, typically reached during your circadian trough (3-5 AM) or under extreme sleep deprivation.
     - **Toggle Sensitivity**: The percentage respects the "Factor in Sleep Debt" and "Include Naps" toggles but remains absolute regardless of the "Normalize Energy" setting.
+23: 
+24: ### Google Calendar Integration
+25: - **Schedule Overlay**: Fetches events from your "primary" Google Calendar and renders them as visual arcs.
+26: - **Timed vs. All-Day**: Timed events (meetings, gym) and all-day events are shown in shades of **Dark Purple**.
+27: - **Auto-Refresh**: Background syncing every hour and on startup ensures your schedule is always up-to-date.
+28: - **Manual Control**: Dedicated "Calendar API Refresh" button for instant updates.
 
 ## File Overview
 
@@ -44,6 +50,12 @@ A specialized client for the Fitbit Web API (OAuth 2.0).
   - `fitbit_sleep_logs.json`: Raw logs for sleep debt calculation.
   - `fitbit_hr_intraday.json`: High-resolution heart rate data for bathyphase detection.
 - **Smart Fallback**: Detects if today's sync is missing and provides a fallback to the most recent data without corrupting the permanent cache.
+47: 
+48: ### [google_calendar_client.py](google_calendar_client.py)
+49: A client for the Google Calendar API.
+50: - **OAuth 2.0 Flow**: Handles local server authentication and token management.
+51: - **Time Normalization**: Converts ISO 8601 timestamps into 0-24 float hours for clock face rendering.
+52: - **Event Filtering**: Supports both timed and all-day events.
 
 ## Smart Sync & Caching
 The application is designed to be highly responsive while minimizing API usage:
@@ -82,6 +94,7 @@ The high-resolution heart rate cache is created only when specific conditions ar
 ### Dependencies
 - Python 3.10+
 - `Pillow` (PIL), `pystray`, `requests`
+- `google-api-python-client`, `google-auth-oauthlib`, `google-auth-httplib2`
 - Tkinter (standard with Python)
 
 ### Fitbit API Configuration
@@ -91,3 +104,11 @@ To use the heart rate features (Bathyphase), you must register your application 
 3.  **Redirect URI**: Set to `http://localhost:8080`.
 
 Update the `FITBIT_CLIENT_ID` and `FITBIT_CLIENT_SECRET` in `clock_widget.py` with your credentials.
+### Google Calendar API Configuration
+To enable schedule visualization:
+1.  Create a project in the [Google Cloud Console](https://console.cloud.google.com/).
+2.  Enable the **Google Calendar API**.
+3.  Configure the **OAuth Consent Screen** (add your email as a test user).
+4.  Create **OAuth 2.0 Client ID** credentials (Desktop Application).
+5.  Download the JSON and save it as `credentials.json` in the project root.
+6.  Run the app; the first launch will open a browser for one-time authorization.
