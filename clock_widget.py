@@ -148,20 +148,26 @@ class ClockWidget:
         self._control_widgets = []
         self.inner_controls = tk.Frame(self.controls_frame, bg=self.solid_bg)
         self.inner_controls.pack(anchor=tk.CENTER)
+        
+        self.left_col = tk.Frame(self.inner_controls, bg=self.solid_bg)
+        self.left_col.pack(side=tk.LEFT, anchor=tk.N, padx=(0, 10))
+        
+        self.right_col = tk.Frame(self.inner_controls, bg=self.solid_bg)
+        self.right_col.pack(side=tk.LEFT, anchor=tk.N, padx=(10, 0))
 
-        def add_divider(text):
-            if self._control_widgets:
-                sep = tk.Frame(self.inner_controls, bg="#444444", height=1)
+        def add_divider(text, parent):
+            if parent.winfo_children():
+                sep = tk.Frame(parent, bg="#444444", height=1)
                 sep.pack(fill=tk.X, pady=(5, 5))
                 self._control_widgets.append(sep)
             
-            lbl = tk.Label(self.inner_controls, text=text, bg=self.solid_bg, fg="white", font=("Arial", 8, "bold underline"))
+            lbl = tk.Label(parent, text=text, bg=self.solid_bg, fg="white", font=("Arial", 8, "bold underline"))
             lbl.pack(side=tk.TOP, anchor=tk.W, pady=(0, 2))
             self._control_widgets.append(lbl)
 
-        def add_toggle(text, var, cmd):
+        def add_toggle(text, var, cmd, parent):
             cb = tk.Checkbutton(
-                self.inner_controls,
+                parent,
                 text=text,
                 variable=var,
                 command=cmd,
@@ -175,55 +181,8 @@ class ClockWidget:
             self._control_widgets.append(cb)
             return cb
 
-        add_divider("DISPLAY")
-        self.top_toggle = add_toggle("Always On Top", self.always_on_top, self.toggle_topmost)
-        self.numbers_toggle = add_toggle("Numbers", self.show_numbers, self.draw_clock)
-        self.sun_moon_toggle = add_toggle("Sun & Moon Icons", self.show_sun_moon, self.draw_clock)
-
-        add_divider("SLEEP")
-        self.sleep_toggle = add_toggle("Show Sleep on Clock", self.show_sleep, self.draw_clock)
-        self.bedtime_toggle = add_toggle("Time in Bed vs. Asleep Hrs.", self.show_total_bedtime, self.draw_clock)
-        self.debt_text_toggle = add_toggle("Show Sleep Debt Text", self.show_sleep_debt_text, self.draw_clock)
-        self.table_toggle = add_toggle("Show Sleep Log Table", self.show_sleep_table, self.update_sleep_table_visibility)
-
-        add_divider("ENERGY")
-        self.energy_toggle = add_toggle("Show Energy Curve", self.show_energy, self.draw_clock)
-        self.energy_pct_toggle = add_toggle("Show Energy %", self.show_energy_pct, self.draw_clock)
-        self.normalize_toggle = add_toggle("Normalize Energy", self.normalize_energy, self.draw_clock)
-        self.debt_toggle = add_toggle("Factor in Sleep Debt", self.show_sleep_debt, self.draw_clock)
-        self.naps_toggle = add_toggle("Include Naps", self.include_naps, self.update_fitbit_data)
-        
-        add_divider("CALENDAR")
-        self.calendar_toggle = add_toggle("Show Calendar Events", self.show_calendar, self.draw_clock)
-        
-        self.calendar_refresh_btn = tk.Button(
-            self.inner_controls,
-            text="Calendar API Refresh",
-            command=self.update_calendar_data,
-            bg="#404040",
-            fg="#9370DB", 
-            activebackground="#555555",
-            activeforeground="white",
-            relief=tk.FLAT,
-            padx=10,
-            pady=2,
-            font=("Arial", 8, "bold")
-        )
-        self.calendar_refresh_btn.pack(side=tk.TOP, anchor=tk.W, pady=(5, 0), padx=(20, 0))
-        self._control_widgets.append(self.calendar_refresh_btn)
-        
-        add_divider("METRICS")
-        metrics_frame = tk.Frame(self.inner_controls, bg=self.solid_bg)
-        metrics_frame.pack(side=tk.TOP, fill=tk.X, pady=2)
-        
-        self.bathyphase_label = tk.Label(metrics_frame, text="Bathyphase: --:-- --", bg=self.solid_bg, fg="white", font=("Arial", 8, "bold"))
-        self.bathyphase_label.pack(side=tk.TOP, anchor=tk.W)
-        
-        self.efficiency_label = tk.Label(metrics_frame, text="Sleep Efficiency: --.-%", bg=self.solid_bg, fg="white", font=("Arial", 8, "bold"))
-        self.efficiency_label.pack(side=tk.TOP, anchor=tk.W)
-        
-        add_divider("SETTINGS")
-        settings_frame = tk.Frame(self.inner_controls, bg=self.solid_bg)
+        add_divider("SETTINGS", self.left_col)
+        settings_frame = tk.Frame(self.left_col, bg=self.solid_bg)
         settings_frame.pack(side=tk.TOP, fill=tk.X, pady=2)
         
         tk.Label(settings_frame, text="Hover Delay (s):", bg=self.solid_bg, fg="white", font=("Arial", 8)).pack(side=tk.LEFT)
@@ -256,9 +215,26 @@ class ClockWidget:
         )
         self.hover_delay_entry.pack(side=tk.LEFT, padx=5)
 
-        wake_frame = tk.Frame(self.inner_controls, bg=self.solid_bg)
+        self.top_toggle = add_toggle("Always On Top", self.always_on_top, self.toggle_topmost, self.left_col)
+
+        add_divider("DISPLAY", self.left_col)
+        wake_frame = tk.Frame(self.left_col, bg=self.solid_bg)
         wake_frame.pack(side=tk.TOP, fill=tk.X, pady=2)
-        tk.Label(wake_frame, text="Wake Time (HH:MM):", bg=self.solid_bg, fg="white", font=("Arial", 8)).pack(side=tk.LEFT)
+        
+        self.manual_wake_toggle = tk.Checkbutton(
+            wake_frame,
+            text="Wake up (HH:mm):",
+            variable=self.show_manual_wake,
+            command=self.draw_clock,
+            bg=self.solid_bg,
+            fg="white",
+            selectcolor="#3c3c3c",
+            activebackground=self.solid_bg,
+            activeforeground="white"
+        )
+        self.manual_wake_toggle.pack(side=tk.LEFT)
+        self._control_widgets.append(self.manual_wake_toggle)
+
         self.manual_wake_entry = tk.Entry(
             wake_frame, 
             textvariable=self.manual_wake_time, 
@@ -270,18 +246,34 @@ class ClockWidget:
         )
         self.manual_wake_entry.pack(side=tk.LEFT, padx=5)
 
-        tk.Checkbutton(
-            wake_frame,
-            text="",
-            variable=self.show_manual_wake,
-            command=self.draw_clock,
-            bg=self.solid_bg,
-            selectcolor="#3c3c3c",
-            activebackground=self.solid_bg,
-        ).pack(side=tk.LEFT)
+        self.numbers_toggle = add_toggle("Numbers", self.show_numbers, self.draw_clock, self.left_col)
+        self.sun_moon_toggle = add_toggle("Sun & Moon Icons", self.show_sun_moon, self.draw_clock, self.left_col)
+
+        add_divider("SLEEP", self.right_col)
+        self.sleep_toggle = add_toggle("Show Sleep on Clock", self.show_sleep, self.draw_clock, self.right_col)
+        self.bedtime_toggle = add_toggle("Time in Bed vs. Asleep Hrs.", self.show_total_bedtime, self.draw_clock, self.right_col)
+        self.debt_text_toggle = add_toggle("Show Sleep Debt Text", self.show_sleep_debt_text, self.draw_clock, self.right_col)
+        self.table_toggle = add_toggle("Show Sleep Log Table", self.show_sleep_table, self.update_sleep_table_visibility, self.right_col)
+
+        add_divider("ENERGY", self.right_col)
+        self.energy_toggle = add_toggle("Show Energy Curve", self.show_energy, self.draw_clock, self.right_col)
+        self.energy_pct_toggle = add_toggle("Show Energy %", self.show_energy_pct, self.draw_clock, self.right_col)
+        self.normalize_toggle = add_toggle("Normalize Energy", self.normalize_energy, self.draw_clock, self.right_col)
+        self.debt_toggle = add_toggle("Factor in Sleep Debt", self.show_sleep_debt, self.draw_clock, self.right_col)
+        self.naps_toggle = add_toggle("Include Naps", self.include_naps, self.update_fitbit_data, self.right_col)
+        
+        add_divider("METRICS", self.right_col)
+        metrics_frame = tk.Frame(self.right_col, bg=self.solid_bg)
+        metrics_frame.pack(side=tk.TOP, fill=tk.X, pady=2)
+        
+        self.bathyphase_label = tk.Label(metrics_frame, text="Bathyphase: --:-- --", bg=self.solid_bg, fg="white", font=("Arial", 8, "bold"))
+        self.bathyphase_label.pack(side=tk.TOP, anchor=tk.W)
+        
+        self.efficiency_label = tk.Label(metrics_frame, text="Sleep Efficiency: --.-%", bg=self.solid_bg, fg="white", font=("Arial", 8, "bold"))
+        self.efficiency_label.pack(side=tk.TOP, anchor=tk.W)
 
         self.refresh_btn = tk.Button(
-            self.inner_controls,
+            self.right_col,
             text="Fitbit API Refresh",
             command=lambda: self.update_fitbit_data(force=True),
             bg="#404040",
@@ -293,8 +285,29 @@ class ClockWidget:
             pady=2,
             font=("Arial", 8, "bold")
         )
-        self.refresh_btn.pack(side=tk.TOP, anchor=tk.CENTER, padx=5, pady=10)
+        self.refresh_btn.pack(side=tk.TOP, anchor=tk.W, pady=(10, 0), padx=(20, 0))
         self._control_widgets.append(self.refresh_btn)
+        
+        add_divider("CALENDAR", self.left_col)
+        self.calendar_toggle = add_toggle("Show Calendar Events", self.show_calendar, self.draw_clock, self.left_col)
+        
+        self.calendar_refresh_btn = tk.Button(
+            self.left_col,
+            text="Calendar API Refresh",
+            command=self.update_calendar_data,
+            bg="#404040",
+            fg="#9370DB", 
+            activebackground="#555555",
+            activeforeground="white",
+            relief=tk.FLAT,
+            padx=10,
+            pady=2,
+            font=("Arial", 8, "bold")
+        )
+        self.calendar_refresh_btn.pack(side=tk.TOP, anchor=tk.W, pady=(5, 0), padx=(20, 0))
+        self._control_widgets.append(self.calendar_refresh_btn)
+        
+
 
         self.sunrise_hour = 6.0
         self.sunset_hour = 18.0
