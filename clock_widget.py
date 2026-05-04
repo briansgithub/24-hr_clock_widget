@@ -74,8 +74,11 @@ class ClockWidget:
         self.include_naps = tk.BooleanVar(value=True)
         self.show_sun_moon = tk.BooleanVar(value=True)
         self.show_manual_wake = tk.BooleanVar(value=True)
-        self.show_sleep_table = tk.BooleanVar(value=False)
-       
+        self.show_sleep_table = tk.BooleanVar(value=True)
+
+        self.sleep_settings_file = os.path.join(os.path.dirname(__file__), "sleep_settings.json")
+        self.excluded_dates = self._load_sleep_settings()
+
         # ── Fitbit Integration ────────────────────────────────────────────────
         self.fitbit = FitbitClient(
             client_id=self.FITBIT_CLIENT_ID,
@@ -90,6 +93,7 @@ class ClockWidget:
         self.sleep_need_hours   = self.BEDTIME_GOAL_HOURS
         self.last_fitbit_update = None
         self.raw_sleep_logs     = []    # list of raw Fitbit sleep records
+        self.active_sleep_date  = None  # the YYYY-MM-DD date we are currently displaying
         # ─────────────────────────────────────────────────────────────────────
        
         # Transparency State
@@ -118,14 +122,14 @@ class ClockWidget:
         self.controls_window.overrideredirect(True)
         self.controls_window.withdraw()
 
-        # ── Sleep Table Window ────────────────────────────────────────────────
+        # ── Sleep Log Window ──────────────────────────────────────────────────
         self.sleep_table_window = tk.Toplevel(self.root)
         self.sleep_table_window.title("Sleep Log")
         self.sleep_table_window.configure(bg=self.solid_bg)
         self.sleep_table_window.overrideredirect(True)
         self.sleep_table_window.withdraw()
         self._build_sleep_table()
-        
+
         self.controls_frame = tk.Frame(self.controls_window, bg=self.solid_bg)
         self.controls_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
        
@@ -361,14 +365,7 @@ class ClockWidget:
 
         # Position sleep table to the right of controls
         if hasattr(self, 'sleep_table_window') and self.show_sleep_table.get():
-            self.controls_window.update_idletasks()
-            cx = self.controls_window.winfo_rootx()
-            cy = self.controls_window.winfo_rooty()
-            cw = self.controls_window.winfo_width()
-            self.sleep_table_window.geometry(f"+{cx + cw + 10}+{cy}")
-            self.sleep_table_window.deiconify()
-            self.sleep_table_window.lift()
-            self.sleep_table_window.attributes('-topmost', self.always_on_top.get())
+            self.update_sleep_table_visibility()
         elif hasattr(self, 'sleep_table_window'):
             self.sleep_table_window.withdraw()
 
@@ -391,6 +388,7 @@ class ClockWidget:
             cy = self.controls_window.winfo_rooty()
             cw = self.controls_window.winfo_width()
             self.sleep_table_window.geometry(f"+{cx + cw + 10}+{cy}")
+            self.populate_sleep_table()
             self.sleep_table_window.deiconify()
             self.sleep_table_window.lift()
             self.sleep_table_window.attributes('-topmost', self.always_on_top.get())
@@ -510,6 +508,31 @@ class ClockWidget:
                 self._checking_nearby = True
                 self.check_nearby()
 
+    def _load_sleep_settings(self):
+        """Load excluded dates from JSON. Defaults T-0 to excluded."""
+        today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+        if os.path.exists(self.sleep_settings_file):
+            try:
+                with open(self.sleep_settings_file, 'r') as f:
+                    data = json.load(f)
+                    self.explicit_dates = data.get("explicit_dates", [])
+                    return data.get("excluded_dates", [today_str])
+            except:
+                pass
+        self.explicit_dates = []
+        return [today_str]
+
+    def _save_sleep_settings(self):
+        """Save excluded dates to JSON."""
+        try:
+            with open(self.sleep_settings_file, 'w') as f:
+                json.dump({
+                    "excluded_dates": self.excluded_dates,
+                    "explicit_dates": getattr(self, 'explicit_dates', [])
+                }, f)
+        except:
+            pass
+
     def on_drag_start(self, event, target_window=None):
         if target_window is None:
             target_window = self.root
@@ -616,6 +639,7 @@ class ClockWidget:
             self.energy_curve.sleep_debt_hours = self.sleep_debt_hours if self.show_sleep_debt.get() else 0.0
             self.energy_curve.sleep_duration = self.sleep_duration
             self.energy_curve.bathyphase_hour = self.bathyphase_hour
+            self.energy_curve.max_rested_energy = self._get_max_energy()
             
             current_e = self.energy_curve.get_cached_energy(phantom_hour)
             current_r = self.energy_curve.get_display_radius(current_e, radius)
@@ -747,7 +771,8 @@ class ClockWidget:
                 inputs = self.fitbit.get_all_energy_inputs(
                     bedtime_goal_hours=self.BEDTIME_GOAL_HOURS,
                     include_naps=self.include_naps.get(),
-                    force=force
+                    force=force,
+                    excluded_dates=self.excluded_dates
                 )
                 
                 # Print the dynamic calculation for user visibility
@@ -762,6 +787,39 @@ class ClockWidget:
                 dur     = inputs.get('sleep_duration')
                 debt    = inputs.get('sleep_debt_hours', 0.0)
                 bathy   = inputs.get('bathyphase_hour')
+                
+                # Update raw logs before processing settings
+                self.raw_sleep_logs = inputs.get('raw_sleep_logs', [])
+                
+                # Handle auto-inclusion logic for Today (T-0)
+                today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+                has_today_log = False
+                for log in self.raw_sleep_logs:
+                    if log.get('dateOfSleep') == today_str:
+                        has_today_log = True
+                        break
+                
+                # Check if we have an explicit saved setting for today yet
+                settings_path = self.sleep_settings_file
+                has_saved_setting = False
+                if os.path.exists(settings_path):
+                    try:
+                        with open(settings_path, 'r') as f:
+                            saved = json.load(f).get('explicit_dates', [])
+                            if today_str in saved:
+                                has_saved_setting = True
+                    except: pass
+                
+                # If no manual override for today, apply the dynamic default
+                if not has_saved_setting:
+                    if has_today_log and today_str in self.excluded_dates:
+                        # Auto-include since data arrived
+                        self.excluded_dates.remove(today_str)
+                        self._save_sleep_settings()
+                    elif not has_today_log and today_str not in self.excluded_dates:
+                        # Auto-exclude since no data yet
+                        self.excluded_dates.append(today_str)
+                        self._save_sleep_settings()
 
                 if wake is not None:
                     self.wake_hour          = wake
@@ -772,6 +830,7 @@ class ClockWidget:
                     self.sleep_efficiency   = eff
                     self.sleep_need_hours   = need
                     self.raw_sleep_logs     = inputs.get('raw_sleep_logs', [])
+                    self.active_sleep_date  = inputs.get('active_sleep_date')
 
                     self.last_fitbit_update = datetime.datetime.now()
 
@@ -823,9 +882,11 @@ class ClockWidget:
 
         # Column specs: (header_text, pixel_width, data_anchor)
         self._table_cols = [
+            ("Inc.",     35,  "center"),
             ("Day",      45,  "center"),
-            ("Date",     70,  "e"),
-            ("Start",    80,  "e"),
+            ("Date",     65,  "e"),
+            ("Start",    75,  "e"),
+            ("End",      75,  "e"),
             ("Dur.",     45,  "e"),
             ("Eff.",     45,  "e"),
             ("Debt",     50,  "e"),
@@ -880,22 +941,110 @@ class ClockWidget:
             if d not in daily_logs: daily_logs[d] = []
             daily_logs[d].append(rec)
         
-        sorted_dates = sorted(daily_logs.keys(), reverse=True)[:14]
+        today_dt = datetime.datetime.now()
+        
+        # We'll display T-0 to T-14 (15 rows total)
+        display_dates = []
+        for i in range(15):
+            display_dates.append((today_dt - datetime.timedelta(days=i)).strftime("%Y-%m-%d"))
 
-        grid_row  = 2
-        total_raw = 0.0
-        total_wtd = 0.0
+        grid_row        = 2
+        total_raw       = 0.0
+        total_wtd       = 0.0
+        
+        # Lists for calculating averages
+        start_hours     = []
+        end_hours       = []
+        durations       = []
+        efficiencies    = []
 
-        for i, date_str in enumerate(sorted_dates):
-            logs = daily_logs[date_str]
-            main_sleep = next((s for s in logs if s.get('isMainSleep')), logs[0])
+        def toggle_date(date_str, var):
+            # Mark this date as having a manual/explicit setting
+            if not hasattr(self, 'explicit_dates'): self.explicit_dates = []
+            if date_str not in self.explicit_dates:
+                self.explicit_dates.append(date_str)
+
+            if var.get():
+                if date_str in self.excluded_dates:
+                    self.excluded_dates.remove(date_str)
+            else:
+                if date_str not in self.excluded_dates:
+                    self.excluded_dates.append(date_str)
+            self._save_sleep_settings()
             
-            start_raw   = main_sleep.get('startTime', '')
-            mins_asleep = sum(s.get('minutesAsleep', 0) for s in logs)
-            mins_in_bed = sum(s.get('timeIn_bed', s.get('timeInBed', 0)) for s in logs)
+            # --- Instant Local Recalculation ---
+            try:
+                from energy_logic import compute_sleep_debt
+                new_debt = compute_sleep_debt(
+                    self.raw_sleep_logs, 
+                    self.sleep_need_hours, 
+                    self.include_naps.get(), 
+                    self.excluded_dates
+                )
+                self.sleep_debt_hours = new_debt
+                self.energy_curve.sleep_debt_hours = new_debt
+                
+                # Refresh UI immediately
+                self.update_metric_labels()
+                self.populate_sleep_table()
+                self.draw_clock()
+            except Exception as e:
+                print(f"[toggle_date] Instant refresh failed: {e}")
+
+            # Still trigger the background task
+            self.update_fitbit_data()
+
+        for i, date_str in enumerate(display_dates):
+            is_excluded = date_str in self.excluded_dates
             
+            # 1. Inclusion Checkbox
+            cb_var = tk.BooleanVar(value=not is_excluded)
+            cb = tk.Checkbutton(
+                self.table_frame,
+                variable=cb_var,
+                command=lambda d=date_str, v=cb_var: toggle_date(d, v),
+                bg=TODAY_BG if date_str == TODAY_STR else (ROW_ODD if i % 2 == 0 else ROW_EVN),
+                selectcolor="#3c3c3c",
+                activebackground=TODAY_BG if date_str == TODAY_STR else (ROW_ODD if i % 2 == 0 else ROW_EVN),
+                bd=0,
+                padx=0,
+                pady=0
+            )
+            cb.grid(row=grid_row, column=0, sticky="nsew")
+
+            logs = daily_logs.get(date_str, [])
+            
+            if logs:
+                main_sleep = next((s for s in logs if s.get('isMainSleep')), logs[0])
+                # ... rest of data extraction ...
+                start_raw   = main_sleep.get('startTime', '')
+                end_raw     = main_sleep.get('endTime', '')
+                mins_asleep = sum(s.get('minutesAsleep', 0) for s in logs)
+                mins_in_bed = sum(s.get('timeIn_bed', s.get('timeInBed', 0)) for s in logs)
+                asleep_h    = mins_asleep / 60.0
+                eff_val     = (mins_asleep / mins_in_bed * 100) if mins_in_bed > 0 else None
+                
+                try:
+                    st        = datetime.datetime.fromisoformat(start_raw.replace('Z', ''))
+                    start_fmt = st.strftime("%I:%M %p").lstrip('0')
+                    if not is_excluded: start_hours.append(st.hour + st.minute / 60.0)
+                except: start_fmt = start_raw[:5] if start_raw else '?'
+
+                try:
+                    en        = datetime.datetime.fromisoformat(end_raw.replace('Z', ''))
+                    end_fmt   = en.strftime("%I:%M %p").lstrip('0')
+                    if not is_excluded: end_hours.append(en.hour + en.minute / 60.0)
+                except: end_fmt = end_raw[:5] if end_raw else '?'
+            else:
+                start_fmt   = "—"
+                end_fmt     = "—"
+                asleep_h    = 0.0
+                eff_val     = None
+                
             bg_color = TODAY_BG if date_str == TODAY_STR else (ROW_ODD if i % 2 == 0 else ROW_EVN)
             row_fg   = TODAY_FG if date_str == TODAY_STR else FG
+            if is_excluded:
+                row_fg = "#666666"
 
             # Format values
             try:
@@ -906,28 +1055,28 @@ class ClockWidget:
                 day_fmt  = ""
                 date_fmt = date_str
 
-            try:
-                st        = datetime.datetime.fromisoformat(start_raw.replace('Z', ''))
-                start_fmt = st.strftime("%I:%M %p").lstrip('0')
-            except Exception:
-                start_fmt = start_raw[:5] if start_raw else '?'
-
-            asleep_h  = mins_asleep / 60.0
             dur_fmt   = f"{asleep_h:.1f}h"
-            eff_fmt   = f"{mins_asleep / mins_in_bed * 100:.0f}%" if mins_in_bed > 0 else "—"
+            if not is_excluded: durations.append(asleep_h)
+            
+            eff_fmt   = f"{eff_val:.0f}%" if eff_val is not None else "—"
+            if eff_val is not None and not is_excluded:
+                efficiencies.append(eff_val)
             
             debt_val  = (self.sleep_need_hours - asleep_h)
             wtd_val   = debt_val * (0.9 ** i)
             
-            total_raw += debt_val
-            total_wtd += wtd_val
+            if not is_excluded:
+                total_raw += debt_val
+                total_wtd += wtd_val
             
             debt_fg   = "#ff6b6b" if debt_val > 0.1 else "#6bff6b" if debt_val < -0.1 else row_fg
+            if is_excluded: debt_fg = "#442222" if debt_val > 0.1 else "#224422"
 
             cell_data = [
                 (day_fmt,   "center",  row_fg),
                 (date_fmt,  "e",  row_fg),
                 (start_fmt, "e",  row_fg),
+                (end_fmt,   "e",  row_fg),
                 (dur_fmt,   "e",  row_fg),
                 (eff_fmt,   "e",  row_fg),
                 (f"{debt_val:+.1f}h",  "e",  debt_fg),
@@ -942,25 +1091,49 @@ class ClockWidget:
                     anchor=anc,
                     padx=6
                 )
-                lbl.grid(row=grid_row, column=col_i, sticky="ew", pady=1)
+                lbl.grid(row=grid_row, column=col_i + 1, sticky="ew", pady=1)
                 lbl.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_table_window))
                 lbl.bind("<B1-Motion>", self.on_drag_motion)
             grid_row += 1
 
-        # Summary Row
+        # Summary Row (Averages / Totals)
         sep = tk.Frame(self.table_frame, bg="#444444", height=1)
         sep.grid(row=grid_row, column=0, columnspan=len(self._table_cols), sticky="ew", pady=2)
         grid_row += 1
+        
+        # Circular mean helper for times
+        def circ_avg(hours_list):
+            if not hours_list: return "—"
+            import math
+            rads = [h * 2 * math.pi / 24 for h in hours_list]
+            avg_sin = sum(math.sin(r) for r in rads) / len(rads)
+            avg_cos = sum(math.cos(r) for r in rads) / len(rads)
+            avg_rad = math.atan2(avg_sin, avg_cos)
+            avg_h   = (avg_rad * 24 / (2 * math.pi)) % 24
+            
+            # Format to 12h
+            hh = int(avg_h)
+            mm = int((avg_h % 1) * 60)
+            ampm = "AM" if hh < 12 else "PM"
+            hh_12 = hh if 0 < hh <= 12 else (hh - 12 if hh > 12 else 12)
+            if hh_12 == 0: hh_12 = 12
+            return f"{hh_12}:{mm:02d} {ampm}"
+
+        avg_start = circ_avg(start_hours)
+        avg_end   = circ_avg(end_hours)
+        avg_dur   = f"{sum(durations)/len(durations):.1f}h" if durations else "—"
+        avg_eff   = f"{sum(efficiencies)/len(efficiencies):.0f}%" if efficiencies else "—"
         
         raw_fg = "#ff6b6b" if total_raw > 0.1 else "#6bff6b" if total_raw < -0.1 else ACCENT
         wtd_fg = "#ff6b6b" if total_wtd > 0.1 else "#6bff6b" if total_wtd < -0.1 else ACCENT
         
         summary_data = [
-            ("TOTAL", "center", ACCENT),
-            ("", "e", FG),
-            ("", "e", FG),
-            ("", "e", FG),
-            ("", "e", FG),
+            ("AVG",     "center", ACCENT),
+            ("",        "e", FG),
+            (avg_start, "e", FG),
+            (avg_end,   "e", FG),
+            (avg_dur,   "e", FG),
+            (avg_eff,   "e", FG),
             (f"{total_raw:+.1f}h", "e", raw_fg),
             (f"{total_wtd:+.1f}h", "e", wtd_fg),
         ]
@@ -973,7 +1146,7 @@ class ClockWidget:
                 anchor=anc,
                 padx=6
             )
-            lbl.grid(row=grid_row, column=col_i, sticky="ew", pady=2)
+            lbl.grid(row=grid_row, column=col_i + 1, sticky="ew", pady=2)
             lbl.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_table_window))
             lbl.bind("<B1-Motion>", self.on_drag_motion)
 
@@ -1094,6 +1267,17 @@ class ClockWidget:
             self._last_drawn_minute = -1
         
         if self._last_drawn_minute != current_minute:
+            # --- Periodic Data Refresh ---
+            # 1. Midnight reset (sun times + full API refresh)
+            if now.hour == 0 and now.minute == 0:
+                print(f"[ClockWidget] Midnight reset at {now}")
+                self.fetch_sun_times()
+                self.update_fitbit_data(force=True)
+            # 2. Hourly refresh (to catch new sleep syncs/refresh fallback)
+            elif now.minute == 0:
+                print(f"[ClockWidget] Hourly refresh at {now}")
+                self.update_fitbit_data()
+
             self._last_drawn_minute = current_minute
             self.draw_clock()
         else:
@@ -1165,6 +1349,7 @@ class ClockWidget:
             self.energy_curve.sleep_debt_hours = self.sleep_debt_hours if self.show_sleep_debt.get() else 0.0
             self.energy_curve.sleep_duration = self.sleep_duration
             self.energy_curve.bathyphase_hour = self.bathyphase_hour
+            self.energy_curve.max_rested_energy = self._get_max_energy()
             
             current_e = self.energy_curve.get_cached_energy(current_hour)
             
@@ -1369,36 +1554,66 @@ class ClockWidget:
             )
            
         def draw_sleep_arc():
-            if self.show_sleep.get() and self.wake_hour is not None:
-                if self.show_total_bedtime.get():
-                    start_h = self.sleep_hour
-                else:
-                    if self.sleep_duration is not None:
-                        start_h = (self.wake_hour - self.sleep_duration) % 24
-                    else:
-                        start_h = self.sleep_hour
+            if not self.show_sleep.get() or not self.raw_sleep_logs or not self.active_sleep_date:
+                return
 
-                if start_h is not None:
-                    display_dur = self.wake_hour - start_h
+            # Draw every sleep session for the active date (main sleep + naps)
+            for log in self.raw_sleep_logs:
+                if log.get('dateOfSleep') != self.active_sleep_date:
+                    continue
+                
+                # Check if this specific log should be included based on "Include Naps" toggle
+                if not self.include_naps.get() and not log.get('isMainSleep', False):
+                    continue
+
+                try:
+                    start_dt = datetime.datetime.fromisoformat(log['startTime'].replace('Z', ''))
+                    end_dt   = datetime.datetime.fromisoformat(log['endTime'].replace('Z', ''))
+                    
+                    # Use 'timeInBed' for the arc if "Time in Bed" is toggled, 
+                    # otherwise we'd need 'asleep' intervals which Fitbit only provides in 'levels' data.
+                    # For now, we use the full startTime/endTime window.
+                    
+                    s_h = start_dt.hour + start_dt.minute / 60.0 + start_dt.second / 3600.0
+                    e_h = end_dt.hour + end_dt.minute / 60.0 + end_dt.second / 3600.0
+                    
+                    # If we aren't showing total bedtime, we should adjust the start time 
+                    # based on the minutes asleep. This is a simplification but works for the arc.
+                    if not self.show_total_bedtime.get():
+                        dur_hrs = log.get('minutesAsleep', 0) / 60.0
+                        s_h = (e_h - dur_hrs) % 24
+                        
+                    display_dur = e_h - s_h
                     if display_dur < 0:
                         display_dur += 24
                         
-                    sleep_start_angle = (18 - start_h) * 15
+                    sleep_start_angle = (18 - s_h) * 15
                     sleep_extent = - (display_dur * 15)
-               
-                sleep_margin = radius * 0.15
-                self.canvas.create_arc(
-                    center_x - (radius - sleep_margin), center_y - (radius - sleep_margin),
-                    center_x + (radius - sleep_margin), center_y + (radius - sleep_margin),
-                    start=sleep_start_angle, extent=sleep_extent,
-                    fill="#6A5ACD", outline="", style=tk.PIESLICE
-                )
+                    
+                    sleep_margin = radius * 0.15
+                    # Use a slightly different color or transparency for naps? 
+                    # For now, keep it consistent but maybe slightly lighter for naps.
+                    is_main = log.get('isMainSleep', False)
+                    arc_color = "#6A5ACD" if is_main else "#8A7AED"
+                    
+                    self.canvas.create_arc(
+                        center_x - (radius - sleep_margin), center_y - (radius - sleep_margin),
+                        center_x + (radius - sleep_margin), center_y + (radius - sleep_margin),
+                        start=sleep_start_angle, extent=sleep_extent,
+                        fill=arc_color, outline="", style=tk.PIESLICE,
+                        tags="sleep_arc"
+                    )
+                except (KeyError, ValueError):
+                    continue
            
         def draw_energy_curve():
             if self.show_energy.get() and self.wake_hour is not None:
                 current_debt = self.sleep_debt_hours if self.show_sleep_debt.get() else 0.0
                 self.energy_curve.sleep_debt_hours = current_debt
+                self.energy_curve.sleep_duration = self.sleep_duration
+                self.energy_curve.bathyphase_hour = self.bathyphase_hour
                 self.energy_curve.normalize = self.normalize_energy.get()
+                self.energy_curve.max_rested_energy = self._get_max_energy()
                 self.energy_curve.draw(center_x, center_y, radius, self.wake_hour)
 
         def draw_perimeter_line():

@@ -6,3 +6,11 @@ __pycache__/
 fitbit_tokens.json
 24-hr_clock_widget.code-workspace
 saved_curves/
+.idea/24-hr_clock_widget.iml
+.idea/markdown.xml
+.idea/misc.xml
+.idea/modules.xml
+.idea/planningMode.xml
+.idea/vcs.xml
+.idea/caches/deviceStreaming.xml
+.idea/.gitignore

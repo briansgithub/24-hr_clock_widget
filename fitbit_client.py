@@ -144,13 +144,26 @@ class FitbitClient:
     def _request_with_refresh(self, url):
         """API call with one automatic token-refresh retry."""
         if not self.tokens:
-            self.authorize()
+            self.tokens = self.authorize()
         try:
             return self._make_request(url)
-        except Exception:
-            print(f"[FitbitClient] Request failed — attempting token refresh...")
-            if self.refresh_tokens():
+        except Exception as e:
+            err_msg = str(e).lower()
+            # If it looks like a token issue (401 or 400), try refresh
+            if "401" in err_msg or "400" in err_msg:
+                print(f"[FitbitClient] Request failed ({e}) — attempting token refresh...")
+                if self.refresh_tokens():
+                    try:
+                        return self._make_request(url)
+                    except Exception as e2:
+                        print(f"[FitbitClient] Request still failed after refresh: {e2}")
+                
+                # If refresh failed or still failing with 401/400, trigger full re-auth
+                print("[FitbitClient] Token appears dead — triggering full re-authorization...")
+                self.tokens = self.authorize()
                 return self._make_request(url)
+            
+            # For other errors (network, etc.), just raise
             raise
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -297,7 +310,8 @@ class FitbitClient:
         bedtime_goal_hours: float = 9.75,
         debt_window_days: int   = 14,
         include_naps: bool      = True,
-        force: bool             = False
+        force: bool             = False,
+        excluded_dates: list[str] = None
     ) -> dict:
         """
         Orchestrates fetching:
@@ -305,6 +319,9 @@ class FitbitClient:
           2. Today's sleep record (for wake time)
           3. Today's intraday heart rate (for bathyphase)
         """
+        if excluded_dates is None:
+            excluded_dates = []
+
         today     = datetime.now()
         today_str = today.strftime("%Y-%m-%d")
         
@@ -313,20 +330,37 @@ class FitbitClient:
         hr_cache      = os.path.join(os.path.dirname(__file__), "fitbit_hr_intraday.json")
 
         # -- 1. 14-day sleep log (Fast local read for efficiency and debt) --
-        start_date = (today - timedelta(days=debt_window_days - 1)).strftime("%Y-%m-%d")
+        # Fetch 15 days to cover T-0 to T-14
+        start_date = (today - timedelta(days=debt_window_days)).strftime("%Y-%m-%d")
         end_date   = today_str
-        sleep_logs = self.get_sleep_range(start_date, end_date, force=force)
+        
+        sleep_logs = []
+        is_stale_fallback = False
+        try:
+            sleep_logs = self.get_sleep_range(start_date, end_date, force=force)
+        except Exception as e:
+            print(f"[get_all_energy_inputs] API fetch failed: {e}. Falling back to cached logs.")
+            is_stale_fallback = True
+            if os.path.exists(sleep_cache):
+                try:
+                    with open(sleep_cache, 'r') as f:
+                        cached_data = json.load(f)
+                        sleep_logs = cached_data.get('sleep_logs', [])
+                except: pass
+            
+            if not sleep_logs:
+                raise
 
         # -- Dynamic Sleep Need Calculation (Always run this) --------------
         total_asleep_mins = sum(s.get('minutesAsleep', 0) for s in sleep_logs)
-        total_bed_mins    = sum(s.get('timeInBed', 0) for s in sleep_logs)
+        total_bed_mins    = sum(s.get('timeInBed', s.get('timeIn_bed', 0)) for s in sleep_logs)
         
         if total_bed_mins > 0:
             empirical_efficiency = total_asleep_mins / total_bed_mins
         else:
             # Safety fallback only if NO sleep data exists in the 14-day window
-            print("[get_all_energy_inputs] WARNING: No sleep logs found to calculate efficiency. Defaulting to 100%.")
-            empirical_efficiency = 1.0
+            print("[get_all_energy_inputs] WARNING: No sleep logs found to calculate efficiency. Defaulting to 92%.")
+            empirical_efficiency = 0.92
         
         sleep_need_hours = bedtime_goal_hours * empirical_efficiency
         
@@ -344,28 +378,48 @@ class FitbitClient:
 
                 with open(summary_cache, 'r') as f:
                     cached = json.load(f)
-                if not force and cached.get('date') == today_str and 'inputs' in cached:
-                    print(f"[get_all_energy_inputs] Using cached energy inputs for {today_str}")
-                    res = cached['inputs']
-                    
-                    # 1. Inject current dynamic values
-                    res['empirical_efficiency'] = empirical_efficiency
-                    res['sleep_need_hours']     = sleep_need_hours
-                    res['include_naps']         = include_naps
-                    
-                    # 2. Recalculate debt using cached raw logs but current toggle/need
-                    raw_logs = res.get('raw_sleep_logs', sleep_logs)
-                    try:
-                        new_debt = compute_sleep_debt(raw_logs, sleep_need_hours, include_naps)
-                        res['sleep_debt_hours'] = new_debt
-                    except Exception as e:
-                        print(f"[get_all_energy_inputs] Failed to recalculate debt from cache: {e}")
 
-                    res.setdefault('raw_sleep_logs', raw_logs)
-                    res.setdefault('raw_hr_points', [])
-                    res['from_cache'] = True
-                    res['is_real_today'] = cached.get('is_real_today', False)
-                    return res
+                was_real = cached.get('is_real_today', False)
+                cache_mtime = os.path.getmtime(summary_cache)
+                elapsed_sec = time.time() - cache_mtime
+
+                # Use the summary cache if it matches today's date AND:
+                # A) It's "Real" data (already found today's sleep)
+                # B) It's "Fallback" data but was fetched < 1 hr ago
+                if not force and cached.get('date') == today_str and 'inputs' in cached:
+                    if was_real or elapsed_sec < 3600:
+                        print(f"[get_all_energy_inputs] Using cached energy inputs for {today_str} ({'Real' if was_real else 'Fallback'})")
+                        res = cached['inputs']
+
+                        # 1. Inject current dynamic values
+                        res['empirical_efficiency'] = empirical_efficiency
+                        res['sleep_need_hours']     = sleep_need_hours
+                        res['include_naps']         = include_naps
+
+                        # 2. Recalculate debt using cached raw logs but current toggle/need/exclusions
+                        raw_logs = res.get('raw_sleep_logs', sleep_logs)
+                        try:
+                            new_debt = compute_sleep_debt(raw_logs, sleep_need_hours, include_naps, excluded_dates)
+                            res['sleep_debt_hours'] = new_debt
+                        except Exception as e:
+                            print(f"[get_all_energy_inputs] Failed to recalculate debt from cache: {e}")
+
+                        res.setdefault('raw_sleep_logs', raw_logs)
+                        res.setdefault('raw_hr_points', [])
+                        # Ensure active_sleep_date exists (fallback for old caches)
+                        if 'active_sleep_date' not in res:
+                            if was_real:
+                                res['active_sleep_date'] = today_str
+                            elif raw_logs:
+                                res['active_sleep_date'] = max(s.get('dateOfSleep', '') for s in raw_logs)
+                            else:
+                                res['active_sleep_date'] = today_str
+
+                        res['from_cache'] = True
+                        res['is_real_today'] = was_real
+                        return res
+                    else:
+                        print(f"[get_all_energy_inputs] Summary cache is stale Fallback ({elapsed_sec/60:.1f}m old) — ignoring.")
             except Exception:
                 pass
 
@@ -377,37 +431,58 @@ class FitbitClient:
 
 
         # -- 2. Parse today's record ---------------------------------------
-        today_record = next(
-            (s for s in sleep_logs if s.get('dateOfSleep') == today_str),
-            None
-        )
+        # Find all sessions for today
+        today_sessions = [s for s in sleep_logs if s.get('dateOfSleep') == today_str]
+        
+        # Prioritize the main sleep record for today
+        today_record = next((s for s in today_sessions if s.get('isMainSleep')), None)
+        
+        # If no main sleep found for today but there are other sessions (naps), 
+        # use the one that ended latest.
+        if not today_record and today_sessions:
+            today_record = max(today_sessions, key=lambda s: s.get('endTime', ''))
+            
         is_real_today = (today_record is not None)
 
-        # Fallback: use the most recent record available if today's is missing
+        # Fallback: if absolutely no records for today, use the most recent date available
         if not today_record and sleep_logs:
-            today_record = max(sleep_logs, key=lambda s: s.get('dateOfSleep', ''))
-            print(f"[get_all_energy_inputs] No record for {today_str}, using latest: {today_record.get('dateOfSleep')}")
+            latest_date = max(s.get('dateOfSleep', '') for s in sleep_logs)
+            latest_sessions = [s for s in sleep_logs if s.get('dateOfSleep') == latest_date]
+            # Again, prefer main sleep for that date
+            today_record = next((s for s in latest_sessions if s.get('isMainSleep')), latest_sessions[0])
+            print(f"[get_all_energy_inputs] No record for {today_str}, using latest date {latest_date}.")
 
         wake_hour      = None
         sleep_hour     = None
         sleep_duration = None
 
         if today_record:
+            # The 'active' date is the one associated with the record we picked
+            active_date = today_record.get('dateOfSleep')
+            active_sessions = [s for s in sleep_logs if s.get('dateOfSleep') == active_date]
+            
+            # Use the main record's start/end for the labels/clock hand logic
             start_dt = datetime.fromisoformat(today_record['startTime'].replace('Z', ''))
             end_dt   = datetime.fromisoformat(today_record['endTime'].replace('Z', ''))
+            
             sleep_hour = start_dt.hour + start_dt.minute / 60.0 + start_dt.second / 3600.0
             wake_hour = end_dt.hour + end_dt.minute / 60.0 + end_dt.second / 3600.0
-            sleep_duration = today_record['minutesAsleep'] / 60.0
-            print(f"\n[get_all_energy_inputs] Today's sleep:")
-            print(f"  sleep_hour     = {sleep_hour:.2f}  ({start_dt.strftime('%H:%M')})")
-            print(f"  wake_hour      = {wake_hour:.2f}  ({end_dt.strftime('%H:%M')})")
-            print(f"  sleep_duration = {sleep_duration:.2f} h")
+            
+            # Sum duration from ALL sessions on this date (if naps included)
+            if include_naps:
+                sleep_duration = sum(s['minutesAsleep'] for s in active_sessions) / 60.0
+            else:
+                sleep_duration = today_record['minutesAsleep'] / 60.0
+
+            print(f"\n[get_all_energy_inputs] Active sleep date: {active_date}")
+            print(f"  primary_wake_hour = {wake_hour:.2f}  ({end_dt.strftime('%H:%M')})")
+            print(f"  total_duration    = {sleep_duration:.2f} h (from {len(active_sessions) if include_naps else 1} sessions)")
         else:
             print("\n[get_all_energy_inputs] WARNING: no sleep record for today.")
 
         # -- 3. Sleep debt -------------------------------------------------
         try:
-            sleep_debt = compute_sleep_debt(sleep_logs, sleep_need_hours, include_naps)
+            sleep_debt = compute_sleep_debt(sleep_logs, sleep_need_hours, include_naps, excluded_dates)
         except ImportError:
             sleep_debt = sum(
                 max(0.0, sleep_need_hours - s['minutesAsleep'] / 60.0)
@@ -444,11 +519,15 @@ class FitbitClient:
         print(f"{'-'*55}\n")
 
         inputs = {
-            'wake_hour':        wake_hour,
-            'sleep_hour':       sleep_hour,
-            'sleep_duration':   sleep_duration,
-            'sleep_debt_hours': sleep_debt,
-            'bathyphase_hour':  bathyphase_hour,
+            'wake_hour':            wake_hour,
+            'sleep_hour':           sleep_hour,
+            'sleep_duration':       sleep_duration,
+            'sleep_debt_hours':     sleep_debt,
+            'bathyphase_hour':      bathyphase_hour,
+            'active_sleep_date':    today_record.get('dateOfSleep') if today_record else None,
+            'raw_sleep_logs':       sleep_logs,
+            'empirical_efficiency': empirical_efficiency,
+            'sleep_need_hours':     sleep_need_hours
         }
 
         # Save to separate cache files for pragmatic data handling
@@ -481,7 +560,7 @@ class FitbitClient:
         inputs['raw_hr_points']  = hr_points
         inputs['empirical_efficiency'] = empirical_efficiency
         inputs['sleep_need_hours']     = sleep_need_hours
-        inputs['from_cache'] = False
-        inputs['is_real_today'] = is_real_today
+        inputs['from_cache'] = is_stale_fallback
+        inputs['is_real_today'] = is_real_today and not is_stale_fallback
         
         return inputs

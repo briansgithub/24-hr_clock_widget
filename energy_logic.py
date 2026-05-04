@@ -177,12 +177,19 @@ def get_energy_level(
 def compute_sleep_debt(
     sleep_logs: list[dict], 
     sleep_need_hours: float,
-    include_naps: bool = True
+    include_naps: bool = True,
+    excluded_dates: list[str] = None
 ) -> float:
     """
     Computes a weighted 14-night sleep debt.
     Recent nights have a higher impact on the final score.
+
+    If a date is in excluded_dates, it is skipped entirely.
+    If a date is NOT in excluded_dates but has no log, it is treated as 0.0h sleep.
     """
+    if excluded_dates is None:
+        excluded_dates = []
+
     # Group sleep by date
     daily_sleep = {}
     for log in sleep_logs:
@@ -191,27 +198,36 @@ def compute_sleep_debt(
             continue
         daily_sleep[date] = daily_sleep.get(date, 0.0) + (log.get("minutesAsleep", 0) / 60.0)
 
-    # Sort dates to ensure we process from most recent to oldest
-    from datetime import datetime
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    sorted_dates = sorted([d for d in daily_sleep.keys() if d != today_str or daily_sleep[d] > 0], reverse=True)
+    from datetime import datetime, timedelta
+    today = datetime.now()
     
-    window_dates = sorted_dates[:14]
-    
+    # We look at the last 14 nights (T-0 to T-14)
+    # Note: T-0 is usually excluded by default in the UI, but we process it if not excluded.
     weighted_debt = 0.0
     decay_factor = 0.9  # Each day back is 90% as impactful as the day after it
     
     print(f"\n[compute_sleep_debt] Calculating Weighted Debt (Decay={decay_factor}):")
-    for i, date in enumerate(window_dates):
-        actual = daily_sleep[date]
+    print(f"  Excluding dates: {excluded_dates}")
+
+    # Process T-0 down to T-14
+    for i in range(15):
+        date_obj = today - timedelta(days=i)
+        date_str = date_obj.strftime("%Y-%m-%d")
+
+        if date_str in excluded_dates:
+            print(f"  {date_str} (t-{i}): EXCLUDED")
+            continue
+
+        actual = daily_sleep.get(date_str, 0.0)
         nightly_debt = sleep_need_hours - actual
         
-        # Apply weight: i=0 (last night) has weight 0.9^0 = 1.0
+        # Apply weight: i=0 (today/last night) has weight 0.9^0 = 1.0
         weight = math.pow(decay_factor, i)
         contribution = nightly_debt * weight
         weighted_debt += contribution
         
-        print(f"  {date} (t-{i}): {actual:.2f}h sleep | Debt: {nightly_debt:.2f}h | Weight: {weight:.2f}")
+        log_status = "logged" if date_str in daily_sleep else "MISSING (0h)"
+        print(f"  {date_str} (t-{i}): {actual:.2f}h sleep ({log_status}) | Debt: {nightly_debt:.2f}h | Weight: {weight:.2f}")
 
     print(f"[compute_sleep_debt] FINAL WEIGHTED DEBT = {weighted_debt:.2f} h")
     return weighted_debt
@@ -257,7 +273,7 @@ class EnergyCurve:
         self.sleep_duration    = 7.5
         self.bathyphase_hour   = None
         self.normalize         = True
-        
+
         # Cache variables
         self._cached_args = None
         self._cached_levels = []
@@ -281,6 +297,8 @@ class EnergyCurve:
         return self._cached_levels[idx]
 
     def _recompute_cache(self, steps: int):
+        global _energy_summary_printed
+        _energy_summary_printed = False
         levels = []
         for i in range(steps + 1):
             h = (i / float(steps)) * 24.0
