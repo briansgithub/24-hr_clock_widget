@@ -1778,7 +1778,7 @@ class ClockWidget:
                 extent = -(duration * 15)
                 
                 # Shades of Dark Purple
-                color = "#4B0082" if not event.get('is_all_day') else "#7B68EE"
+                color = "#36e813" if not event.get('is_all_day') else "#8C7EFF"
                 
                 # Draw further inward to avoid overlap with tick marks and sleep arcs
                 # Ticks are at margin 0.0 to 0.12, Sleep is at margin 0.15
