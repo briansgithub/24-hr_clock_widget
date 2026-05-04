@@ -109,11 +109,16 @@ def two_process_energy(
     raw = C_t - S_t
 
     # -- 4. SLEEP INERTIA (first ~90 min) -------------------------------------
-    # alertness = raw - (raw_at_wake * exp(-t / tau_inertia))
-    # We approximate raw_at_wake as 1.0 for simplicity in the curve shape.
-    inertia_penalty = math.exp(-t / tau_inertia)
+    # Process W: Alertness is suppressed immediately after waking.
+    # W(t) = (raw_at_wake) * exp(-t / tau_inertia)
+    # We calculate raw_at_wake (t=0) to ensure alertness starts at 0.0.
+    C_at_wake = 1.10 + 0.55 * math.cos((math.pi / 12) * (-circadian_peak_offset)) + \
+                -0.15 * math.cos((math.pi / 6) * (-8.0))
+    raw_at_wake = C_at_wake - S0
+    inertia_penalty = max(0.0, raw_at_wake) * math.exp(-t / tau_inertia)
     
     # -- 5. DEBT PENALTY (shifts floor down) ----------------------------------
+    # Weighted debt of 25 hours (e.g. 1.8h deficit for 14 days) results in max penalty.
     debt_penalty = min(0.35, (sleep_debt_hours * debt_factor) / 25.0)
     
     alertness = raw - inertia_penalty - debt_penalty

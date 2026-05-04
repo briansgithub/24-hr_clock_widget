@@ -86,7 +86,7 @@ class ClockWidget:
         self.tau_sleep = tk.DoubleVar(value=4.2)
         self.tau_inertia = tk.DoubleVar(value=1.5)
         self.debt_factor = tk.DoubleVar(value=1.0)
-        self.circadian_offset = tk.DoubleVar(value=10.0)
+        self.circadian_offset = tk.DoubleVar(value=12.0)
         self.use_bathyphase = tk.BooleanVar(value=True)
 
         # Model parameters will redraw on slider release (handled in _add_slider)
@@ -180,6 +180,10 @@ class ClockWidget:
         add_divider = self._add_divider
         add_toggle = self._add_toggle
 
+        def on_toggle_change():
+            self.draw_clock()
+            self._save_sleep_settings()
+
         add_divider("SETTINGS", self.left_col)
         settings_frame = tk.Frame(self.left_col, bg=self.solid_bg)
         settings_frame.pack(side=tk.TOP, fill=tk.X, pady=2)
@@ -245,20 +249,20 @@ class ClockWidget:
         )
         self.manual_wake_entry.pack(side=tk.LEFT, padx=5)
 
-        self.numbers_toggle = add_toggle("Numbers", self.show_numbers, self.draw_clock, self.left_col)
-        self.sun_moon_toggle = add_toggle("Sun & Moon Icons", self.show_sun_moon, self.draw_clock, self.left_col)
+        self.numbers_toggle = add_toggle("Numbers", self.show_numbers, on_toggle_change, self.left_col)
+        self.sun_moon_toggle = add_toggle("Sun & Moon Icons", self.show_sun_moon, on_toggle_change, self.left_col)
 
         add_divider("SLEEP", self.right_col)
-        self.sleep_toggle = add_toggle("Show Sleep on Clock", self.show_sleep, self.draw_clock, self.right_col)
-        self.bedtime_toggle = add_toggle("Time in Bed vs. Asleep Hrs.", self.show_total_bedtime, self.draw_clock, self.right_col)
-        self.debt_text_toggle = add_toggle("Show Sleep Debt Text", self.show_sleep_debt_text, self.draw_clock, self.right_col)
+        self.sleep_toggle = add_toggle("Show Sleep on Clock", self.show_sleep, on_toggle_change, self.right_col)
+        self.bedtime_toggle = add_toggle("Time in Bed vs. Asleep Hrs.", self.show_total_bedtime, on_toggle_change, self.right_col)
+        self.debt_text_toggle = add_toggle("Show Sleep Debt Text", self.show_sleep_debt_text, on_toggle_change, self.right_col)
         self.table_toggle = add_toggle("Show Sleep Log Table", self.show_sleep_table, self.update_sleep_table_visibility, self.right_col)
 
         add_divider("ENERGY", self.right_col)
-        self.energy_toggle = add_toggle("Show Energy Curve", self.show_energy, self.draw_clock, self.right_col)
-        self.energy_pct_toggle = add_toggle("Show Energy %", self.show_energy_pct, self.draw_clock, self.right_col)
-        self.normalize_toggle = add_toggle("Normalize Energy", self.normalize_energy, self.draw_clock, self.right_col)
-        self.debt_toggle = add_toggle("Factor in Sleep Debt", self.show_sleep_debt, self.draw_clock, self.right_col)
+        self.energy_toggle = add_toggle("Show Energy Curve", self.show_energy, on_toggle_change, self.right_col)
+        self.energy_pct_toggle = add_toggle("Show Energy %", self.show_energy_pct, on_toggle_change, self.right_col)
+        self.normalize_toggle = add_toggle("Normalize Energy", self.normalize_energy, on_toggle_change, self.right_col)
+        self.debt_toggle = add_toggle("Factor in Sleep Debt", self.show_sleep_debt, on_toggle_change, self.right_col)
         self.naps_toggle = add_toggle("Include Naps", self.include_naps, self.update_fitbit_data, self.right_col)
         self.model_win_toggle = add_toggle("Advanced Model Settings", self.show_sleep_model, self.update_sleep_model_visibility, self.right_col)
         
@@ -1145,16 +1149,49 @@ class ClockWidget:
         content = tk.Frame(outer, bg=BG)
         content.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
 
+        def on_model_change():
+            self.draw_clock()
+            self._save_sleep_settings()
+            # If bedtime goal changed, we might need a debt recalculation
+            self._recalculate_debt()
+
         self._add_divider("GENERAL GOALS", content)
-        self._add_slider("Bedtime Goal (h):", self.bedtime_goal, 6.0, 12.0, content, command=self.draw_clock)
-        self._add_slider("Circadian Offset (h):", self.circadian_offset, 6.0, 16.0, content, command=self.draw_clock)
-        self._add_toggle("Use Bathyphase HR", self.use_bathyphase, self.draw_clock, content)
+        self._add_slider("Bedtime Goal (h):", self.bedtime_goal, 6.0, 12.0, content, command=on_model_change)
+        self._add_slider("Circadian Offset (h):", self.circadian_offset, 6.0, 16.0, content, command=on_model_change)
+        self._add_toggle("Use Bathyphase HR", self.use_bathyphase, on_model_change, content)
         
         self._add_divider("MODEL PARAMETERS", content)
-        self._add_slider("Homeostatic Tau (Awake):", self.tau_wake, 10.0, 30.0, content, command=self.draw_clock)
-        self._add_slider("Homeostatic Tau (Sleep):", self.tau_sleep, 2.0, 8.0, content, command=self.draw_clock)
-        self._add_slider("Sleep Inertia (h):", self.tau_inertia, 0.1, 4.0, content, command=self.draw_clock)
-        self._add_slider("Debt Sensitivity:", self.debt_factor, 0.0, 3.0, content, command=self.draw_clock)
+        self._add_slider("Homeostatic Tau (Awake):", self.tau_wake, 10.0, 30.0, content, command=on_model_change)
+        self._add_slider("Homeostatic Tau (Sleep):", self.tau_sleep, 2.0, 8.0, content, command=on_model_change)
+        self._add_slider("Sleep Inertia (h):", self.tau_inertia, 0.1, 4.0, content, command=on_model_change)
+        self._add_slider("Debt Sensitivity:", self.debt_factor, 0.0, 3.0, content, command=on_model_change)
+
+    def _recalculate_debt(self, *args):
+        """Update sleep need and weighted debt based on current goals."""
+        if not self.raw_sleep_logs: return
+        
+        # 1. Update sleep need based on current bedtime goal and efficiency
+        eff = getattr(self, 'sleep_efficiency', 0.92) or 0.92
+        self.sleep_need_hours = self.bedtime_goal.get() * eff
+        
+        # 2. Recalculate debt using the central logic
+        try:
+            from energy_logic import compute_sleep_debt
+            new_debt = compute_sleep_debt(
+                self.raw_sleep_logs, 
+                self.sleep_need_hours, 
+                self.include_naps.get(), 
+                self.excluded_dates
+            )
+            self.sleep_debt_hours = new_debt
+            self.energy_curve.sleep_debt_hours = new_debt
+            
+            # Refresh labels, table, and curve
+            self.update_metric_labels()
+            self.populate_sleep_table()
+            self.draw_clock()
+        except Exception as e:
+            print(f"[_recalculate_debt] Error: {e}")
 
 
     def populate_sleep_table(self):
