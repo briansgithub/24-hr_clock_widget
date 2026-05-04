@@ -49,6 +49,7 @@ class ClockWidget:
     def __init__(self, root):
         self.root = root
         self.root.title("24h Clock")
+        self._control_widgets = []
        
         window_width = 240
         window_height = 240
@@ -77,6 +78,7 @@ class ClockWidget:
         self.show_manual_wake = tk.BooleanVar(value=True)
         self.show_sleep_table = tk.BooleanVar(value=True)
         self.show_calendar = tk.BooleanVar(value=True)
+        self.show_sleep_model = tk.BooleanVar(value=False)
 
         # -- Model Parameters --------------------------
         self.bedtime_goal = tk.DoubleVar(value=9.75)
@@ -87,10 +89,9 @@ class ClockWidget:
         self.circadian_offset = tk.DoubleVar(value=10.0)
         self.use_bathyphase = tk.BooleanVar(value=True)
 
-        # Trace model parameters to redraw
-        for var in [self.bedtime_goal, self.tau_wake, self.tau_sleep, 
-                    self.tau_inertia, self.debt_factor, self.circadian_offset, self.use_bathyphase]:
-            var.trace_add("write", lambda *args: self.draw_clock())
+        # Model parameters will redraw on slider release (handled in _add_slider)
+        # except for boolean toggles which still trace or use command
+        self.use_bathyphase.trace_add("write", lambda *args: self.draw_clock())
 
         self.sleep_settings_file = os.path.join(os.path.dirname(__file__), "sleep_settings.json")
         self.excluded_dates = self._load_sleep_settings()
@@ -155,6 +156,14 @@ class ClockWidget:
         self.sleep_table_window.withdraw()
         self._build_sleep_table()
 
+        # ── Sleep Model Window ────────────────────────────────────────────────
+        self.sleep_model_window = tk.Toplevel(self.root)
+        self.sleep_model_window.title("Sleep Model")
+        self.sleep_model_window.configure(bg=self.solid_bg)
+        self.sleep_model_window.overrideredirect(True)
+        self.sleep_model_window.withdraw()
+        self._build_sleep_model()
+
         self.controls_frame = tk.Frame(self.controls_window, bg=self.solid_bg)
         self.controls_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
        
@@ -168,31 +177,8 @@ class ClockWidget:
         self.right_col = tk.Frame(self.inner_controls, bg=self.solid_bg)
         self.right_col.pack(side=tk.LEFT, anchor=tk.N, padx=(10, 0))
 
-        def add_divider(text, parent):
-            if parent.winfo_children():
-                sep = tk.Frame(parent, bg="#444444", height=1)
-                sep.pack(fill=tk.X, pady=(5, 5))
-                self._control_widgets.append(sep)
-            
-            lbl = tk.Label(parent, text=text, bg=self.solid_bg, fg="white", font=("Arial", 8, "bold underline"))
-            lbl.pack(side=tk.TOP, anchor=tk.W, pady=(0, 2))
-            self._control_widgets.append(lbl)
-
-        def add_toggle(text, var, cmd, parent):
-            cb = tk.Checkbutton(
-                parent,
-                text=text,
-                variable=var,
-                command=cmd,
-                bg=self.solid_bg,
-                fg="white",
-                selectcolor="#3c3c3c",
-                activebackground=self.solid_bg,
-                activeforeground="white"
-            )
-            cb.pack(side=tk.TOP, anchor=tk.W)
-            self._control_widgets.append(cb)
-            return cb
+        add_divider = self._add_divider
+        add_toggle = self._add_toggle
 
         add_divider("SETTINGS", self.left_col)
         settings_frame = tk.Frame(self.left_col, bg=self.solid_bg)
@@ -274,33 +260,8 @@ class ClockWidget:
         self.normalize_toggle = add_toggle("Normalize Energy", self.normalize_energy, self.draw_clock, self.right_col)
         self.debt_toggle = add_toggle("Factor in Sleep Debt", self.show_sleep_debt, self.draw_clock, self.right_col)
         self.naps_toggle = add_toggle("Include Naps", self.include_naps, self.update_fitbit_data, self.right_col)
+        self.model_win_toggle = add_toggle("Advanced Model Settings", self.show_sleep_model, self.update_sleep_model_visibility, self.right_col)
         
-        add_divider("MODEL", self.right_col)
-        
-        def add_slider(text, var, from_, to, parent, resolution=0.1):
-            frame = tk.Frame(parent, bg=self.solid_bg)
-            frame.pack(side=tk.TOP, fill=tk.X)
-            lbl = tk.Label(frame, text=text, bg=self.solid_bg, fg="white", font=("Arial", 7))
-            lbl.pack(side=tk.TOP, anchor=tk.W)
-            
-            s = tk.Scale(
-                frame, variable=var, from_=from_, to=to, resolution=resolution,
-                orient=tk.HORIZONTAL, bg=self.solid_bg, fg="white",
-                highlightthickness=0, troughcolor="#404040", activebackground="#00ffcc",
-                showvalue=True, font=("Arial", 7)
-            )
-            s.pack(side=tk.TOP, fill=tk.X, padx=5)
-            self._control_widgets.append(lbl)
-            self._control_widgets.append(s)
-
-        add_slider("Bedtime Goal (h):", self.bedtime_goal, 6.0, 12.0, self.right_col)
-        add_slider("Circadian Offset (h):", self.circadian_offset, 6.0, 16.0, self.right_col)
-        add_toggle("Use Bathyphase HR", self.use_bathyphase, self.draw_clock, self.right_col)
-        
-        add_slider("Homeostatic Tau (Awake):", self.tau_wake, 10.0, 30.0, self.right_col)
-        add_slider("Homeostatic Tau (Sleep):", self.tau_sleep, 2.0, 8.0, self.right_col)
-        add_slider("Sleep Inertia (h):", self.tau_inertia, 0.1, 4.0, self.right_col)
-        add_slider("Debt Sensitivity:", self.debt_factor, 0.0, 3.0, self.right_col)
 
         add_divider("METRICS", self.right_col)
         metrics_frame = tk.Frame(self.right_col, bg=self.solid_bg)
@@ -355,7 +316,7 @@ class ClockWidget:
         self.canvas.bind("<Configure>", self.on_resize)
        
         # Bind hover events
-        for widget in (self.root, self.controls_window, self.sleep_table_window):
+        for widget in (self.root, self.controls_window, self.sleep_table_window, self.sleep_model_window):
             widget.bind("<Enter>", self.on_enter)
             widget.bind("<Leave>", self.on_leave)
        
@@ -385,6 +346,8 @@ class ClockWidget:
         self.root.attributes('-topmost', self.always_on_top.get())
         if hasattr(self, 'controls_window'):
             self.controls_window.attributes('-topmost', self.always_on_top.get())
+        if hasattr(self, 'sleep_model_window'):
+            self.sleep_model_window.attributes('-topmost', self.always_on_top.get())
 
 
     def get_borders(self):
@@ -449,11 +412,15 @@ class ClockWidget:
         self.controls_window.lift()
         self.controls_window.attributes('-topmost', self.always_on_top.get())
 
-        # Position sleep table to the right of controls
-        if hasattr(self, 'sleep_table_window') and self.show_sleep_table.get():
+        # Position windows to the right of controls
+        if getattr(self, 'is_controls_visible', False):
             self.update_sleep_table_visibility()
-        elif hasattr(self, 'sleep_table_window'):
-            self.sleep_table_window.withdraw()
+            self.update_sleep_model_visibility()
+        else:
+            if hasattr(self, 'sleep_table_window'):
+                self.sleep_table_window.withdraw()
+            if hasattr(self, 'sleep_model_window'):
+                self.sleep_model_window.withdraw()
 
     def make_controls_hidden(self):
         if not hasattr(self, 'controls_window'): return
@@ -462,6 +429,8 @@ class ClockWidget:
         self.controls_window.withdraw()
         if hasattr(self, 'sleep_table_window'):
             self.sleep_table_window.withdraw()
+        if hasattr(self, 'sleep_model_window'):
+            self.sleep_model_window.withdraw()
 
     def update_sleep_table_visibility(self):
         """Explicitly show/hide and position the sleep table based on its toggle variable."""
@@ -478,8 +447,40 @@ class ClockWidget:
             self.sleep_table_window.deiconify()
             self.sleep_table_window.lift()
             self.sleep_table_window.attributes('-topmost', self.always_on_top.get())
+            # If sleep model is also shown, it must move further right
+            if self.show_sleep_model.get():
+                self.update_sleep_model_visibility()
         else:
             self.sleep_table_window.withdraw()
+            # Re-position sleep model if it's shown
+            if self.show_sleep_model.get() and getattr(self, 'is_controls_visible', False):
+                self.update_sleep_model_visibility()
+
+    def update_sleep_model_visibility(self):
+        """Explicitly show/hide and position the sleep model based on its toggle variable."""
+        if not hasattr(self, 'sleep_model_window'): return
+        
+        if self.show_sleep_model.get() and getattr(self, 'is_controls_visible', False):
+            # Position and show
+            self.controls_window.update_idletasks()
+            cx = self.controls_window.winfo_rootx()
+            cy = self.controls_window.winfo_rooty()
+            cw = self.controls_window.winfo_width()
+            
+            target_x = cx + cw + 10
+            
+            # If sleep table is ALSO visible, move further right
+            if self.show_sleep_table.get() and self.sleep_table_window.winfo_viewable():
+                self.sleep_table_window.update_idletasks()
+                tw = self.sleep_table_window.winfo_width()
+                target_x += tw + 10
+                
+            self.sleep_model_window.geometry(f"+{target_x}+{cy}")
+            self.sleep_model_window.deiconify()
+            self.sleep_model_window.lift()
+            self.sleep_model_window.attributes('-topmost', self.always_on_top.get())
+        else:
+            self.sleep_model_window.withdraw()
 
     def make_solid(self):
         self.make_clock_solid()
@@ -503,6 +504,15 @@ class ClockWidget:
         if not getattr(self, '_checking_nearby', False):
             return
             
+        # If left mouse button is pressed (resizing or dragging), don't change states
+        try:
+            import ctypes
+            if ctypes.windll.user32.GetKeyState(0x01) & 0x8000:
+                self.root.after(250, self.check_nearby)
+                return
+        except:
+            pass
+
         mx = self.root.winfo_pointerx()
         my = self.root.winfo_pointery()
        
@@ -512,7 +522,8 @@ class ClockWidget:
         rh = self.root.winfo_height()
        
         margin = 10
-        in_root = not (mx < rx - margin or mx > rx + rw + margin or my < ry - margin or my > ry + rh + margin)
+        root_margin = 20 # More generous margin for resize handles
+        in_root = not (mx < rx - root_margin or mx > rx + rw + root_margin or my < ry - root_margin or my > ry + rh + root_margin)
         
         in_controls = False
         if getattr(self, 'controls_window', None) and self.controls_window.winfo_viewable():
@@ -529,6 +540,13 @@ class ClockWidget:
             th = self.sleep_table_window.winfo_height()
             in_controls = not (mx < tx - margin or mx > tx + tw + margin or my < ty - margin or my > ty + th + margin)
 
+        if not in_controls and getattr(self, 'sleep_model_window', None) and self.sleep_model_window.winfo_viewable():
+            sx = self.sleep_model_window.winfo_rootx()
+            sy = self.sleep_model_window.winfo_rooty()
+            sw = self.sleep_model_window.winfo_width()
+            sh = self.sleep_model_window.winfo_height()
+            in_controls = not (mx < sx - margin or mx > sx + sw + margin or my < sy - margin or my > sy + sh + margin)
+
         if in_root and in_controls:
             top_widget = self.root.winfo_containing(mx, my)
             if top_widget is not None:
@@ -537,6 +555,15 @@ class ClockWidget:
                     in_controls = False
                 elif top_win == getattr(self, 'controls_window', None):
                     in_root = False
+                elif getattr(self, 'sleep_table_window', None) and top_win == self.sleep_table_window:
+                    in_root = False
+                elif getattr(self, 'sleep_model_window', None) and top_win == self.sleep_model_window:
+                    in_root = False
+            else:
+                # If on border (None), prioritize root if we are in its generous margin
+                # and it's currently solid (to allow resizing)
+                if in_root and not getattr(self, 'is_clock_transparent', False):
+                    in_controls = False
 
         # Clock Timeout Logic
         if in_controls:
@@ -644,6 +671,10 @@ class ClockWidget:
     def on_drag_start(self, event, target_window=None):
         if target_window is None:
             target_window = self.root
+            
+        # Don't start a window drag if clicking on interactive widgets
+        if isinstance(event.widget, (tk.Scale, tk.Checkbutton, tk.Button, tk.Entry)):
+            return
             
         if target_window == self.root and getattr(self, 'is_clock_transparent', False):
             self._drag_data = None
@@ -1004,7 +1035,8 @@ class ClockWidget:
             font=("Segoe UI", 10, "bold"), anchor="w", padx=4, pady=6
         )
         title_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        for w in (self.sleep_table_window, outer, title_bar, title_lbl):
+        # Bind drag to window and title bar only
+        for w in (self.sleep_table_window, title_bar, title_lbl):
             w.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_table_window))
             w.bind("<B1-Motion>", self.on_drag_motion)
 
@@ -1042,6 +1074,87 @@ class ClockWidget:
         sep.grid(row=1, column=0, columnspan=len(self._table_cols), sticky="ew")
         sep.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_table_window))
         sep.bind("<B1-Motion>", self.on_drag_motion)
+
+
+    def _add_divider(self, text, parent):
+        if parent.winfo_children():
+            sep = tk.Frame(parent, bg="#444444", height=1)
+            sep.pack(fill=tk.X, pady=(5, 5))
+            self._control_widgets.append(sep)
+        
+        lbl = tk.Label(parent, text=text, bg=self.solid_bg, fg="white", font=("Arial", 8, "bold underline"))
+        lbl.pack(side=tk.TOP, anchor=tk.W, pady=(0, 2))
+        self._control_widgets.append(lbl)
+
+    def _add_toggle(self, text, var, cmd, parent):
+        cb = tk.Checkbutton(
+            parent,
+            text=text,
+            variable=var,
+            command=cmd,
+            bg=self.solid_bg,
+            fg="white",
+            selectcolor="#3c3c3c",
+            activebackground=self.solid_bg,
+            activeforeground="white"
+        )
+        cb.pack(side=tk.TOP, anchor=tk.W)
+        self._control_widgets.append(cb)
+        return cb
+
+    def _add_slider(self, text, var, from_, to, parent, resolution=0.1, command=None):
+        frame = tk.Frame(parent, bg=self.solid_bg)
+        frame.pack(side=tk.TOP, fill=tk.X)
+        lbl = tk.Label(frame, text=text, bg=self.solid_bg, fg="white", font=("Arial", 7))
+        lbl.pack(side=tk.TOP, anchor=tk.W)
+        
+        s = tk.Scale(
+            frame, variable=var, from_=from_, to=to, resolution=resolution,
+            orient=tk.HORIZONTAL, bg=self.solid_bg, fg="white",
+            highlightthickness=0, troughcolor="#404040", activebackground="#00ffcc",
+            showvalue=True, font=("Arial", 7)
+        )
+        s.pack(side=tk.TOP, fill=tk.X, padx=5)
+        if command:
+            s.bind("<ButtonRelease-1>", lambda e: command())
+        self._control_widgets.append(lbl)
+        self._control_widgets.append(s)
+
+    def _build_sleep_model(self):
+        """Build the sleep model settings window."""
+        ACCENT  = "#00ffcc"
+        HDR_BG  = "#1e1e1e"
+        BG      = self.solid_bg
+
+        outer = tk.Frame(self.sleep_model_window, bg=HDR_BG, bd=0)
+        outer.pack(fill=tk.BOTH, expand=True)
+
+        # Draggable title bar
+        title_bar = tk.Frame(outer, bg=HDR_BG)
+        title_bar.pack(fill=tk.X)
+        title_lbl = tk.Label(
+            title_bar, text="  Sleep Model", bg=HDR_BG, fg=ACCENT,
+            font=("Segoe UI", 10, "bold"), anchor="w", padx=4, pady=6
+        )
+        title_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        # Bind drag to window and title bar only (avoid binding to 'outer' or 'content' frames)
+        for w in (self.sleep_model_window, title_bar, title_lbl):
+            w.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_model_window))
+            w.bind("<B1-Motion>", self.on_drag_motion)
+
+        content = tk.Frame(outer, bg=BG)
+        content.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+
+        self._add_divider("GENERAL GOALS", content)
+        self._add_slider("Bedtime Goal (h):", self.bedtime_goal, 6.0, 12.0, content, command=self.draw_clock)
+        self._add_slider("Circadian Offset (h):", self.circadian_offset, 6.0, 16.0, content, command=self.draw_clock)
+        self._add_toggle("Use Bathyphase HR", self.use_bathyphase, self.draw_clock, content)
+        
+        self._add_divider("MODEL PARAMETERS", content)
+        self._add_slider("Homeostatic Tau (Awake):", self.tau_wake, 10.0, 30.0, content, command=self.draw_clock)
+        self._add_slider("Homeostatic Tau (Sleep):", self.tau_sleep, 2.0, 8.0, content, command=self.draw_clock)
+        self._add_slider("Sleep Inertia (h):", self.tau_inertia, 0.1, 4.0, content, command=self.draw_clock)
+        self._add_slider("Debt Sensitivity:", self.debt_factor, 0.0, 3.0, content, command=self.draw_clock)
 
 
     def populate_sleep_table(self):
