@@ -44,7 +44,6 @@ class ClockWidget:
     # Your target time spent in bed (9h 45m = 9.75)
     # The app will automatically calculate your 'Sleep Need'
     # by multiplying this by your actual efficiency.
-    BEDTIME_GOAL_HOURS = 9.75
     # ----------------------------------------------
 
     def __init__(self, root):
@@ -79,6 +78,20 @@ class ClockWidget:
         self.show_sleep_table = tk.BooleanVar(value=True)
         self.show_calendar = tk.BooleanVar(value=True)
 
+        # -- Model Parameters --------------------------
+        self.bedtime_goal = tk.DoubleVar(value=9.75)
+        self.tau_wake = tk.DoubleVar(value=18.2)
+        self.tau_sleep = tk.DoubleVar(value=4.2)
+        self.tau_inertia = tk.DoubleVar(value=1.5)
+        self.debt_factor = tk.DoubleVar(value=1.0)
+        self.circadian_offset = tk.DoubleVar(value=10.0)
+        self.use_bathyphase = tk.BooleanVar(value=True)
+
+        # Trace model parameters to redraw
+        for var in [self.bedtime_goal, self.tau_wake, self.tau_sleep, 
+                    self.tau_inertia, self.debt_factor, self.circadian_offset, self.use_bathyphase]:
+            var.trace_add("write", lambda *args: self.draw_clock())
+
         self.sleep_settings_file = os.path.join(os.path.dirname(__file__), "sleep_settings.json")
         self.excluded_dates = self._load_sleep_settings()
 
@@ -93,7 +106,7 @@ class ClockWidget:
         self.sleep_debt_hours   = 0.0   # hours; updated after first Fitbit fetch
         self.bathyphase_hour    = None  # clock hour; None until intraday HR fetched
         self.sleep_efficiency   = None  # 0.0 to 1.0
-        self.sleep_need_hours   = self.BEDTIME_GOAL_HOURS
+        self.sleep_need_hours   = 9.0   # placeholder, updated after first Fitbit fetch
         self.last_fitbit_update = None
         self.raw_sleep_logs     = []    # list of raw Fitbit sleep records
         self.active_sleep_date  = None  # the YYYY-MM-DD date we are currently displaying
@@ -262,6 +275,33 @@ class ClockWidget:
         self.debt_toggle = add_toggle("Factor in Sleep Debt", self.show_sleep_debt, self.draw_clock, self.right_col)
         self.naps_toggle = add_toggle("Include Naps", self.include_naps, self.update_fitbit_data, self.right_col)
         
+        add_divider("MODEL", self.right_col)
+        
+        def add_slider(text, var, from_, to, parent, resolution=0.1):
+            frame = tk.Frame(parent, bg=self.solid_bg)
+            frame.pack(side=tk.TOP, fill=tk.X)
+            lbl = tk.Label(frame, text=text, bg=self.solid_bg, fg="white", font=("Arial", 7))
+            lbl.pack(side=tk.TOP, anchor=tk.W)
+            
+            s = tk.Scale(
+                frame, variable=var, from_=from_, to=to, resolution=resolution,
+                orient=tk.HORIZONTAL, bg=self.solid_bg, fg="white",
+                highlightthickness=0, troughcolor="#404040", activebackground="#00ffcc",
+                showvalue=True, font=("Arial", 7)
+            )
+            s.pack(side=tk.TOP, fill=tk.X, padx=5)
+            self._control_widgets.append(lbl)
+            self._control_widgets.append(s)
+
+        add_slider("Bedtime Goal (h):", self.bedtime_goal, 6.0, 12.0, self.right_col)
+        add_slider("Circadian Offset (h):", self.circadian_offset, 6.0, 16.0, self.right_col)
+        add_toggle("Use Bathyphase HR", self.use_bathyphase, self.draw_clock, self.right_col)
+        
+        add_slider("Homeostatic Tau (Awake):", self.tau_wake, 10.0, 30.0, self.right_col)
+        add_slider("Homeostatic Tau (Sleep):", self.tau_sleep, 2.0, 8.0, self.right_col)
+        add_slider("Sleep Inertia (h):", self.tau_inertia, 0.1, 4.0, self.right_col)
+        add_slider("Debt Sensitivity:", self.debt_factor, 0.0, 3.0, self.right_col)
+
         add_divider("METRICS", self.right_col)
         metrics_frame = tk.Frame(self.right_col, bg=self.solid_bg)
         metrics_frame.pack(side=tk.TOP, fill=tk.X, pady=2)
@@ -555,13 +595,25 @@ class ClockWidget:
                 self.check_nearby()
 
     def _load_sleep_settings(self):
-        """Load excluded dates from JSON. Defaults T-0 to excluded."""
+        """Load settings from JSON."""
         today_str = datetime.datetime.now().strftime("%Y-%m-%d")
         if os.path.exists(self.sleep_settings_file):
             try:
                 with open(self.sleep_settings_file, 'r') as f:
                     data = json.load(f)
                     self.explicit_dates = data.get("explicit_dates", [])
+                    
+                    # Load model parameters if they exist
+                    if "model_params" in data:
+                        p = data["model_params"]
+                        self.bedtime_goal.set(p.get("bedtime_goal", 9.75))
+                        self.tau_wake.set(p.get("tau_wake", 18.2))
+                        self.tau_sleep.set(p.get("tau_sleep", 4.2))
+                        self.tau_inertia.set(p.get("tau_inertia", 1.5))
+                        self.debt_factor.set(p.get("debt_factor", 1.0))
+                        self.circadian_offset.set(p.get("circadian_offset", 10.0))
+                        self.use_bathyphase.set(p.get("use_bathyphase", True))
+
                     return data.get("excluded_dates", [today_str])
             except:
                 pass
@@ -569,13 +621,23 @@ class ClockWidget:
         return [today_str]
 
     def _save_sleep_settings(self):
-        """Save excluded dates to JSON."""
+        """Save settings to JSON."""
         try:
+            data = {
+                "excluded_dates": self.excluded_dates,
+                "explicit_dates": getattr(self, 'explicit_dates', []),
+                "model_params": {
+                    "bedtime_goal": self.bedtime_goal.get(),
+                    "tau_wake": self.tau_wake.get(),
+                    "tau_sleep": self.tau_sleep.get(),
+                    "tau_inertia": self.tau_inertia.get(),
+                    "debt_factor": self.debt_factor.get(),
+                    "circadian_offset": self.circadian_offset.get(),
+                    "use_bathyphase": self.use_bathyphase.get()
+                }
+            }
             with open(self.sleep_settings_file, 'w') as f:
-                json.dump({
-                    "excluded_dates": self.excluded_dates,
-                    "explicit_dates": getattr(self, 'explicit_dates', [])
-                }, f)
+                json.dump(data, f)
         except:
             pass
 
@@ -625,7 +687,12 @@ class ClockWidget:
             self.hover_timer = None
 
     def _get_max_energy(self):
-        if not hasattr(self, '_max_rested_energy') or getattr(self, '_max_rested_energy_args', None) != (self.wake_hour, self.bathyphase_hour):
+        current_args = (
+            self.wake_hour, self.bathyphase_hour,
+            self.tau_wake.get(), self.tau_sleep.get(), self.tau_inertia.get(), 
+            self.debt_factor.get(), self.circadian_offset.get(), self.use_bathyphase.get()
+        )
+        if not hasattr(self, '_max_rested_energy') or getattr(self, '_max_rested_energy_args', None) != current_args:
             max_e = 0
             for i in range(1440):
                 h_test = (i / 1440.0) * 24.0
@@ -633,14 +700,19 @@ class ClockWidget:
                     h_test,
                     self.wake_hour,
                     0.0,
-                    self.BEDTIME_GOAL_HOURS,
-                    self.bathyphase_hour,
-                    clamp=False
+                    self.bedtime_goal.get(),
+                    self.bathyphase_hour if self.use_bathyphase.get() else None,
+                    clamp=False,
+                    tau_wake=self.tau_wake.get(),
+                    tau_sleep=self.tau_sleep.get(),
+                    tau_inertia=self.tau_inertia.get(),
+                    debt_factor=self.debt_factor.get(),
+                    circadian_peak_offset=None if self.use_bathyphase.get() else self.circadian_offset.get()
                 )
                 if e > max_e:
                     max_e = e
             self._max_rested_energy = max_e
-            self._max_rested_energy_args = (self.wake_hour, self.bathyphase_hour)
+            self._max_rested_energy_args = current_args
         return self._max_rested_energy
 
     def on_right_click_start(self, event):
@@ -681,12 +753,7 @@ class ClockWidget:
         current_e = 0.5    # Fallback energy
         
         if self.wake_hour is not None:
-            self.energy_curve.wake_hour = self.wake_hour
-            self.energy_curve.sleep_debt_hours = self.sleep_debt_hours if self.show_sleep_debt.get() else 0.0
-            self.energy_curve.sleep_duration = self.sleep_duration
-            self.energy_curve.bathyphase_hour = self.bathyphase_hour
-            self.energy_curve.max_rested_energy = self._get_max_energy()
-            
+            self._apply_energy_curve_params()
             current_e = self.energy_curve.get_cached_energy(phantom_hour)
             current_r = self.energy_curve.get_display_radius(current_e, radius)
 
@@ -815,7 +882,7 @@ class ClockWidget:
         def _task():
             try:
                 inputs = self.fitbit.get_all_energy_inputs(
-                    bedtime_goal_hours=self.BEDTIME_GOAL_HOURS,
+                    bedtime_goal_hours=self.bedtime_goal.get(),
                     include_naps=self.include_naps.get(),
                     force=force,
                     excluded_dates=self.excluded_dates
@@ -823,7 +890,7 @@ class ClockWidget:
                 
                 # Print the dynamic calculation for user visibility
                 eff = inputs.get('empirical_efficiency', 1.0)
-                need = inputs.get('sleep_need_hours', self.BEDTIME_GOAL_HOURS)
+                need = inputs.get('sleep_need_hours', self.bedtime_goal.get())
                 print(f"[Fitbit] Dynamic Efficiency: {eff:.1%}")
                 print(f"[Fitbit] Dynamic Sleep Need: {need:.2f}h")
 
@@ -1381,6 +1448,20 @@ class ClockWidget:
         self._draw_solar_circle(center_x, center_y, radius)
         self._draw_clock_hand(now, center_x, center_y, radius)
 
+    def _apply_energy_curve_params(self):
+        self.energy_curve.wake_hour = self.wake_hour
+        self.energy_curve.sleep_debt_hours = self.sleep_debt_hours if self.show_sleep_debt.get() else 0.0
+        self.energy_curve.sleep_duration = self.sleep_duration
+        self.energy_curve.bathyphase_hour = self.bathyphase_hour if self.use_bathyphase.get() else None
+        
+        self.energy_curve.tau_wake = self.tau_wake.get()
+        self.energy_curve.tau_sleep = self.tau_sleep.get()
+        self.energy_curve.tau_inertia = self.tau_inertia.get()
+        self.energy_curve.debt_factor = self.debt_factor.get()
+        self.energy_curve.circadian_peak_offset = None if self.use_bathyphase.get() else self.circadian_offset.get()
+        
+        self.energy_curve.max_rested_energy = self._get_max_energy()
+
     def _draw_clock_hand(self, now, center_x, center_y, radius):
         current_hour = now.hour + now.minute / 60.0 + now.second / 3600.0
         hand_angle = (18 - current_hour) * 15
@@ -1409,12 +1490,7 @@ class ClockWidget:
         )
         
         if self.wake_hour is not None:
-            self.energy_curve.wake_hour = self.wake_hour
-            self.energy_curve.sleep_debt_hours = self.sleep_debt_hours if self.show_sleep_debt.get() else 0.0
-            self.energy_curve.sleep_duration = self.sleep_duration
-            self.energy_curve.bathyphase_hour = self.bathyphase_hour
-            self.energy_curve.max_rested_energy = self._get_max_energy()
-            
+            self._apply_energy_curve_params()
             current_e = self.energy_curve.get_cached_energy(current_hour)
             
             # max energy today if fully rested
@@ -1712,12 +1788,8 @@ class ClockWidget:
            
         def draw_energy_curve():
             if self.show_energy.get() and self.wake_hour is not None:
-                current_debt = self.sleep_debt_hours if self.show_sleep_debt.get() else 0.0
-                self.energy_curve.sleep_debt_hours = current_debt
-                self.energy_curve.sleep_duration = self.sleep_duration
-                self.energy_curve.bathyphase_hour = self.bathyphase_hour
+                self._apply_energy_curve_params()
                 self.energy_curve.normalize = self.normalize_energy.get()
-                self.energy_curve.max_rested_energy = self._get_max_energy()
                 self.energy_curve.draw(center_x, center_y, radius, self.wake_hour)
 
         def draw_perimeter_line():
