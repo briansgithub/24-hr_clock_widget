@@ -623,7 +623,7 @@ class ClockWidget:
         elif not in_root:
             if not getattr(self, '_clock_hide_timer_started', False):
                 self._clock_hide_timer_started = True
-                self._clock_hide_timer_id = self.root.after(1500, self.make_clock_transparent)
+                self._clock_hide_timer_id = self.root.after(1000, self.make_clock_transparent)
         else:
             if getattr(self, '_clock_hide_timer_started', False):
                 self.root.after_cancel(self._clock_hide_timer_id)
@@ -634,7 +634,7 @@ class ClockWidget:
         if not in_controls and not in_root:
             if not getattr(self, '_controls_hide_timer_started', False):
                 self._controls_hide_timer_started = True
-                self._controls_hide_timer_id = self.root.after(1750, self.make_controls_hidden)
+                self._controls_hide_timer_id = self.root.after(1000, self.make_controls_hidden)
         else:
             if getattr(self, '_controls_hide_timer_started', False):
                 self.root.after_cancel(self._controls_hide_timer_id)
@@ -2065,6 +2065,8 @@ class ClockWidget:
                 return
             
             for i, event in enumerate(self.calendar_events):
+                if event.get('is_all_day'): continue
+
                 s_h = event['start_hour']
                 e_h = event['end_hour']
                 
