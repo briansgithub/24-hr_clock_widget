@@ -65,6 +65,13 @@ class ClockWidget:
         "clock_hand"
     ]
 
+    EVENT_COLORS = [
+        "#FF5733", "#33FF57", "#3357FF", "#F333FF", "#FF33A1", "#33FFF5",
+        "#F5FF33", "#FF8633", "#8633FF", "#33FF86", "#FF3333", "#3333FF",
+        "#33FF33", "#FFFF33", "#FF33FF", "#33FFFF", "#FF9933", "#99FF33",
+        "#3399FF", "#FF3399", "#9933FF", "#33FF99", "#FF6633", "#66FF33"
+    ]
+
     # --- CONFIGURE YOUR FITBIT CREDENTIALS HERE ---
     FITBIT_CLIENT_ID = 'YOUR_FITBIT_CLIENT_ID'
     FITBIT_CLIENT_SECRET = 'YOUR_FITBIT_CLIENT_SECRET'
@@ -116,10 +123,12 @@ class ClockWidget:
         self.debt_factor = tk.DoubleVar(value=1.0)
         self.circadian_offset = tk.DoubleVar(value=12.0)
         self.use_bathyphase = tk.BooleanVar(value=True)
+        self.manual_wake_time = tk.StringVar(value="9:00")
 
         # Model parameters will redraw on slider release (handled in _add_slider)
         # except for boolean toggles which still trace or use command
         self.use_bathyphase.trace_add("write", lambda *args: self.draw_clock())
+        self.manual_wake_time.trace_add("write", lambda *args: (self.draw_clock(), self._save_sleep_settings()))
 
         self.sleep_settings_file = os.path.join(os.path.dirname(__file__), "sleep_settings.json")
         self.excluded_dates = self._load_sleep_settings()
@@ -219,8 +228,6 @@ class ClockWidget:
         tk.Label(settings_frame, text="Hover Delay (s):", bg=self.solid_bg, fg="white", font=("Arial", 8)).pack(side=tk.LEFT)
         
         self.hover_delay_var = tk.StringVar(value="1.0")
-        self.manual_wake_time = tk.StringVar(value="10:00")
-        self.manual_wake_time.trace_add("write", lambda *args: self.draw_clock())
         
         def validate_num(P):
             if P == "": return True
@@ -256,7 +263,7 @@ class ClockWidget:
             wake_frame,
             text="Wake up (HH:mm):",
             variable=self.show_manual_wake,
-            command=self.draw_clock,
+            command=on_toggle_change,
             bg=self.solid_bg,
             fg="white",
             selectcolor="#3c3c3c",
@@ -519,6 +526,14 @@ class ClockWidget:
     def make_solid(self):
         self.make_clock_solid()
         self.make_controls_visible()
+        
+        # Trigger an opportunistic background refresh if data is stale (> 5s)
+        now = datetime.datetime.now()
+        last_refresh = getattr(self, '_last_calendar_refresh_time', None)
+        if last_refresh is None or (now - last_refresh).total_seconds() > 5:
+            print("[ClockWidget] Opportunistic hover refresh.")
+            self.update_calendar_data()
+            
         if not getattr(self, '_checking_nearby', False):
             self._checking_nearby = True
             self.check_nearby()
@@ -672,8 +687,10 @@ class ClockWidget:
                         self.tau_sleep.set(p.get("tau_sleep", 4.2))
                         self.tau_inertia.set(p.get("tau_inertia", 1.5))
                         self.debt_factor.set(p.get("debt_factor", 1.0))
-                        self.circadian_offset.set(p.get("circadian_offset", 10.0))
+                        self.circadian_offset.set(p.get("circadian_offset", 12.0))
                         self.use_bathyphase.set(p.get("use_bathyphase", True))
+                        self.manual_wake_time.set(p.get("manual_wake_time", "9:00"))
+                        self.show_manual_wake.set(p.get("show_manual_wake", True))
 
                     return data.get("excluded_dates", [today_str])
             except:
@@ -694,7 +711,9 @@ class ClockWidget:
                     "tau_inertia": self.tau_inertia.get(),
                     "debt_factor": self.debt_factor.get(),
                     "circadian_offset": self.circadian_offset.get(),
-                    "use_bathyphase": self.use_bathyphase.get()
+                    "use_bathyphase": self.use_bathyphase.get(),
+                    "manual_wake_time": self.manual_wake_time.get(),
+                    "show_manual_wake": self.show_manual_wake.get()
                 }
             }
             with open(self.sleep_settings_file, 'w') as f:
@@ -1045,6 +1064,7 @@ class ClockWidget:
             try:
                 events = get_calendar_events(self.calendar_svc, 'primary')
                 self.calendar_events = events
+                self._last_calendar_refresh_time = datetime.datetime.now()
                 print(f"[Calendar] Fetched {len(events)} events.")
                 self.root.after(0, self.draw_clock)
             except Exception as e:
@@ -1608,11 +1628,14 @@ class ClockWidget:
                 self.fetch_sun_times()
                 self.update_fitbit_data(force=True)
                 self.update_calendar_data()
-            # 2. Hourly refresh (to catch new sleep syncs/refresh fallback)
+            # 2. 10-minute calendar refresh (Efficient Real-time)
+            elif now.minute % 10 == 0:
+                print(f"[ClockWidget] 10-minute calendar poll at {now}")
+                self.update_calendar_data()
+            # 3. Hourly refresh (to catch new sleep syncs/refresh fallback)
             elif now.minute == 0:
                 print(f"[ClockWidget] Hourly refresh at {now}")
                 self.update_fitbit_data()
-                self.update_calendar_data()
 
             self._last_drawn_minute = current_minute
             self.draw_clock()
@@ -2041,7 +2064,7 @@ class ClockWidget:
             if not self.show_calendar.get() or not self.calendar_events:
                 return
             
-            for event in self.calendar_events:
+            for i, event in enumerate(self.calendar_events):
                 s_h = event['start_hour']
                 e_h = event['end_hour']
                 
@@ -2054,19 +2077,31 @@ class ClockWidget:
                 start_angle = (18 - s_h) * 15
                 extent = -(duration * 15)
                 
-                # Shades of Dark Purple
-                color = "#36e813" if not event.get('is_all_day') else "#8C7EFF"
+                # Unique color from the 24-color set
+                color = self.EVENT_COLORS[i % len(self.EVENT_COLORS)]
                 
                 # Draw further inward to avoid overlap with tick marks and sleep arcs
                 # Ticks are at margin 0.0 to 0.12, Sleep is at margin 0.15
                 margin = radius * 0.15
                 r_arc = radius - margin
                 
+                width = max(6, int(radius/9))
+                
+                # Draw thin gray outline (slightly wider)
+                self.canvas.create_arc(
+                    center_x - r_arc, center_y - r_arc,
+                    center_x + r_arc, center_y + r_arc,
+                    start=start_angle, extent=extent,
+                    outline="#444444", width=width + 2, style=tk.ARC,
+                    tags="calendar_events"
+                )
+                
+                # Draw colored event arc
                 arc_id = self.canvas.create_arc(
                     center_x - r_arc, center_y - r_arc,
                     center_x + r_arc, center_y + r_arc,
                     start=start_angle, extent=extent,
-                    outline=color, width=max(6, int(radius/9)), style=tk.ARC,
+                    outline=color, width=width, style=tk.ARC,
                     tags="calendar_events"
                 )
                 self._calendar_item_map[arc_id] = event.get('summary', 'No Title')
