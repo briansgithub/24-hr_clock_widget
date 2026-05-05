@@ -57,6 +57,28 @@ A specialized client for the Fitbit Web API (OAuth 2.0).
 51: - **Time Normalization**: Converts ISO 8601 timestamps into 0-24 float hours for clock face rendering.
 52: - **Event Filtering**: Supports both timed and all-day events.
 
+## Advanced Sleep Model
+
+The energy curve is powered by a research-backed **Two-Process Model of Alertness**. You can tune the parameters of this model in the **Sleep Model** window (accessible via "Advanced Model Settings" in the Controls).
+
+### Model Parameters & Effects
+- **Bedtime Goal**: Your target time spent in bed each night. 
+    - *Effect*: Higher values increase your daily 'Sleep Need'. If your goal is 10h and your efficiency is 90%, your need is 9h. Increasing this makes your energy curve sink more when you sleep less than your goal.
+- **Circadian Offset**: Number of hours after wake when your primary circadian alerting signal reaches its peak.
+    - *Effect*: Default is **12.0h**. Increasing this shifts your "Evening Peak" (Wake Maintenance Zone) later in the day. Decreasing it shifts it earlier.
+- **Use Bathyphase HR**: Anchors the model to your actual physiological trough.
+    - *Effect*: When enabled, the widget uses the Fitbit-detected hour of lowest heart rate to precisely time your circadian peaks and dips.
+- **Homeostatic Tau (Awake)**: The time constant for sleep pressure accumulation while awake.
+    - *Effect*: Default is **18.2h**. Higher values mean sleep pressure builds up more slowly, making you stay alert for longer during the day. Lower values mean you tire faster.
+- **Homeostatic Tau (Sleep)**: The time constant for sleep pressure dissipation while asleep.
+    - *Effect*: Default is **4.2h**. Higher values mean sleep is *less* effective at clearing pressure, requiring more sleep to feel rested. Lower values represent faster recovery.
+- **Sleep Inertia**: The duration of the "fog" or suppressed alertness immediately after waking.
+    - *Effect*: Default is **1.5h**. Adjusts how long the energy curve remains near zero before beginning its morning ascent.
+- **Debt Sensitivity**: A multiplier for the penalty applied by accumulated sleep debt over the last 14 days.
+    - *Effect*: Default is **1.0**. Increasing this makes the visual impact of chronic sleep restriction much more severe.
+
+*Note: You can use the **Reset** button in the Sleep Model window to return all parameters to their research-standard defaults.*
+
 ## Smart Sync & Caching
 The application is designed to be highly responsive while minimizing API usage:
 
