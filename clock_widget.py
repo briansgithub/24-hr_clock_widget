@@ -15,6 +15,34 @@ from fitbit_client import FitbitClient
 from energy_logic import EnergyCurve, get_energy_level
 from google_calendar_client import get_calendar_service, get_calendar_events
 
+class Tooltip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tip_window = None
+        self.widget.bind("<Enter>", self.show_tip)
+        self.widget.bind("<Leave>", self.hide_tip)
+
+    def show_tip(self, event=None):
+        if self.tip_window or not self.text:
+            return
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+        self.tip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        tw.attributes("-topmost", True)
+        label = tk.Label(tw, text=self.text, justify=tk.LEFT,
+                         background="#2a2a2a", foreground="white", relief=tk.SOLID, borderwidth=1,
+                         font=("Arial", "8"), padx=5, pady=3)
+        label.pack()
+
+    def hide_tip(self, event=None):
+        tw = self.tip_window
+        self.tip_window = None
+        if tw:
+            tw.destroy()
+
 class ClockWidget:
     FACE_PADDING = 52
     # -------------------------------------------------------------------------
@@ -252,6 +280,17 @@ class ClockWidget:
         self.numbers_toggle = add_toggle("Numbers", self.show_numbers, on_toggle_change, self.left_col)
         self.sun_moon_toggle = add_toggle("Sun & Moon Icons", self.show_sun_moon, on_toggle_change, self.left_col)
 
+        add_divider("METRICS", self.right_col)
+        metrics_frame = tk.Frame(self.right_col, bg=self.solid_bg)
+        metrics_frame.pack(side=tk.TOP, fill=tk.X, pady=2)
+        
+        self.bathyphase_label = tk.Label(metrics_frame, text="Bathyphase: --:-- --", bg=self.solid_bg, fg="white", font=("Arial", 8, "bold"))
+        self.bathyphase_label.pack(side=tk.TOP, anchor=tk.W)
+        
+        self.efficiency_label = tk.Label(metrics_frame, text="Sleep Efficiency: --.-%", bg=self.solid_bg, fg="white", font=("Arial", 8, "bold"))
+        self.efficiency_label.pack(side=tk.TOP, anchor=tk.W)
+
+
         add_divider("SLEEP", self.right_col)
         self.sleep_toggle = add_toggle("Show Sleep on Clock", self.show_sleep, on_toggle_change, self.right_col)
         self.bedtime_toggle = add_toggle("Time in Bed vs. Asleep Hrs.", self.show_total_bedtime, on_toggle_change, self.right_col)
@@ -266,17 +305,6 @@ class ClockWidget:
         self.naps_toggle = add_toggle("Include Naps", self.include_naps, self.update_fitbit_data, self.right_col)
         self.model_win_toggle = add_toggle("Advanced Model Settings", self.show_sleep_model, self.update_sleep_model_visibility, self.right_col)
         
-
-        add_divider("METRICS", self.right_col)
-        metrics_frame = tk.Frame(self.right_col, bg=self.solid_bg)
-        metrics_frame.pack(side=tk.TOP, fill=tk.X, pady=2)
-        
-        self.bathyphase_label = tk.Label(metrics_frame, text="Bathyphase: --:-- --", bg=self.solid_bg, fg="white", font=("Arial", 8, "bold"))
-        self.bathyphase_label.pack(side=tk.TOP, anchor=tk.W)
-        
-        self.efficiency_label = tk.Label(metrics_frame, text="Sleep Efficiency: --.-%", bg=self.solid_bg, fg="white", font=("Arial", 8, "bold"))
-        self.efficiency_label.pack(side=tk.TOP, anchor=tk.W)
-
         self.refresh_btn = tk.Button(
             self.right_col,
             text="Fitbit API Refresh",
@@ -292,6 +320,8 @@ class ClockWidget:
         )
         self.refresh_btn.pack(side=tk.TOP, anchor=tk.W, pady=(10, 0), padx=(20, 0))
         self._control_widgets.append(self.refresh_btn)
+        
+
         
         add_divider("CALENDAR", self.left_col)
         self.calendar_toggle = add_toggle("Show Calendar Events", self.show_calendar, self.draw_clock, self.left_col)
@@ -1039,8 +1069,8 @@ class ClockWidget:
             font=("Segoe UI", 10, "bold"), anchor="w", padx=4, pady=6
         )
         title_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        # Bind drag to window and title bar only
-        for w in (self.sleep_table_window, title_bar, title_lbl):
+        # Bind drag to title bar only
+        for w in (title_bar, title_lbl):
             w.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_table_window))
             w.bind("<B1-Motion>", self.on_drag_motion)
 
@@ -1070,14 +1100,10 @@ class ClockWidget:
                 anchor="center"
             )
             lbl.grid(row=0, column=col_i, sticky="ew", padx=1, pady=(4, 2))
-            lbl.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_table_window))
-            lbl.bind("<B1-Motion>", self.on_drag_motion)
 
         # Thin separator under headers
         sep = tk.Frame(self.table_frame, bg="#444444", height=1)
         sep.grid(row=1, column=0, columnspan=len(self._table_cols), sticky="ew")
-        sep.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_table_window))
-        sep.bind("<B1-Motion>", self.on_drag_motion)
 
 
     def _add_divider(self, text, parent):
@@ -1090,7 +1116,7 @@ class ClockWidget:
         lbl.pack(side=tk.TOP, anchor=tk.W, pady=(0, 2))
         self._control_widgets.append(lbl)
 
-    def _add_toggle(self, text, var, cmd, parent):
+    def _add_toggle(self, text, var, cmd, parent, tooltip=None):
         cb = tk.Checkbutton(
             parent,
             text=text,
@@ -1103,10 +1129,12 @@ class ClockWidget:
             activeforeground="white"
         )
         cb.pack(side=tk.TOP, anchor=tk.W)
+        if tooltip:
+            Tooltip(cb, tooltip)
         self._control_widgets.append(cb)
         return cb
 
-    def _add_slider(self, text, var, from_, to, parent, resolution=0.1, command=None):
+    def _add_slider(self, text, var, from_, to, parent, resolution=0.1, command=None, tooltip=None):
         frame = tk.Frame(parent, bg=self.solid_bg)
         frame.pack(side=tk.TOP, fill=tk.X)
         lbl = tk.Label(frame, text=text, bg=self.solid_bg, fg="white", font=("Arial", 7))
@@ -1121,6 +1149,11 @@ class ClockWidget:
         s.pack(side=tk.TOP, fill=tk.X, padx=5)
         if command:
             s.bind("<ButtonRelease-1>", lambda e: command())
+        
+        if tooltip:
+            Tooltip(lbl, tooltip)
+            Tooltip(s, tooltip)
+            
         self._control_widgets.append(lbl)
         self._control_widgets.append(s)
 
@@ -1141,8 +1174,8 @@ class ClockWidget:
             font=("Segoe UI", 10, "bold"), anchor="w", padx=4, pady=6
         )
         title_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        # Bind drag to window and title bar only (avoid binding to 'outer' or 'content' frames)
-        for w in (self.sleep_model_window, title_bar, title_lbl):
+        # Bind drag to title bar only
+        for w in (title_bar, title_lbl):
             w.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_model_window))
             w.bind("<B1-Motion>", self.on_drag_motion)
 
@@ -1154,17 +1187,43 @@ class ClockWidget:
             self._save_sleep_settings()
             # If bedtime goal changed, we might need a debt recalculation
             self._recalculate_debt()
+            
+        def reset_model_defaults():
+            self.bedtime_goal.set(9.75)
+            self.circadian_offset.set(12.0)
+            self.use_bathyphase.set(True)
+            self.tau_wake.set(18.2)
+            self.tau_sleep.set(4.2)
+            self.tau_inertia.set(1.5)
+            self.debt_factor.set(1.0)
+            on_model_change()
 
         self._add_divider("GENERAL GOALS", content)
-        self._add_slider("Bedtime Goal (h):", self.bedtime_goal, 6.0, 12.0, content, command=on_model_change)
-        self._add_slider("Circadian Offset (h):", self.circadian_offset, 6.0, 16.0, content, command=on_model_change)
-        self._add_toggle("Use Bathyphase HR", self.use_bathyphase, on_model_change, content)
+        self._add_slider("Bedtime Goal (h):", self.bedtime_goal, 6.0, 12.0, content, command=on_model_change,
+                         tooltip="Your target time in bed. Used to calculate 'Sleep Need' based on your average efficiency.")
+        self._add_slider("Circadian Offset (h):", self.circadian_offset, 6.0, 16.0, content, command=on_model_change,
+                         tooltip="Hours after wake when primary circadian alertness peaks. Adjusts the timing of your 'evening peak'.")
+        self._add_toggle("Use Bathyphase HR", self.use_bathyphase, on_model_change, content,
+                         tooltip="Use your actual lowest heart rate point (Bathyphase) to anchor your circadian curve.")
         
         self._add_divider("MODEL PARAMETERS", content)
-        self._add_slider("Homeostatic Tau (Awake):", self.tau_wake, 10.0, 30.0, content, command=on_model_change)
-        self._add_slider("Homeostatic Tau (Sleep):", self.tau_sleep, 2.0, 8.0, content, command=on_model_change)
-        self._add_slider("Sleep Inertia (h):", self.tau_inertia, 0.1, 4.0, content, command=on_model_change)
-        self._add_slider("Debt Sensitivity:", self.debt_factor, 0.0, 3.0, content, command=on_model_change)
+        self._add_slider("Homeostatic Tau (Awake):", self.tau_wake, 10.0, 30.0, content, command=on_model_change,
+                         tooltip="How fast you tire during the day. Higher values mean you stay alert for longer.")
+        self._add_slider("Homeostatic Tau (Sleep):", self.tau_sleep, 2.0, 8.0, content, command=on_model_change,
+                         tooltip="How fast you recover during sleep. Higher values mean sleep is less effective at discharging pressure.")
+        self._add_slider("Sleep Inertia (h):", self.tau_inertia, 0.1, 4.0, content, command=on_model_change,
+                         tooltip="Duration of morning grogginess. Controls how long it takes to reach full alertness after waking.")
+        self._add_slider("Debt Sensitivity:", self.debt_factor, 0.0, 3.0, content, command=on_model_change,
+                         tooltip="Multiplier for sleep debt penalty. Higher values make your curve sink lower when you lack sleep.")
+
+        # Reset button
+        reset_btn = tk.Button(
+            content, text="Reset", command=reset_model_defaults,
+            bg="#404040", fg="#ff6b6b", activebackground="#555555",
+            activeforeground="white", relief=tk.FLAT, padx=10, pady=2,
+            font=("Arial", 8, "bold")
+        )
+        reset_btn.pack(side=tk.BOTTOM, pady=(10, 0))
 
     def _recalculate_debt(self, *args):
         """Update sleep need and weighted debt based on current goals."""
@@ -1370,8 +1429,6 @@ class ClockWidget:
                     padx=6
                 )
                 lbl.grid(row=grid_row, column=col_i + 1, sticky="ew", pady=1)
-                lbl.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_table_window))
-                lbl.bind("<B1-Motion>", self.on_drag_motion)
             grid_row += 1
 
         # Summary Row (Averages / Totals)
@@ -1425,8 +1482,6 @@ class ClockWidget:
                 padx=6
             )
             lbl.grid(row=grid_row, column=col_i + 1, sticky="ew", pady=2)
-            lbl.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_table_window))
-            lbl.bind("<B1-Motion>", self.on_drag_motion)
 
         # Shrink-wrap window to exact content size
         self.sleep_table_window.update_idletasks()
