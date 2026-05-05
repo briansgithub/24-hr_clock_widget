@@ -23,7 +23,8 @@ data class SleepLogEntry(
     val isMainSleep: Boolean,
     val timeInBed: Int,
     val startTime: String,
-    val endTime: String
+    val endTime: String,
+    val duration: Long = 0
 )
 
 @Serializable

@@ -17,9 +17,9 @@ class SettingsManager(private val context: Context) {
     companion object {
         private val HOME_SETTINGS_JSON = stringPreferencesKey("home_settings_json")
         private val LOCK_SETTINGS_JSON = stringPreferencesKey("lock_settings_json")
+        private val MODEL_SETTINGS_JSON = stringPreferencesKey("model_settings_json")
 
         // DEFAULT SETTINGS TEMPLATES
-        // Edit these to change the initial appearance for new users
         private val DEFAULT_HOME_SETTINGS = ClockSettings(
             showNumbers = false,
             showSleep = true,
@@ -27,7 +27,11 @@ class SettingsManager(private val context: Context) {
             showSunMoon = true,
             showSleepDebtText = true,
             smallTopRight = true,
-            showLifeCalendar = false
+            showLifeCalendar = false,
+            showCalendar = true,
+            showTotalBedtime = false,
+            showEnergyPct = false,
+            normalizeEnergy = true
         )
 
         private val DEFAULT_LOCK_SETTINGS = ClockSettings(
@@ -37,7 +41,25 @@ class SettingsManager(private val context: Context) {
             showSunMoon = true,
             showSleepDebtText = false,
             smallTopRight = false,
-            showLifeCalendar = false
+            showLifeCalendar = false,
+            showCalendar = true,
+            showTotalBedtime = false,
+            showEnergyPct = false,
+            normalizeEnergy = false
+        )
+
+        private val DEFAULT_MODEL_SETTINGS = ModelSettings(
+            bedtimeGoal = 9.75,
+            tauWake = 18.2,
+            tauSleep = 4.2,
+            tauInertia = 1.5,
+            debtFactor = 1.0,
+            circadianOffset = 12.0,
+            useBathyphase = true,
+            includeNaps = true,
+            manualWakeTime = "09:00",
+            showManualWake = true,
+            excludedDates = emptyList()
         )
     }
 
@@ -47,29 +69,21 @@ class SettingsManager(private val context: Context) {
     }
 
     val homeSettingsFlow: Flow<ClockSettings> = context.settingsDataStore.data.map { prefs ->
-        val jsonStr = prefs[HOME_SETTINGS_JSON]
-        if (jsonStr != null) {
-            try {
-                json.decodeFromString<ClockSettings>(jsonStr)
-            } catch (e: Exception) {
-                DEFAULT_HOME_SETTINGS
-            }
-        } else {
-            DEFAULT_HOME_SETTINGS
-        }
+        prefs[HOME_SETTINGS_JSON]?.let {
+            try { json.decodeFromString<ClockSettings>(it) } catch (e: Exception) { DEFAULT_HOME_SETTINGS }
+        } ?: DEFAULT_HOME_SETTINGS
     }
 
     val lockSettingsFlow: Flow<ClockSettings> = context.settingsDataStore.data.map { prefs ->
-        val jsonStr = prefs[LOCK_SETTINGS_JSON]
-        if (jsonStr != null) {
-            try {
-                json.decodeFromString<ClockSettings>(jsonStr)
-            } catch (e: Exception) {
-                DEFAULT_LOCK_SETTINGS
-            }
-        } else {
-            DEFAULT_LOCK_SETTINGS
-        }
+        prefs[LOCK_SETTINGS_JSON]?.let {
+            try { json.decodeFromString<ClockSettings>(it) } catch (e: Exception) { DEFAULT_LOCK_SETTINGS }
+        } ?: DEFAULT_LOCK_SETTINGS
+    }
+
+    val modelSettingsFlow: Flow<ModelSettings> = context.settingsDataStore.data.map { prefs ->
+        prefs[MODEL_SETTINGS_JSON]?.let {
+            try { json.decodeFromString<ModelSettings>(it) } catch (e: Exception) { DEFAULT_MODEL_SETTINGS }
+        } ?: DEFAULT_MODEL_SETTINGS
     }
 
 
@@ -84,16 +98,59 @@ class SettingsManager(private val context: Context) {
             prefs[LOCK_SETTINGS_JSON] = json.encodeToString(update)
         }
     }
+
+    suspend fun updateModelSettings(update: ModelSettings) {
+        context.settingsDataStore.edit { prefs ->
+            prefs[MODEL_SETTINGS_JSON] = json.encodeToString(update)
+        }
+    }
+
+    suspend fun resetHomeSettings() {
+        context.settingsDataStore.edit { prefs ->
+            prefs[HOME_SETTINGS_JSON] = json.encodeToString(DEFAULT_HOME_SETTINGS)
+        }
+    }
+
+    suspend fun resetLockSettings() {
+        context.settingsDataStore.edit { prefs ->
+            prefs[LOCK_SETTINGS_JSON] = json.encodeToString(DEFAULT_LOCK_SETTINGS)
+        }
+    }
+
+    suspend fun resetModelSettings() {
+        context.settingsDataStore.edit { prefs ->
+            prefs[MODEL_SETTINGS_JSON] = json.encodeToString(DEFAULT_MODEL_SETTINGS)
+        }
+    }
 }
 
 @Serializable
 data class ClockSettings(
     val showNumbers: Boolean = false,
-    val showSleep: Boolean = true,
-    val showEnergy: Boolean = true,
+    val showSleep: Boolean = false,
+    val showEnergy: Boolean = false,
     val showSunMoon: Boolean = true,
-    val showSleepDebtText: Boolean = true,
+    val showSleepDebtText: Boolean = false,
     val smallTopRight: Boolean = false,
-    val showLifeCalendar: Boolean = false
+    val showLifeCalendar: Boolean = false,
+    val showCalendar: Boolean = true,
+    val showTotalBedtime: Boolean = false,
+    val showEnergyPct: Boolean = false,
+    val normalizeEnergy: Boolean = false
+)
+
+@Serializable
+data class ModelSettings(
+    val bedtimeGoal: Double = 9.75,
+    val tauWake: Double = 18.2,
+    val tauSleep: Double = 4.2,
+    val tauInertia: Double = 1.5,
+    val debtFactor: Double = 1.0,
+    val circadianOffset: Double = 12.0,
+    val useBathyphase: Boolean = true,
+    val includeNaps: Boolean = true,
+    val manualWakeTime: String = "09:00",
+    val showManualWake: Boolean = true,
+    val excludedDates: List<String> = emptyList()
 )
 

@@ -246,7 +246,10 @@ class FitbitManager(private val context: Context) {
         return@withContext allPoints
     }
 
-    suspend fun refreshMetrics() {
+    suspend fun refreshMetrics(force: Boolean = false) {
+        val settingsManager = SettingsManager(context)
+        val modelSettings = settingsManager.modelSettingsFlow.first()
+        
         val now = java.time.LocalDate.now()
         val logs = fetchSleepLogs(now.minusDays(14).toString(), now.toString())
         if (logs.isEmpty()) return
@@ -258,10 +261,12 @@ class FitbitManager(private val context: Context) {
             .map { it.minutesAsleep.toDouble() / it.timeInBed }
             .average()
         
+        val eff = if (avgEff.isNaN()) 0.92 else avgEff
+        
         // Bathyphase
         val hrPoints = fetchHeartRateIntraday(mainSleep.startTime, mainSleep.endTime)
         val bathy = EnergyCalculator.findBathyphase(hrPoints.map { HeartRatePoint(it.time, it.value) })
         
-        saveMetrics(bathy, if (avgEff.isNaN()) 1.0 else avgEff, 9.75)
+        saveMetrics(bathy, eff, modelSettings.bedtimeGoal * eff)
     }
 }

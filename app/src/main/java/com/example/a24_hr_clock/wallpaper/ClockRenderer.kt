@@ -43,7 +43,6 @@ class ClockRenderer {
     }
 
     private val sleepArcPaint = Paint().apply {
-        color = Color.parseColor("#6A5ACD")
         style = Paint.Style.FILL
         isAntiAlias = true
     }
@@ -81,6 +80,24 @@ class ClockRenderer {
         isAntiAlias = true
     }
 
+    private val eventColors = listOf(
+        "#FF5733", "#33FF57", "#3357FF", "#F333FF", "#FF33A1", "#33FFF5",
+        "#F5FF33", "#FF8633", "#8633FF", "#33FF86", "#FF3333", "#3333FF",
+        "#33FF33", "#FFFF33", "#FF33FF", "#33FFFF", "#FF9933", "#99FF33",
+        "#3399FF", "#FF3399", "#9933FF", "#33FF99", "#FF6633", "#66FF33"
+    )
+
+    private val eventOutlinePaint = Paint().apply {
+        color = Color.parseColor("#444444")
+        style = Paint.Style.STROKE
+        isAntiAlias = true
+    }
+
+    private val eventPaint = Paint().apply {
+        style = Paint.Style.STROKE
+        isAntiAlias = true
+    }
+
     private val energyCurvePaint = Paint().apply {
         style = Paint.Style.STROKE
         strokeWidth = 8f
@@ -102,22 +119,37 @@ class ClockRenderer {
         now: Calendar,
         sunriseHour: Double,
         sunsetHour: Double,
-        sleepHour: Double?,
-        wakeHour: Double?,
+        sleepLogs: List<com.example.a24_hr_clock.logic.SleepLogEntry> = emptyList(),
         sunRad: Double,
         moonRad: Double,
         moonPhaseValue: Double,
         solarIrradiance: Int,
         sleepDebt: Double,
-        sleepDuration: Double,
         bathyphaseHour: Double?,
+        calendarEvents: List<com.example.a24_hr_clock.logic.CalendarEvent> = emptyList(),
         showNumbers: Boolean = true,
         showSleep: Boolean = true,
         showSunMoon: Boolean = true,
         showSleepDebtText: Boolean = true,
         showEnergy: Boolean = false,
+        showCalendar: Boolean = true,
         smallTopRight: Boolean = false,
-        showLifeCalendar: Boolean = false
+        showLifeCalendar: Boolean = false,
+        showTotalBedtime: Boolean = true,
+        showEnergyPct: Boolean = false,
+        normalizeEnergy: Boolean = true,
+        includeNaps: Boolean = true,
+        tauWake: Double = 18.2,
+        tauSleep: Double = 4.2,
+        tauInertia: Double = 1.5,
+        debtFactor: Double = 1.0,
+        circadianOffset: Double = 12.0,
+        useBathyphase: Boolean = true,
+        bedtimeGoal: Double = 9.75,
+        showManualWake: Boolean = false,
+        manualWakeTime: String = "09:00",
+        isPreview: Boolean = false,
+        previewIsLockScreen: Boolean = false
     ) {
         // Clear background to OLED black
         canvas.drawColor(Color.BLACK)
@@ -150,28 +182,73 @@ class ClockRenderer {
         // 2. Draw Night Shading
         drawNightShading(canvas, centerX, centerY, radius, sunriseHour, sunsetHour)
 
-        // 3. Draw Sleep Arc
-        if (showSleep && wakeHour != null && sleepHour != null) {
-            drawSleepArc(canvas, centerX, centerY, radius, sleepHour, wakeHour)
+        // 3. Draw Calendar Events
+        if (showCalendar) {
+            drawCalendarEvents(canvas, centerX, centerY, radius, calendarEvents)
         }
 
-        // 4. Draw Energy Curve
+        // 4. Draw Sleep Arc
+        if (showSleep && sleepLogs.isNotEmpty()) {
+            drawSleepArcs(canvas, centerX, centerY, radius, sleepLogs, includeNaps, showTotalBedtime)
+        }
+
+        // 5. Draw Energy Curve
+        // Identify Active Sleep Date Logs (Today or Fallback)
+        val todayStr = java.time.LocalDate.now().toString()
+        var activeLogs = sleepLogs.filter { it.dateOfSleep == todayStr }
+        if (activeLogs.isEmpty()) {
+            val lastLog = sleepLogs.maxByOrNull { it.dateOfSleep }
+            if (lastLog != null) {
+                activeLogs = sleepLogs.filter { it.dateOfSleep == lastLog.dateOfSleep }
+            }
+        }
+
+        val mainSleep = activeLogs.find { it.isMainSleep } ?: activeLogs.maxByOrNull { it.endTime }
+        
+        var wakeHour = mainSleep?.let {
+            try {
+                val endDt = java.time.LocalDateTime.parse(it.endTime.replace("Z", ""))
+                endDt.hour + endDt.minute / 60.0 + endDt.second / 3600.0
+            } catch (e: Exception) { null }
+        }
+
+        var manualWakeHour: Double? = null
+        if (showManualWake) {
+            val parts = manualWakeTime.split(":")
+            if (parts.size == 2) {
+                val h = parts[0].toDoubleOrNull()
+                val m = parts[1].toDoubleOrNull()
+                if (h != null && m != null) {
+                    manualWakeHour = h + m / 60.0
+                }
+            }
+        }
+
         if (showEnergy && wakeHour != null) {
-            drawEnergyCurve(canvas, centerX, centerY, radius, wakeHour, sleepDebt, sleepDuration, bathyphaseHour)
+            val totalAsleep = if (includeNaps) activeLogs.sumOf { it.minutesAsleep / 60.0 } else (mainSleep?.minutesAsleep ?: 0) / 60.0
+            drawEnergyCurve(
+                canvas, centerX, centerY, radius, wakeHour, sleepDebt, totalAsleep, 
+                bathyphaseHour, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset, useBathyphase, normalizeEnergy, bedtimeGoal
+            )
         }
 
-        // 5. Draw face outline
+        // 6. Draw face outline
         canvas.drawCircle(centerX, centerY, radius, faceOutlinePaint)
 
-        // 6. Draw Solar Circle
+        // 6.5 Draw Wake Indicator
+        if (showManualWake && manualWakeHour != null) {
+            drawWakeIndicator(canvas, centerX, centerY, radius, manualWakeHour)
+        }
+
+        // 7. Draw Solar Circle
         drawSolarCircle(canvas, centerX, centerY, radius, solarIrradiance)
 
-        // 7. Draw Sleep Debt Text
+        // 8. Draw Sleep Debt Text
         if (showSleepDebtText) {
             drawSleepDebtText(canvas, centerX, centerY, radius, sleepDebt)
         }
 
-        // 7. Draw Ticks and Numbers
+        // 9. Draw Ticks and Numbers
         for (h in 0 until 24 step 2) {
             val angleDegrees = (h - 18) * 15.0
             val rad = Math.toRadians(angleDegrees)
@@ -206,12 +283,12 @@ class ClockRenderer {
             }
         }
 
-        // 6. Draw Sun and Moon
+        // 10. Draw Sun and Moon
         if (showSunMoon) {
             drawSunAndMoon(canvas, centerX, centerY, radius, sunRad, moonRad, moonPhaseValue)
         }
 
-        // 7. Draw Clock Hand
+        // 11. Draw Clock Hand
         val hour = now.get(Calendar.HOUR_OF_DAY)
         val minute = now.get(Calendar.MINUTE)
         val second = now.get(Calendar.SECOND)
@@ -244,6 +321,127 @@ class ClockRenderer {
         }
         val arrowPaint = Paint(handPaint).apply { style = Paint.Style.FILL }
         canvas.drawPath(path, arrowPaint)
+
+        if (showEnergyPct && wakeHour != null) {
+            val todayStr = java.time.LocalDate.now().toString()
+            var activeLogs = sleepLogs.filter { it.dateOfSleep == todayStr }
+            if (activeLogs.isEmpty()) {
+                val lastLog = sleepLogs.maxByOrNull { it.dateOfSleep }
+                if (lastLog != null) activeLogs = sleepLogs.filter { it.dateOfSleep == lastLog.dateOfSleep }
+            }
+            val mainSleep = activeLogs.find { it.isMainSleep } ?: activeLogs.maxByOrNull { it.endTime }
+            val totalAsleep = if (includeNaps) activeLogs.sumOf { it.minutesAsleep / 60.0 } else (mainSleep?.minutesAsleep ?: 0) / 60.0
+            
+            drawEnergyPct(canvas, centerX, centerY, radius, exactHour, handRad, wakeHour, sleepDebt, totalAsleep, bathyphaseHour, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset, useBathyphase, bedtimeGoal)
+        }
+
+        // 12. Draw Preview Overlay
+        if (isPreview) {
+            val text = if (previewIsLockScreen) "Previewing: Lock Screen (Tap to toggle)" else "Previewing: Home Screen (Tap to toggle)"
+            textPaint.textSize = 40f
+            textPaint.color = Color.WHITE
+            val textWidth = textPaint.measureText(text)
+            val padding = 20f
+            val rect = RectF(
+                centerX - textWidth / 2f - padding,
+                150f - textPaint.textSize - padding,
+                centerX + textWidth / 2f + padding,
+                150f + padding
+            )
+            val bgPaint = Paint().apply {
+                color = Color.parseColor("#AA000000")
+                style = Paint.Style.FILL
+            }
+            canvas.drawRoundRect(rect, 20f, 20f, bgPaint)
+            
+            // Adjust descent so it's centered
+            val textY = 150f - (textPaint.descent() + textPaint.ascent()) / 2f
+            canvas.drawText(text, centerX, textY, textPaint)
+        }
+    }
+
+    private fun drawEnergyPct(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        radius: Float,
+        exactHour: Double,
+        handRad: Double,
+        wakeHour: Double,
+        sleepDebt: Double,
+        sleepDuration: Double,
+        bathyphaseHour: Double?,
+        tauWake: Double,
+        tauSleep: Double,
+        tauInertia: Double,
+        debtFactor: Double,
+        circadianOffset: Double,
+        useBathyphase: Boolean,
+        bedtimeGoal: Double
+    ) {
+        val currentE = EnergyCalculator.getEnergyLevel(
+            exactHour, wakeHour, sleepDebt, sleepDuration,
+            if (useBathyphase) bathyphaseHour else null,
+            false, tauWake, tauSleep, tauInertia, debtFactor,
+            if (useBathyphase) null else circadianOffset
+        )
+
+        // Max possible today if rested
+        val maxE = EnergyCalculator.twoProcessEnergy(
+            12.0, 0.0, 9.75, 10.0, false, 
+            tauWake, tauSleep, tauInertia, debtFactor
+        )
+
+        val pct = if (maxE > 0) (currentE / maxE * 100).roundToInt().coerceAtLeast(0) else 0
+        
+        val textRadius = radius + 60f
+        val tx = cx + textRadius * cos(handRad).toFloat()
+        val ty = cy + textRadius * sin(handRad).toFloat()
+
+        textPaint.textSize = radius * 0.08f
+        textPaint.color = Color.BLACK
+        // Simple outline
+        for (dx in -2..2 step 2) {
+            for (dy in -2..2 step 2) {
+                canvas.drawText("${pct}%", tx + dx, ty + dy + (textPaint.textSize / 3f), textPaint)
+            }
+        }
+        textPaint.color = interpolateEnergyColor(currentE)
+        canvas.drawText("${pct}%", tx, ty + (textPaint.textSize / 3f), textPaint)
+    }
+
+    private fun drawCalendarEvents(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        radius: Float,
+        events: List<com.example.a24_hr_clock.logic.CalendarEvent>
+    ) {
+        val margin = radius * 0.15f
+        val rArc = radius - margin
+        val strokeWidth = max(6f, radius / 9f)
+        val rect = RectF(cx - rArc, cy - rArc, cx + rArc, cy + rArc)
+        
+        eventOutlinePaint.strokeWidth = strokeWidth + 2f
+        eventPaint.strokeWidth = strokeWidth
+
+        events.forEachIndexed { i, event ->
+            if (event.isAllDay) return@forEachIndexed
+
+            val duration = if (event.endHour >= event.startHour) event.endHour - event.startHour else (event.endHour + 24.0) - event.startHour
+            if (duration < 0.05) return@forEachIndexed
+            
+            val startAngle = (event.startHour - 18.0) * 15.0
+            val sweepAngle = duration * 15.0
+            
+            // Outline
+            canvas.drawArc(rect, startAngle.toFloat(), sweepAngle.toFloat(), false, eventOutlinePaint)
+            
+            // Fill
+            val colorStr = if (event.isAllDay) "#8C7EFF" else eventColors[i % eventColors.size]
+            eventPaint.color = Color.parseColor(colorStr)
+            canvas.drawArc(rect, startAngle.toFloat(), sweepAngle.toFloat(), false, eventPaint)
+        }
     }
 
     private fun drawSolarCircle(canvas: Canvas, cx: Float, cy: Float, radius: Float, brightness: Int) {
@@ -260,7 +458,15 @@ class ClockRenderer {
         wakeHour: Double,
         sleepDebt: Double,
         sleepDuration: Double,
-        bathyphaseHour: Double?
+        bathyphaseHour: Double?,
+        tauWake: Double,
+        tauSleep: Double,
+        tauInertia: Double,
+        debtFactor: Double,
+        circadianOffset: Double,
+        useBathyphase: Boolean,
+        normalize: Boolean,
+        bedtimeGoal: Double
     ) {
         val steps = 72
         var lastX = 0f
@@ -270,7 +476,12 @@ class ClockRenderer {
         val levels = mutableListOf<Double>()
         for (i in 0..steps) {
             val h = (i.toDouble() / steps) * 24.0
-            levels.add(EnergyCalculator.getEnergyLevel(h, wakeHour, sleepDebt, sleepDuration, bathyphaseHour, false))
+            levels.add(EnergyCalculator.getEnergyLevel(
+                h, wakeHour, sleepDebt, sleepDuration, 
+                if (useBathyphase) bathyphaseHour else null, 
+                false, tauWake, tauSleep, tauInertia, debtFactor, 
+                if (useBathyphase) null else circadianOffset
+            ))
         }
         val eMin = levels.minOrNull() ?: 0.0
         val eMax = levels.maxOrNull() ?: 1.0
@@ -281,7 +492,7 @@ class ClockRenderer {
             val energy = levels[i]
             
             // Scaled radius (matching Python get_display_radius logic)
-            val displayEnergy = if (eRange > 0.01) (energy - eMin) / eRange else energy.coerceIn(0.0, 1.0)
+            val displayEnergy = if (normalize && eRange > 0.01) (energy - eMin) / eRange else energy.coerceIn(0.0, 1.0)
             val currentR = (0.10 + 0.80 * displayEnergy) * radius
 
             val angleDegrees = (h - 18.0) * 15.0
@@ -333,14 +544,88 @@ class ClockRenderer {
         canvas.drawArc(rect, sunsetAngle.toFloat(), sweepAngle.toFloat(), true, nightShadingPaint)
     }
 
-    private fun drawSleepArc(canvas: Canvas, cx: Float, cy: Float, radius: Float, sleepHour: Double, wakeHour: Double) {
-        var duration = wakeHour - sleepHour
-        if (duration < 0) duration += 24.0
-        val sleepStartAngle = (sleepHour - 18.0) * 15.0
-        val sleepSweep = duration * 15.0
-        val margin = radius * 0.15f
-        val rect = RectF(cx - (radius - margin), cy - (radius - margin), cx + (radius - margin), cy + (radius - margin))
-        canvas.drawArc(rect, sleepStartAngle.toFloat(), sleepSweep.toFloat(), true, sleepArcPaint)
+    private fun drawSleepArcs(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        radius: Float,
+        logs: List<com.example.a24_hr_clock.logic.SleepLogEntry>,
+        includeNaps: Boolean,
+        showTotalBedtime: Boolean
+    ) {
+        val todayStr = java.time.LocalDate.now().toString()
+        var targetLogs = logs.filter { it.dateOfSleep == todayStr }
+        
+        if (targetLogs.isEmpty()) {
+            val lastLog = logs.maxByOrNull { it.dateOfSleep }
+            if (lastLog != null) {
+                targetLogs = logs.filter { it.dateOfSleep == lastLog.dateOfSleep }
+            }
+        }
+        
+        targetLogs.forEach { log ->
+            if (!includeNaps && !log.isMainSleep) return@forEach
+            
+            try {
+                val startDt = java.time.LocalDateTime.parse(log.startTime.replace("Z", ""))
+                val endDt = java.time.LocalDateTime.parse(log.endTime.replace("Z", ""))
+                
+                var sH = startDt.hour + startDt.minute / 60.0 + startDt.second / 3600.0
+                val eH = endDt.hour + endDt.minute / 60.0 + endDt.second / 3600.0
+                
+                if (!showTotalBedtime) {
+                    val durHrs = log.minutesAsleep / 60.0
+                    sH = (eH - durHrs).mod(24.0)
+                }
+                
+                var displayDur = eH - sH
+                if (displayDur < 0) displayDur += 24.0
+                
+                val sleepStartAngle = (sH - 18.0) * 15.0
+                val sleepSweep = displayDur * 15.0
+                val margin = radius * 0.15f
+                val rect = RectF(cx - (radius - margin), cy - (radius - margin), cx + (radius - margin), cy + (radius - margin))
+                
+                sleepArcPaint.color = if (log.isMainSleep) Color.parseColor("#6A5ACD") else Color.parseColor("#8A7AED")
+                canvas.drawArc(rect, sleepStartAngle.toFloat(), sleepSweep.toFloat(), true, sleepArcPaint)
+            } catch (e: Exception) {}
+        }
+    }
+
+    private fun drawWakeIndicator(canvas: Canvas, cx: Float, cy: Float, radius: Float, wakeHour: Double) {
+        val angleDegrees = (wakeHour - 18.0) * 15.0
+        val rad = Math.toRadians(angleDegrees)
+        
+        val tickLen = radius * 0.25f
+        val halfLen = tickLen / 2f
+        
+        // Calculate points
+        val x1 = cx + (radius - halfLen) * cos(rad).toFloat()
+        val y1 = cy + (radius - halfLen) * sin(rad).toFloat()
+        val x2 = cx + (radius + halfLen) * cos(rad).toFloat()
+        val y2 = cy + (radius + halfLen) * sin(rad).toFloat()
+        
+        // Slightly longer points for the black outline
+        val outlineOffset = 1.5f
+        val bx1 = cx + (radius - halfLen - outlineOffset) * cos(rad).toFloat()
+        val by1 = cy + (radius - halfLen - outlineOffset) * sin(rad).toFloat()
+        val bx2 = cx + (radius + halfLen + outlineOffset) * cos(rad).toFloat()
+        val by2 = cy + (radius + halfLen + outlineOffset) * sin(rad).toFloat()
+        
+        val paint = Paint().apply {
+            isAntiAlias = true
+            strokeCap = Paint.Cap.BUTT
+        }
+        
+        // 1. Black outline
+        paint.color = Color.BLACK
+        paint.strokeWidth = 14f // Roughly equivalent to Python's width=7 for this scale
+        canvas.drawLine(bx1, by1, bx2, by2, paint)
+        
+        // 2. White center
+        paint.color = Color.WHITE
+        paint.strokeWidth = 8f // Roughly equivalent to Python's width=4 for this scale
+        canvas.drawLine(x1, y1, x2, y2, paint)
     }
 
     private fun drawSunAndMoon(canvas: Canvas, cx: Float, cy: Float, radius: Float, sunRad: Double, moonRad: Double, moonPhase: Double) {

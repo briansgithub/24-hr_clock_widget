@@ -1,10 +1,12 @@
 package com.example.a24_hr_clock.wallpaper
 
+import android.Manifest
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.os.Build
 import android.service.wallpaper.WallpaperService
 import android.view.SurfaceHolder
@@ -24,6 +26,7 @@ class ClockWallpaperService : WallpaperService() {
     inner class ClockEngine : Engine() {
         private val renderer = ClockRenderer()
         private lateinit var fitbitManager: FitbitManager
+        private lateinit var calendarManager: CalendarManager
         private lateinit var celestialManager: CelestialManager
         private lateinit var settingsManager: SettingsManager
         private lateinit var locationManager: LocationManager
@@ -32,6 +35,7 @@ class ClockWallpaperService : WallpaperService() {
         private var dataUpdateJob: Job? = null
         private var settingsJob: Job? = null
         private var locationJob: Job? = null
+        private var calendarObserver: android.database.ContentObserver? = null
         private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
         private val refreshReceiver = object : BroadcastReceiver() {
@@ -41,6 +45,7 @@ class ClockWallpaperService : WallpaperService() {
                     try {
                         updateCelestialData()
                         updateFitbitData()
+                        updateCalendarData()
                         drawFrame()
                     } catch (e: Exception) {
                         Log.e(TAG, "Error during manual refresh", e)
@@ -62,20 +67,22 @@ class ClockWallpaperService : WallpaperService() {
         private var sunRad = 0.0
         private var moonRad = 0.0
         private var moonPhaseValue = 0.0
-        private var sleepHour: Double? = null
-        private var wakeHour: Double? = null
+        private var sleepLogs = emptyList<SleepLogEntry>()
         private var sleepDebt = 0.0
-        private var sleepDuration = 7.5
         private var bathyphaseHour: Double? = null
+        private var calendarEvents = emptyList<CalendarEvent>()
         private var solarIrradiance = 0
 
         // Settings
         private var currentSettings = ClockSettings()
+        private var modelSettings = ModelSettings()
         private val isLockedState = MutableStateFlow(false)
+        private var previewLockScreen = false
 
         override fun onCreate(surfaceHolder: SurfaceHolder?) {
             super.onCreate(surfaceHolder)
             fitbitManager = FitbitManager(applicationContext)
+            calendarManager = CalendarManager(applicationContext)
             settingsManager = SettingsManager(applicationContext)
             locationManager = LocationManager(applicationContext)
             // Initial default location (will be updated)
@@ -95,11 +102,43 @@ class ClockWallpaperService : WallpaperService() {
                 addAction(Intent.ACTION_USER_PRESENT)
             }
             registerReceiver(lockStateReceiver, lockFilter)
+
+            calendarObserver = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+                override fun onChange(selfChange: Boolean) {
+                    super.onChange(selfChange)
+                    Log.d(TAG, "Calendar provider changed, updating events")
+                    scope.launch(Dispatchers.IO) {
+                        updateCalendarData()
+                        withContext(Dispatchers.Main) { drawFrame() }
+                    }
+                }
+            }
+            try {
+                applicationContext.contentResolver.registerContentObserver(
+                    android.provider.CalendarContract.Events.CONTENT_URI,
+                    true,
+                    calendarObserver!!
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to register calendar observer", e)
+            }
         }
 
         private fun updateLockState() {
+            if (isPreview) {
+                isLockedState.value = previewLockScreen
+                return
+            }
             val km = applicationContext.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
             isLockedState.value = km.isKeyguardLocked
+        }
+
+        override fun onTouchEvent(event: android.view.MotionEvent?) {
+            super.onTouchEvent(event)
+            if (isPreview && event?.action == android.view.MotionEvent.ACTION_DOWN) {
+                previewLockScreen = !previewLockScreen
+                updateLockState()
+            }
         }
 
         private fun startLocationUpdates() {
@@ -144,11 +183,14 @@ class ClockWallpaperService : WallpaperService() {
                 combine(
                     settingsManager.homeSettingsFlow,
                     settingsManager.lockSettingsFlow,
+                    settingsManager.modelSettingsFlow,
                     isLockedState
-                ) { home, lock, isLocked ->
-                    if (isLocked) lock else home
-                }.collect { settings ->
-                    currentSettings = settings
+                ) { home, lock, model, isLocked ->
+                    val ui = if (isLocked) lock else home
+                    Triple(ui, model, isLocked)
+                }.collect { (ui, model, _) ->
+                    currentSettings = ui
+                    modelSettings = model
                     if (isVisible) {
                         drawFrame()
                     }
@@ -186,9 +228,8 @@ class ClockWallpaperService : WallpaperService() {
                 while (isActive) {
                     try {
                         updateCelestialData()
-                        withContext(Dispatchers.Main) { drawFrame() }
-                        
                         updateFitbitData()
+                        updateCalendarData()
                         withContext(Dispatchers.Main) { drawFrame() }
                     } catch (e: Exception) {
                         Log.e(TAG, "Data update loop error", e)
@@ -214,50 +255,71 @@ class ClockWallpaperService : WallpaperService() {
 
         private suspend fun updateFitbitData() {
             try {
-                val today = java.time.LocalDate.now().toString()
-                val start = java.time.LocalDate.now().minusDays(14).toString()
+                val today = java.time.LocalDate.now()
+                val todayStr = today.toString()
+                val startStr = today.minusDays(14).toString()
                 
-                val logs = fitbitManager.fetchSleepLogs(start, today)
+                val logs = fitbitManager.fetchSleepLogs(startStr, todayStr)
                 if (logs.isNotEmpty()) {
-                    val lastLog = logs.maxByOrNull { it.dateOfSleep }
-                    if (lastLog != null) {
-                        val startDt = java.time.LocalDateTime.parse(lastLog.startTime.replace("Z", ""))
-                        val endDt = java.time.LocalDateTime.parse(lastLog.endTime.replace("Z", ""))
-                        sleepHour = startDt.hour + startDt.minute / 60.0
-                        wakeHour = endDt.hour + endDt.minute / 60.0
-                        sleepDuration = lastLog.minutesAsleep / 60.0
+                    // Parity with Python: 
+                    // 1. Try to find TODAY'S main sleep record
+                    var targetLog = logs.filter { it.dateOfSleep == todayStr && it.isMainSleep }
+                        .maxByOrNull { it.endTime }
+                    
+                    val isRealToday = targetLog != null
+                    
+                    // 2. Fallback to the LATEST main sleep record available (usually yesterday)
+                    if (targetLog == null) {
+                        targetLog = logs.filter { it.isMainSleep }.maxByOrNull { it.dateOfSleep }
+                        Log.d(TAG, "Today's sleep missing, falling back to: ${targetLog?.dateOfSleep}")
+                    }
+                    
+                    if (targetLog != null) {
+                        sleepLogs = logs
                         
-                        // Dynamic Sleep Need Calculation (Matching Python version)
+                        // Efficiency and Sleep Need (calculated from full 14-day history)
                         val totalAsleepMins = logs.sumOf { it.minutesAsleep }
                         val totalBedMins = logs.sumOf { it.timeInBed }
-                        val bedtimeGoalHours = 9.75 // This is the 'bedtime_goal_hours' from Python
-                        
-                        val empiricalEfficiency = if (totalBedMins > 0) {
-                            totalAsleepMins.toDouble() / totalBedMins.toDouble()
-                        } else {
-                            1.0
-                        }
-                        
-                        val sleepNeedHours = bedtimeGoalHours * empiricalEfficiency
-                        Log.d(TAG, "Dynamic Efficiency: ${String.format("%.1f", empiricalEfficiency * 100)}%")
-                        Log.d(TAG, "Dynamic Sleep Need: ${String.format("%.2f", sleepNeedHours)}h")
+                        val empiricalEfficiency = if (totalBedMins > 0) totalAsleepMins.toDouble() / totalBedMins.toDouble() else 0.92
+                        val sleepNeedHours = modelSettings.bedtimeGoal * empiricalEfficiency
 
-                        // Sleep debt calculation
+                        // Auto-toggle today's date if no data yet (exclude it so it doesn't skew debt)
+                        val hasTodayLog = logs.any { it.dateOfSleep == todayStr }
+                        var newExcludedDates = modelSettings.excludedDates
+                        if (hasTodayLog && newExcludedDates.contains(todayStr)) {
+                            newExcludedDates = newExcludedDates.filter { it != todayStr }
+                        } else if (!hasTodayLog && !newExcludedDates.contains(todayStr)) {
+                            newExcludedDates = newExcludedDates + todayStr
+                        }
+                        if (newExcludedDates != modelSettings.excludedDates) {
+                            settingsManager.updateModelSettings(modelSettings.copy(excludedDates = newExcludedDates))
+                            modelSettings = modelSettings.copy(excludedDates = newExcludedDates)
+                        }
+
+                        // Sleep debt calculation (weighted 14-day window)
                         val mappedLogs = logs.map { SleepLog(it.dateOfSleep, it.minutesAsleep, it.isMainSleep, it.timeInBed) }
-                        sleepDebt = EnergyCalculator.computeSleepDebt(mappedLogs, sleepNeedHours)
+                        sleepDebt = EnergyCalculator.computeSleepDebt(mappedLogs, sleepNeedHours, modelSettings.includeNaps, modelSettings.excludedDates)
                         
-                        // Bathyphase
-                        val hrPoints = fitbitManager.fetchHeartRateIntraday(lastLog.startTime, lastLog.endTime)
+                        // Bathyphase (from the target session)
+                        val hrPoints = fitbitManager.fetchHeartRateIntraday(targetLog.startTime, targetLog.endTime)
                         val mappedHr = hrPoints.map { HeartRatePoint(it.time, it.value) }
                         bathyphaseHour = EnergyCalculator.findBathyphase(mappedHr)
                         
+                        // Notify managers/UI
                         fitbitManager.saveMetrics(bathyphaseHour, empiricalEfficiency, sleepNeedHours)
                         
-                        Log.d(TAG, "Fitbit data updated successfully. Wake: $wakeHour, Debt: $sleepDebt")
+                        Log.d(TAG, "Fitbit Sync: Date=${targetLog.dateOfSleep}, RealToday=$isRealToday, Debt=$sleepDebt")
                     }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to update Fitbit data", e)
+            }
+        }
+
+        private fun updateCalendarData() {
+            if (applicationContext.checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
+                calendarEvents = calendarManager.getTodayEvents()
+                Log.d(TAG, "Calendar data updated: ${calendarEvents.size} events")
             }
         }
 
@@ -269,22 +331,37 @@ class ClockWallpaperService : WallpaperService() {
                     Calendar.getInstance(),
                     sunriseHour,
                     sunsetHour,
-                    sleepHour,
-                    wakeHour,
+                    sleepLogs,
                     sunRad,
                     moonRad,
                     moonPhaseValue,
                     solarIrradiance,
                     sleepDebt,
-                    sleepDuration,
                     bathyphaseHour,
+                    calendarEvents,
                     currentSettings.showNumbers,
                     currentSettings.showSleep,
                     currentSettings.showSunMoon,
                     currentSettings.showSleepDebtText,
                     currentSettings.showEnergy,
+                    currentSettings.showCalendar,
                     currentSettings.smallTopRight,
-                    currentSettings.showLifeCalendar
+                    currentSettings.showLifeCalendar,
+                    currentSettings.showTotalBedtime,
+                    currentSettings.showEnergyPct,
+                    currentSettings.normalizeEnergy,
+                    modelSettings.includeNaps,
+                    modelSettings.tauWake,
+                    modelSettings.tauSleep,
+                    modelSettings.tauInertia,
+                    modelSettings.debtFactor,
+                    modelSettings.circadianOffset,
+                    modelSettings.useBathyphase,
+                    modelSettings.bedtimeGoal,
+                    modelSettings.showManualWake,
+                    modelSettings.manualWakeTime,
+                    isPreview,
+                    previewLockScreen
                 )
             } finally {
                 surfaceHolder.unlockCanvasAndPost(canvas)
@@ -295,6 +372,9 @@ class ClockWallpaperService : WallpaperService() {
             super.onDestroy()
             unregisterReceiver(refreshReceiver)
             unregisterReceiver(lockStateReceiver)
+            calendarObserver?.let {
+                applicationContext.contentResolver.unregisterContentObserver(it)
+            }
             stopRendering()
             dataUpdateJob?.cancel()
             settingsJob?.cancel()
