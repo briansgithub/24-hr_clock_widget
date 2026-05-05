@@ -979,87 +979,88 @@ class ClockWidget:
                 
                 # Print the dynamic calculation for user visibility
                 eff = inputs.get('empirical_efficiency', 1.0)
-                need = inputs.get('sleep_need_hours', self.bedtime_goal.get())
+                need = inputs.get('sleep_need_hours', bedtime_goal)
                 print(f"[Fitbit] Dynamic Efficiency: {eff:.1%}")
                 print(f"[Fitbit] Dynamic Sleep Need: {need:.2f}h")
 
-                wake    = inputs.get('wake_hour')
-                start   = inputs.get('sleep_hour')   # not returned directly —
-                                                      # derive from duration
-                dur     = inputs.get('sleep_duration')
-                debt    = inputs.get('sleep_debt_hours', 0.0)
-                bathy   = inputs.get('bathyphase_hour')
-                
-                # Update raw logs before processing settings
-                self.raw_sleep_logs = inputs.get('raw_sleep_logs', [])
-                
-                # Handle auto-inclusion logic for Today (T-0)
+                # Collect results for main-thread application (no shared state mutation here)
+                raw_logs = inputs.get('raw_sleep_logs', [])
                 today_str = datetime.datetime.now().strftime("%Y-%m-%d")
-                has_today_log = False
-                for log in self.raw_sleep_logs:
-                    if log.get('dateOfSleep') == today_str:
-                        has_today_log = True
-                        break
-                
-                # Check if we have an explicit saved setting for today yet
-                settings_path = self.sleep_settings_file
+                has_today_log = any(log.get('dateOfSleep') == today_str for log in raw_logs)
+
+                # Check if we have an explicit saved setting for today yet (file I/O is safe)
                 has_saved_setting = False
-                if os.path.exists(settings_path):
+                if os.path.exists(self.sleep_settings_file):
                     try:
-                        with open(settings_path, 'r') as f:
+                        with open(self.sleep_settings_file, 'r') as f:
                             saved = json.load(f).get('explicit_dates', [])
                             if today_str in saved:
                                 has_saved_setting = True
-                    except: pass
-                
-                # If no manual override for today, apply the dynamic default
-                if not has_saved_setting:
-                    if has_today_log and today_str in self.excluded_dates:
-                        # Auto-include since data arrived
-                        self.excluded_dates.remove(today_str)
-                        self._save_sleep_settings()
-                    elif not has_today_log and today_str not in self.excluded_dates:
-                        # Auto-exclude since no data yet
-                        self.excluded_dates.append(today_str)
-                        self._save_sleep_settings()
+                    except Exception:
+                        pass
 
-                if wake is not None:
-                    self.wake_hour          = wake
-                    self.sleep_hour         = start # startTime from API
-                    self.sleep_duration     = dur   # minutesAsleep / 60
-                    self.sleep_debt_hours   = debt if debt is not None else 0.0
-                    self.bathyphase_hour    = bathy
-                    self.sleep_efficiency   = eff
-                    self.sleep_need_hours   = need
-                    self.raw_sleep_logs     = inputs.get('raw_sleep_logs', [])
-                    self.active_sleep_date  = inputs.get('active_sleep_date')
+                should_save_image = (
+                    (not inputs.get('from_cache', False) and inputs.get('is_real_today', False))
+                    or not self._has_today_image()
+                )
 
-                    self.last_fitbit_update = datetime.datetime.now()
-
-                    # Push all values to the EnergyCurve instance so draw() uses them
-                    self.energy_curve.sleep_debt_hours = self.sleep_debt_hours
-                    self.energy_curve.sleep_duration   = self.sleep_duration
-                    self.energy_curve.bathyphase_hour  = self.bathyphase_hour
-
-                    self.root.after(0, self.update_metric_labels)
-                    self.root.after(0, self.populate_sleep_table)
-                    self.root.after(0, self.draw_clock)
-
-                    # Save a snapshot of today's energy curve ONLY if:
-                    # 1. It's fresh data from API and not stale
-                    # 2. OR no image has been created for today yet
-                    is_fresh = not inputs.get('from_cache', False)
-                    is_current = inputs.get('is_real_today', False)
-                    
-                    if (is_fresh and is_current) or not self._has_today_image():
-                        self.root.after(1000, self.save_clock_image)
-                else:
-                    print("[update_fitbit_data] wake_hour still None after fetch.")
+                # Schedule ALL state mutations on the main thread to avoid data races
+                self.root.after(0, lambda: self._apply_fitbit_results(
+                    inputs, today_str, has_today_log, has_saved_setting, should_save_image
+                ))
 
             except Exception as e:
                 print(f"[update_fitbit_data] Fitbit background update failed: {e}")
        
         threading.Thread(target=_task, daemon=True).start()
+
+    def _apply_fitbit_results(self, inputs, today_str, has_today_log, has_saved_setting, should_save_image):
+        """Apply Fitbit fetch results on the main thread (thread-safe)."""
+        eff   = inputs.get('empirical_efficiency', 1.0)
+        need  = inputs.get('sleep_need_hours', self.bedtime_goal.get())
+        wake  = inputs.get('wake_hour')
+        start = inputs.get('sleep_hour')
+        dur   = inputs.get('sleep_duration')
+        debt  = inputs.get('sleep_debt_hours', 0.0)
+        bathy = inputs.get('bathyphase_hour')
+
+        self.raw_sleep_logs = inputs.get('raw_sleep_logs', [])
+
+        # Handle auto-inclusion logic for Today (T-0)
+        if not has_saved_setting:
+            if has_today_log and today_str in self.excluded_dates:
+                self.excluded_dates.remove(today_str)
+                self._save_sleep_settings()
+            elif not has_today_log and today_str not in self.excluded_dates:
+                self.excluded_dates.append(today_str)
+                self._save_sleep_settings()
+
+        if wake is not None:
+            self.wake_hour          = wake
+            self.sleep_hour         = start
+            self.sleep_duration     = dur
+            self.sleep_debt_hours   = debt if debt is not None else 0.0
+            self.bathyphase_hour    = bathy
+            self.sleep_efficiency   = eff
+            self.sleep_need_hours   = need
+            self.raw_sleep_logs     = inputs.get('raw_sleep_logs', [])
+            self.active_sleep_date  = inputs.get('active_sleep_date')
+
+            self.last_fitbit_update = datetime.datetime.now()
+
+            # Push all values to the EnergyCurve instance so draw() uses them
+            self.energy_curve.sleep_debt_hours = self.sleep_debt_hours
+            self.energy_curve.sleep_duration   = self.sleep_duration
+            self.energy_curve.bathyphase_hour  = self.bathyphase_hour
+
+            self.update_metric_labels()
+            self.populate_sleep_table()
+            self.draw_clock()
+
+            if should_save_image:
+                self.root.after(1000, self.save_clock_image)
+        else:
+            print("[update_fitbit_data] wake_hour still None after fetch.")
 
     def update_calendar_data(self):
         """Fetch today's events from Google Calendar in the background."""
@@ -1640,14 +1641,15 @@ class ClockWidget:
                 self.fetch_sun_times()
                 self.update_fitbit_data(force=True)
                 self.update_calendar_data()
-            # 2. 10-minute calendar refresh (Efficient Real-time)
-            elif now.minute % 10 == 0:
-                print(f"[ClockWidget] 10-minute calendar poll at {now}")
-                self.update_calendar_data()
-            # 3. Hourly refresh (to catch new sleep syncs/refresh fallback)
+            # 2. Hourly refresh (Fitbit + Calendar)
             elif now.minute == 0:
                 print(f"[ClockWidget] Hourly refresh at {now}")
                 self.update_fitbit_data()
+                self.update_calendar_data()
+            # 3. 10-minute calendar refresh (at :10, :20, :30, :40, :50)
+            elif now.minute % 10 == 0:
+                print(f"[ClockWidget] 10-minute calendar poll at {now}")
+                self.update_calendar_data()
 
             self._last_drawn_minute = current_minute
             self.draw_clock()
