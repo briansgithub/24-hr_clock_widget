@@ -125,13 +125,13 @@ class ClockWidget:
         self.use_bathyphase = tk.BooleanVar(value=True)
         self.manual_wake_time = tk.StringVar(value="9:00")
 
-        # Model parameters will redraw on slider release (handled in _add_slider)
-        # except for boolean toggles which still trace or use command
-        self.use_bathyphase.trace_add("write", lambda *args: self.draw_clock())
-        self.manual_wake_time.trace_add("write", lambda *args: (self.draw_clock(), self._save_sleep_settings()))
-
         self.sleep_settings_file = os.path.join(os.path.dirname(__file__), "sleep_settings.json")
         self.excluded_dates = self._load_sleep_settings()
+
+        # Model parameters will redraw on slider release (handled in _add_slider)
+        # except for boolean toggles which still trace or use command
+        self.use_bathyphase.trace_add("write", lambda *args: getattr(self, 'canvas', None) and self.draw_clock())
+        self.manual_wake_time.trace_add("write", lambda *args: getattr(self, 'canvas', None) and (self.draw_clock(), self._save_sleep_settings()))
 
         # ── Fitbit Integration ────────────────────────────────────────────────
         self.fitbit = FitbitClient(
@@ -150,7 +150,7 @@ class ClockWidget:
         self.active_sleep_date  = None  # the YYYY-MM-DD date we are currently displaying
         
         # ── Calendar Integration ──────────────────────────────────────────────
-        self.calendar_svc = get_calendar_service()
+        self.calendar_svc = None # Will be initialized lazily in the background thread
         self.calendar_events = []
         # ─────────────────────────────────────────────────────────────────────
         # ─────────────────────────────────────────────────────────────────────
@@ -963,13 +963,18 @@ class ClockWidget:
         Background task to fetch latest Fitbit sleep & HR.
         Calls FitbitClient and updates self.fitbit_data.
         """
+        # Safely extract Tkinter variables on the main thread before starting the background task
+        bedtime_goal = self.bedtime_goal.get()
+        include_naps = self.include_naps.get()
+        excluded_dates = list(self.excluded_dates) # Thread-safe copy
+
         def _task():
             try:
                 inputs = self.fitbit.get_all_energy_inputs(
-                    bedtime_goal_hours=self.bedtime_goal.get(),
-                    include_naps=self.include_naps.get(),
+                    bedtime_goal_hours=bedtime_goal,
+                    include_naps=include_naps,
                     force=force,
-                    excluded_dates=self.excluded_dates
+                    excluded_dates=excluded_dates
                 )
                 
                 # Print the dynamic calculation for user visibility
@@ -1059,6 +1064,13 @@ class ClockWidget:
     def update_calendar_data(self):
         """Fetch today's events from Google Calendar in the background."""
         def _task():
+            if not getattr(self, 'calendar_svc', None):
+                try:
+                    self.calendar_svc = get_calendar_service()
+                except Exception as e:
+                    print(f"[Calendar] Failed to initialize service: {e}")
+                    return
+
             if not self.calendar_svc:
                 return
             try:
