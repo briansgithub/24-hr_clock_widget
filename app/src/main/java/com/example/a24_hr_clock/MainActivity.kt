@@ -29,15 +29,27 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import com.example.a24_hr_clock.logic.ClockSettings
-import com.example.a24_hr_clock.logic.FitbitManager
-import com.example.a24_hr_clock.logic.ModelSettings
-import com.example.a24_hr_clock.logic.SettingsManager
-import com.example.a24_hr_clock.logic.SleepLogEntry
-import com.example.a24_hr_clock.ui.theme._24_hr_clockTheme
-import com.example.a24_hr_clock.wallpaper.ClockWallpaperService
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.foundation.Canvas
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.example.a24_hr_clock.logic.*
+import com.example.a24_hr_clock.wallpaper.ClockRenderer
+import com.example.a24_hr_clock.wallpaper.ClockWallpaperService
+import com.example.a24_hr_clock.ui.theme._24_hr_clockTheme
+import java.util.*
 import kotlin.math.*
+
+enum class Screen {
+    PREVIEW,
+    CONNECTIVITY,
+    DISPLAY,
+    MODEL,
+    LOG
+}
 
 class MainActivity : ComponentActivity() {
     private lateinit var fitbitManager: FitbitManager
@@ -173,7 +185,6 @@ fun MainScreen(
     val todayDate = java.time.LocalDate.now().toString()
     LaunchedEffect(todayDate, modelSettings.lastTodayDate) {
         if (modelSettings.lastTodayDate.isNotEmpty() && modelSettings.lastTodayDate != todayDate) {
-            // Day has changed. Remove the old "today" from excluded list if it was there.
             val newExcluded = modelSettings.excludedDates.filter { it != modelSettings.lastTodayDate }
             settingsManager.updateModelSettings(modelSettings.copy(
                 excludedDates = newExcluded,
@@ -184,32 +195,261 @@ fun MainScreen(
         }
     }
 
-    var selectedTab by remember { mutableIntStateOf(0) }
+    // --- Data for Preview ---
+    val locationManager = remember { LocationManager(context) }
+    var sunTimes by remember { mutableStateOf(Pair(6.0, 18.0)) }
+    var celestialPositions by remember { mutableStateOf(Triple(0.0, 0.0, 0.0)) }
+    var solarIrradiance by remember { mutableIntStateOf(255) }
+    var calendarEvents by remember { mutableStateOf(emptyList<CalendarEvent>()) }
+    val calendarManager = remember { CalendarManager(context) }
 
+    LaunchedEffect(isLoggedIn) {
+        val loc = locationManager.getLastKnownLocation() ?: locationManager.getCurrentLocation()
+        if (loc != null) {
+            val cm = CelestialManager(loc.first, loc.second)
+            sunTimes = cm.getSunTimes()
+            celestialPositions = cm.getCelestialPositions()
+            solarIrradiance = cm.getSolarIrradiance()
+        }
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
+            calendarEvents = calendarManager.getTodayEvents()
+        }
+    }
+
+    val sleepDebt = remember(sleepLogs, metrics, modelSettings) {
+        val mappedLogs = sleepLogs.map { SleepLog(it.dateOfSleep, it.minutesAsleep, it.isMainSleep, it.timeInBed) }
+        EnergyCalculator.computeSleepDebt(mappedLogs, metrics.third, modelSettings.includeNaps, modelSettings.excludedDates)
+    }
+
+    var currentScreen by remember { mutableStateOf(Screen.PREVIEW) }
+
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(
+                    selected = currentScreen == Screen.PREVIEW,
+                    onClick = { currentScreen = Screen.PREVIEW },
+                    label = { Text("Preview") },
+                    icon = { Icon(Icons.Default.Visibility, contentDescription = null) }
+                )
+                NavigationBarItem(
+                    selected = currentScreen == Screen.CONNECTIVITY,
+                    onClick = { currentScreen = Screen.CONNECTIVITY },
+                    label = { Text("Connect") },
+                    icon = { Icon(Icons.Default.Link, contentDescription = null) }
+                )
+                NavigationBarItem(
+                    selected = currentScreen == Screen.DISPLAY,
+                    onClick = { currentScreen = Screen.DISPLAY },
+                    label = { Text("Display") },
+                    icon = { Icon(Icons.Default.Settings, contentDescription = null) }
+                )
+                NavigationBarItem(
+                    selected = currentScreen == Screen.MODEL,
+                    onClick = { currentScreen = Screen.MODEL },
+                    label = { Text("Model") },
+                    icon = { Icon(Icons.Default.Build, contentDescription = null) }
+                )
+                NavigationBarItem(
+                    selected = currentScreen == Screen.LOG,
+                    onClick = { currentScreen = Screen.LOG },
+                    label = { Text("Log") },
+                    icon = { Icon(Icons.Default.List, contentDescription = null) }
+                )
+            }
+        }
+    ) { innerPadding ->
+        Column(modifier = Modifier.padding(innerPadding)) {
+            when (currentScreen) {
+                Screen.PREVIEW -> ClockPreviewScreen(
+                    settings = homeSettings,
+                    modelSettings = modelSettings,
+                    sleepLogs = sleepLogs,
+                    metrics = metrics,
+                    sunTimes = sunTimes,
+                    celestialPositions = celestialPositions,
+                    solarIrradiance = solarIrradiance,
+                    calendarEvents = calendarEvents,
+                    sleepDebt = sleepDebt
+                )
+                Screen.CONNECTIVITY -> ConnectivityScreen(
+                    isLoggedIn = isLoggedIn,
+                    metrics = metrics,
+                    onLoginClick = onLoginClick,
+                    onLogoutClick = onLogoutClick,
+                    onRefresh = {
+                        scope.launch {
+                            Toast.makeText(context, "Refreshing Fitbit data...", Toast.LENGTH_SHORT).show()
+                            context.sendBroadcast(Intent("com.example.a24_hr_clock.REFRESH_DATA"))
+                            fitbitManager.refreshMetrics()
+                        }
+                    }
+                )
+                Screen.DISPLAY -> DisplaySettingsScreen(
+                    homeSettings = homeSettings,
+                    lockSettings = lockSettings,
+                    modelSettings = modelSettings,
+                    sleepLogs = sleepLogs,
+                    metrics = metrics,
+                    sunTimes = sunTimes,
+                    celestialPositions = celestialPositions,
+                    solarIrradiance = solarIrradiance,
+                    calendarEvents = calendarEvents,
+                    sleepDebt = sleepDebt,
+                    onUpdateHome = { scope.launch { settingsManager.updateHomeSettings(it) } },
+                    onUpdateLock = { scope.launch { settingsManager.updateLockSettings(it) } },
+                    onResetHome = { scope.launch { settingsManager.resetHomeSettings() } },
+                    onResetLock = { scope.launch { settingsManager.resetLockSettings() } }
+                )
+                Screen.MODEL -> ModelSettingsScreen(
+                    modelSettings = modelSettings,
+                    onUpdate = { scope.launch { settingsManager.updateModelSettings(it) } },
+                    onReset = { scope.launch { settingsManager.resetModelSettings() } }
+                )
+                Screen.LOG -> SleepLogScreen(
+                    sleepLogs = sleepLogs,
+                    metrics = metrics,
+                    modelSettings = modelSettings,
+                    onUpdateModel = { scope.launch { settingsManager.updateModelSettings(it) } }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ClockPreviewScreen(
+    settings: ClockSettings,
+    modelSettings: ModelSettings,
+    sleepLogs: List<SleepLogEntry>,
+    metrics: Triple<Double?, Double, Double>,
+    sunTimes: Pair<Double, Double>,
+    celestialPositions: Triple<Double, Double, Double>,
+    solarIrradiance: Int,
+    calendarEvents: List<CalendarEvent>,
+    sleepDebt: Double,
+    title: String = "Home Screen Preview",
+    showSetWallpaper: Boolean = true
+) {
+    val context = LocalContext.current
+    val renderer = remember { ClockRenderer() }
+    val now = remember { Calendar.getInstance() }
+    
+    LaunchedEffect(Unit) {
+        while(true) {
+            now.timeInMillis = System.currentTimeMillis()
+            delay(10000) // Update every 10s for preview
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawIntoCanvas { canvas ->
+                renderer.draw(
+                    canvas.nativeCanvas,
+                    size.width.toInt(),
+                    size.height.toInt(),
+                    now,
+                    sunTimes.first,
+                    sunTimes.second,
+                    sleepLogs,
+                    celestialPositions.first,
+                    celestialPositions.second,
+                    celestialPositions.third,
+                    solarIrradiance,
+                    sleepDebt,
+                    metrics.first,
+                    calendarEvents,
+                    showNumbers = settings.showNumbers,
+                    showSleep = settings.showSleep,
+                    showSunMoon = settings.showSunMoon,
+                    showSleepDebtText = settings.showSleepDebtText,
+                    showEnergy = settings.showEnergy,
+                    showCalendar = settings.showCalendar,
+                    smallTopRight = settings.smallTopRight,
+                    showLifeCalendar = settings.showLifeCalendar,
+                    showTotalBedtime = settings.showTotalBedtime,
+                    showEnergyPct = settings.showEnergyPct,
+                    normalizeEnergy = settings.normalizeEnergy,
+                    includeNaps = modelSettings.includeNaps,
+                    tauWake = modelSettings.tauWake,
+                    tauSleep = modelSettings.tauSleep,
+                    tauInertia = modelSettings.tauInertia,
+                    debtFactor = modelSettings.debtFactor,
+                    circadianOffset = modelSettings.circadianOffset,
+                    useBathyphase = modelSettings.useBathyphase,
+                    bedtimeGoal = modelSettings.bedtimeGoal,
+                    showManualWake = modelSettings.showManualWake,
+                    manualWakeTime = modelSettings.manualWakeTime,
+                    isPreview = false
+                )
+            }
+        }
+        
+        Text(
+            text = title,
+            color = Color.White.copy(alpha = 0.5f),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 48.dp),
+            style = MaterialTheme.typography.labelLarge
+        )
+
+        if (showSetWallpaper) {
+            Button(
+                onClick = {
+                    val intent = Intent(android.app.WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
+                        putExtra(android.app.WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, 
+                            android.content.ComponentName(context, com.example.a24_hr_clock.wallpaper.ClockWallpaperService::class.java))
+                    }
+                    context.startActivity(intent)
+                },
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp)
+            ) {
+                Icon(Icons.Default.Wallpaper, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Set Wallpaper")
+            }
+        }
+    }
+}
+
+@Composable
+fun ConnectivityScreen(
+    isLoggedIn: Boolean,
+    metrics: Triple<Double?, Double, Double>,
+    onLoginClick: () -> Unit,
+    onLogoutClick: () -> Unit,
+    onRefresh: () -> Unit
+) {
+    val context = LocalContext.current
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        verticalArrangement = Arrangement.Top,
-        horizontalAlignment = Alignment.Start
+        verticalArrangement = Arrangement.Top
     ) {
-        Text(text = "24h Clock Wallpaper Settings", style = MaterialTheme.typography.headlineMedium)
-        
+        Text(text = "Status & Connectivity", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
         
         PermissionsChecklist()
         
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(text = "FITBIT", style = MaterialTheme.typography.labelLarge)
+        Spacer(modifier = Modifier.height(8.dp))
         
         Text(
-            text = if (isLoggedIn) "Status: Connected to Fitbit" else "Status: Not Connected",
+            text = if (isLoggedIn) "Status: Connected" else "Status: Not Connected",
             color = if (isLoggedIn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodyLarge
         )
 
         if (isLoggedIn) {
-            val (bathy, eff, need) = metrics
+            val (bathy, eff, _) = metrics
             Text(
                 text = "Overall Efficiency: ${String.format("%.1f", eff * 100)}%",
                 style = MaterialTheme.typography.bodyMedium,
@@ -230,7 +470,6 @@ fun MainScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onLoginClick, modifier = Modifier.weight(1f)) {
                 Text(if (isLoggedIn) "Relink Fitbit" else "Login with Fitbit")
@@ -245,13 +484,7 @@ fun MainScreen(
         if (isLoggedIn) {
             Spacer(modifier = Modifier.height(8.dp))
             Button(
-                onClick = {
-                    scope.launch {
-                        Toast.makeText(context, "Refreshing Fitbit data...", Toast.LENGTH_SHORT).show()
-                        context.sendBroadcast(Intent("com.example.a24_hr_clock.REFRESH_DATA"))
-                        fitbitManager.refreshMetrics()
-                    }
-                },
+                onClick = onRefresh,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
             ) {
@@ -268,9 +501,7 @@ fun MainScreen(
         if (!hasCalendarPermission) {
             Button(
                 onClick = { 
-                    (context as? MainActivity)?.let { 
-                        it.requestPermissionLauncher.launch(arrayOf(Manifest.permission.READ_CALENDAR))
-                    }
+                    (context as? MainActivity)?.requestPermissionLauncher?.launch(arrayOf(Manifest.permission.READ_CALENDAR))
                 },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
@@ -286,10 +517,8 @@ fun MainScreen(
             Spacer(modifier = Modifier.height(8.dp))
             Button(
                 onClick = {
-                    scope.launch {
-                        context.sendBroadcast(Intent("com.example.a24_hr_clock.REFRESH_DATA"))
-                        Toast.makeText(context, "Refreshing Calendar...", Toast.LENGTH_SHORT).show()
-                    }
+                    context.sendBroadcast(Intent("com.example.a24_hr_clock.REFRESH_DATA"))
+                    Toast.makeText(context, "Refreshing Calendar...", Toast.LENGTH_SHORT).show()
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -297,8 +526,7 @@ fun MainScreen(
             }
         }
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
-        
+        Spacer(modifier = Modifier.height(24.dp))
         Button(
             onClick = {
                 val intent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
@@ -311,7 +539,67 @@ fun MainScreen(
         ) {
             Text("Wallpaper Picker")
         }
+    }
+}
 
+@Composable
+fun DisplaySettingsScreen(
+    homeSettings: ClockSettings,
+    lockSettings: ClockSettings,
+    modelSettings: ModelSettings,
+    sleepLogs: List<SleepLogEntry>,
+    metrics: Triple<Double?, Double, Double>,
+    sunTimes: Pair<Double, Double>,
+    celestialPositions: Triple<Double, Double, Double>,
+    solarIrradiance: Int,
+    calendarEvents: List<CalendarEvent>,
+    sleepDebt: Double,
+    onUpdateHome: (ClockSettings) -> Unit,
+    onUpdateLock: (ClockSettings) -> Unit,
+    onResetHome: () -> Unit,
+    onResetLock: () -> Unit
+) {
+    var selectedTab by remember { mutableIntStateOf(0) }
+    val currentSettings = if (selectedTab == 0) homeSettings else lockSettings
+    val updateFunc: (ClockSettings) -> Unit = if (selectedTab == 0) onUpdateHome else onUpdateLock
+    var showPreview by remember { mutableStateOf(false) }
+
+    if (showPreview) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showPreview = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                ClockPreviewScreen(
+                    settings = currentSettings,
+                    modelSettings = modelSettings,
+                    sleepLogs = sleepLogs,
+                    metrics = metrics,
+                    sunTimes = sunTimes,
+                    celestialPositions = celestialPositions,
+                    solarIrradiance = solarIrradiance,
+                    calendarEvents = calendarEvents,
+                    sleepDebt = sleepDebt,
+                    title = if (selectedTab == 0) "Home Screen Preview" else "Lock Screen Preview"
+                )
+                
+                IconButton(
+                    onClick = { showPreview = false },
+                    modifier = Modifier.align(Alignment.TopStart).padding(16.dp).padding(top = 32.dp)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                }
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+    ) {
+        Text(text = "Display Settings", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
 
         TabRow(selectedTabIndex = selectedTab) {
@@ -323,33 +611,33 @@ fun MainScreen(
             }
         }
 
-        val currentSettings = if (selectedTab == 0) homeSettings else lockSettings
-        val updateFunc: (ClockSettings) -> Unit = { updated ->
-            scope.launch {
-                if (selectedTab == 0) settingsManager.updateHomeSettings(updated)
-                else settingsManager.updateLockSettings(updated)
-            }
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+            onClick = { showPreview = true },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+        ) {
+            Icon(Icons.Default.Visibility, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Preview ${if (selectedTab == 0) "Home Screen" else "Lock Screen"}")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        Text(text = "DISPLAY", style = MaterialTheme.typography.labelLarge)
+        Text(text = "ELEMENTS", style = MaterialTheme.typography.labelLarge)
         
         SettingToggle("Numbers", currentSettings.showNumbers) { 
             updateFunc(currentSettings.copy(showNumbers = it))
         }
-        
         SettingToggle("Sun & Moon Icons", currentSettings.showSunMoon) {
             updateFunc(currentSettings.copy(showSunMoon = it))
         }
-        
         SettingToggle("Small Clock in Top-Right", currentSettings.smallTopRight) {
             updateFunc(currentSettings.copy(smallTopRight = it))
         }
-
         SettingToggle("Life Calendar Background", currentSettings.showLifeCalendar) {
             updateFunc(currentSettings.copy(showLifeCalendar = it))
         }
-        
         SettingToggle("Show Calendar Events", currentSettings.showCalendar) {
             updateFunc(currentSettings.copy(showCalendar = it))
         }
@@ -360,11 +648,9 @@ fun MainScreen(
         SettingToggle("Show Sleep on Clock", currentSettings.showSleep) {
             updateFunc(currentSettings.copy(showSleep = it))
         }
-        
         SettingToggle("Show Sleep Debt Text", currentSettings.showSleepDebtText) {
             updateFunc(currentSettings.copy(showSleepDebtText = it))
         }
-        
         SettingToggle("Show Time in Bed (On) vs Only Asleep (Off)", currentSettings.showTotalBedtime) {
             updateFunc(currentSettings.copy(showTotalBedtime = it))
         }
@@ -375,39 +661,45 @@ fun MainScreen(
         SettingToggle("Show Energy Curve", currentSettings.showEnergy) {
             updateFunc(currentSettings.copy(showEnergy = it))
         }
-        
         SettingToggle("Show Energy %", currentSettings.showEnergyPct) {
             updateFunc(currentSettings.copy(showEnergyPct = it))
         }
-        
         SettingToggle("Normalize Energy", currentSettings.normalizeEnergy) {
             updateFunc(currentSettings.copy(normalizeEnergy = it))
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(16.dp))
         Button(
-            onClick = {
-                scope.launch {
-                    if (selectedTab == 0) settingsManager.resetHomeSettings()
-                    else settingsManager.resetLockSettings()
-                    Toast.makeText(context, "Reset ${if (selectedTab == 0) "Home" else "Lock"} defaults", Toast.LENGTH_SHORT).show()
-                }
-            },
+            onClick = if (selectedTab == 0) onResetHome else onResetLock,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Reset ${if (selectedTab == 0) "Home" else "Lock"} Defaults")
         }
+    }
+}
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
-        Text(text = "ADVANCED SLEEP MODEL", style = MaterialTheme.typography.labelLarge)
-        Spacer(modifier = Modifier.height(8.dp))
+@Composable
+fun ModelSettingsScreen(
+    modelSettings: ModelSettings,
+    onUpdate: (ModelSettings) -> Unit,
+    onReset: () -> Unit
+) {
+    val context = LocalContext.current
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+    ) {
+        Text(text = "Advanced Sleep Model", style = MaterialTheme.typography.headlineMedium)
+        Spacer(modifier = Modifier.height(16.dp))
 
         SettingSlider(
             label = "Bedtime Goal",
             value = modelSettings.bedtimeGoal,
             range = 6.0f..12.0f,
             unit = "h",
-            onValueChange = { scope.launch { settingsManager.updateModelSettings(modelSettings.copy(bedtimeGoal = it.toDouble())) } }
+            onValueChange = { onUpdate(modelSettings.copy(bedtimeGoal = it.toDouble())) }
         )
         
         SettingSlider(
@@ -415,19 +707,17 @@ fun MainScreen(
             value = modelSettings.circadianOffset,
             range = 6.0f..16.0f,
             unit = "h",
-            onValueChange = { scope.launch { settingsManager.updateModelSettings(modelSettings.copy(circadianOffset = it.toDouble())) } }
+            onValueChange = { onUpdate(modelSettings.copy(circadianOffset = it.toDouble())) }
         )
 
         SettingToggle("Use Bathyphase HR", modelSettings.useBathyphase) {
-            scope.launch { settingsManager.updateModelSettings(modelSettings.copy(useBathyphase = it)) }
+            onUpdate(modelSettings.copy(useBathyphase = it))
         }
-        
         SettingToggle("Include Naps", modelSettings.includeNaps) {
-            scope.launch { settingsManager.updateModelSettings(modelSettings.copy(includeNaps = it)) }
+            onUpdate(modelSettings.copy(includeNaps = it))
         }
-
         SettingToggle("Show Wake-up Indicator", modelSettings.showManualWake) {
-            scope.launch { settingsManager.updateModelSettings(modelSettings.copy(showManualWake = it)) }
+            onUpdate(modelSettings.copy(showManualWake = it))
         }
 
         val parts = modelSettings.manualWakeTime.split(":")
@@ -440,7 +730,7 @@ fun MainScreen(
                     context,
                     { _, hour, minute ->
                         val timeString = String.format("%02d:%02d", hour, minute)
-                        scope.launch { settingsManager.updateModelSettings(modelSettings.copy(manualWakeTime = timeString)) }
+                        onUpdate(modelSettings.copy(manualWakeTime = timeString))
                     },
                     initialHour,
                     initialMinute,
@@ -450,10 +740,10 @@ fun MainScreen(
             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
         ) {
-            Text("Set Manual Wake Indicator Time (Current: ${modelSettings.manualWakeTime})")
+            Text("Set Manual Wake Time (Current: ${modelSettings.manualWakeTime})")
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(16.dp))
         Text(text = "MODEL PARAMETERS", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
 
         SettingSlider(
@@ -461,201 +751,183 @@ fun MainScreen(
             value = modelSettings.tauWake,
             range = 10.0f..30.0f,
             unit = "h",
-            onValueChange = { scope.launch { settingsManager.updateModelSettings(modelSettings.copy(tauWake = it.toDouble())) } }
+            onValueChange = { onUpdate(modelSettings.copy(tauWake = it.toDouble())) }
         )
-
         SettingSlider(
             label = "Homeostatic Tau (Sleep)",
             value = modelSettings.tauSleep,
             range = 2.0f..8.0f,
             unit = "h",
-            onValueChange = { scope.launch { settingsManager.updateModelSettings(modelSettings.copy(tauSleep = it.toDouble())) } }
+            onValueChange = { onUpdate(modelSettings.copy(tauSleep = it.toDouble())) }
         )
-
         SettingSlider(
             label = "Sleep Inertia",
             value = modelSettings.tauInertia,
             range = 0.1f..4.0f,
             unit = "h",
-            onValueChange = { scope.launch { settingsManager.updateModelSettings(modelSettings.copy(tauInertia = it.toDouble())) } }
+            onValueChange = { onUpdate(modelSettings.copy(tauInertia = it.toDouble())) }
         )
-
         SettingSlider(
             label = "Debt Sensitivity",
             value = modelSettings.debtFactor,
             range = 0.0f..3.0f,
             unit = "",
-            onValueChange = { scope.launch { settingsManager.updateModelSettings(modelSettings.copy(debtFactor = it.toDouble())) } }
+            onValueChange = { onUpdate(modelSettings.copy(debtFactor = it.toDouble())) }
         )
 
-        Button(
-            onClick = {
-                scope.launch {
-                    settingsManager.resetModelSettings()
-                    Toast.makeText(context, "Reset model defaults", Toast.LENGTH_SHORT).show()
-                }
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
+        Button(onClick = onReset, modifier = Modifier.fillMaxWidth()) {
             Text("Reset Model Defaults")
         }
+    }
+}
 
-        Spacer(modifier = Modifier.height(32.dp))
+@Composable
+fun SleepLogScreen(
+    sleepLogs: List<SleepLogEntry>,
+    metrics: Triple<Double?, Double, Double>,
+    modelSettings: ModelSettings,
+    onUpdateModel: (ModelSettings) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+    ) {
+        Text(text = "Sleep Log (Last 14 Days)", style = MaterialTheme.typography.headlineMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium)
+                .padding(8.dp)
+        ) {
+            val (_, _, sleepNeed) = metrics
+            val dailyLogs = sleepLogs.groupBy { it.dateOfSleep }
+            val today = java.time.LocalDate.now()
+            val displayDates = (0 until 15).map { today.minusDays(it.toLong()).toString() }
 
-        if (isLoggedIn) {
-            Spacer(modifier = Modifier.height(24.dp))
-            Text(text = "SLEEP LOG (Last 14 Days)", style = MaterialTheme.typography.labelLarge)
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium)
-                    .padding(8.dp)
-            ) {
-                val (_, _, sleepNeed) = metrics
+            var totalRaw = 0.0
+            var totalWtd = 0.0
+            val durations = mutableListOf<Double>()
+            val efficiencies = mutableListOf<Double>()
+
+            // Header
+            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Inc", modifier = Modifier.weight(0.3f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                Text("Day", modifier = Modifier.weight(0.4f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                Text("Date", modifier = Modifier.weight(0.8f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                Text("Start", modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                Text("End", modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                Text("Dur", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                Text("Eff", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                Text("Raw", modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                Text("Wtd", modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+            }
+            HorizontalDivider(modifier = Modifier.padding(bottom = 4.dp))
+
+            displayDates.forEachIndexed { i, date ->
+                val logsForDay = dailyLogs[date] ?: emptyList()
+                val isExcluded = modelSettings.excludedDates.contains(date)
+                val rowColor = if (isExcluded) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f) else MaterialTheme.colorScheme.onSurfaceVariant
                 
-                // Group by date
-                val dailyLogs = sleepLogs.groupBy { it.dateOfSleep }
-                
-                val today = java.time.LocalDate.now()
-                val displayDates = (0 until 15).map { today.minusDays(it.toLong()).toString() }
+                val dateObj = try { java.time.LocalDate.parse(date) } catch (e: Exception) { null }
+                val dayStr = dateObj?.format(java.time.format.DateTimeFormatter.ofPattern("E")) ?: ""
+                val dateStr = dateObj?.format(java.time.format.DateTimeFormatter.ofPattern("MM/dd")) ?: date.takeLast(5)
 
-                var totalRaw = 0.0
-                var totalWtd = 0.0
-                
-                // Lists for averages (only from included days)
-                val durations = mutableListOf<Double>()
-                val efficiencies = mutableListOf<Double>()
-
-                // Header
-                Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Inc", modifier = Modifier.weight(0.3f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    Text("Day", modifier = Modifier.weight(0.4f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    Text("Date", modifier = Modifier.weight(0.8f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    Text("Start", modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
-                    Text("End", modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
-                    Text("Dur", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
-                    Text("Eff", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
-                    Text("Raw", modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
-                    Text("Wtd", modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
-                }
-                
-                HorizontalDivider(modifier = Modifier.padding(bottom = 4.dp))
-
-                displayDates.forEachIndexed { i, date ->
-                    val logsForDay = dailyLogs[date] ?: emptyList()
-                    val isExcluded = modelSettings.excludedDates.contains(date)
-                    val rowColor = if (isExcluded) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f) else MaterialTheme.colorScheme.onSurfaceVariant
-                    
-                    val dateObj = try { java.time.LocalDate.parse(date) } catch (e: Exception) { null }
-                    val dayStr = dateObj?.format(java.time.format.DateTimeFormatter.ofPattern("E")) ?: ""
-                    val dateStr = dateObj?.format(java.time.format.DateTimeFormatter.ofPattern("MM/dd")) ?: date.takeLast(5)
-
-                    if (logsForDay.isEmpty()) {
-                        // Entry for date with no sleep
-                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = !isExcluded,
-                                onCheckedChange = { checked ->
-                                    scope.launch {
-                                        val newExcluded = if (checked) modelSettings.excludedDates.filter { it != date } else modelSettings.excludedDates + date
-                                        settingsManager.updateModelSettings(modelSettings.copy(excludedDates = newExcluded))
-                                    }
-                                },
-                                modifier = Modifier.weight(0.3f).scale(0.7f)
-                            )
-                            Text(dayStr, modifier = Modifier.weight(0.4f), style = MaterialTheme.typography.bodySmall, color = rowColor)
-                            Text(dateStr, modifier = Modifier.weight(0.8f), style = MaterialTheme.typography.bodySmall, color = rowColor)
-                            Text("—", modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
-                            Text("—", modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
-                            Text("0.0h", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
-                            Text("—", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
-                            
-                            val debt = if (!isExcluded) sleepNeed else 0.0
-                            val weightedDebt = debt * Math.pow(0.9, i.toDouble())
-                            if (!isExcluded) { totalRaw += debt; totalWtd += weightedDebt; durations.add(0.0) }
-                            
-                            val debtColor = if (isExcluded) rowColor else Color(0xFFFF6B6B)
-                            Text(text = if (isExcluded) "—" else String.format("%+.1f", debt), modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.bodySmall, color = debtColor.copy(alpha = 0.5f), textAlign = TextAlign.End)
-                            Text(text = if (isExcluded) "—" else String.format("%+.1f", weightedDebt), modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.bodySmall, color = debtColor, textAlign = TextAlign.End)
-                        }
-                    } else {
-                        // Entries for each nap/session
-                        val totalDailyAsleep = logsForDay.sumOf { it.minutesAsleep / 60.0 }
-                        val totalDailyBed = logsForDay.sumOf { it.timeInBed }
-                        val dailyEff = if (totalDailyBed > 0) (logsForDay.sumOf { it.minutesAsleep.toDouble() } / totalDailyBed) else 0.0
+                if (logsForDay.isEmpty()) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = !isExcluded,
+                            onCheckedChange = { checked ->
+                                val newExcluded = if (checked) modelSettings.excludedDates.filter { it != date } else modelSettings.excludedDates + date
+                                onUpdateModel(modelSettings.copy(excludedDates = newExcluded))
+                            },
+                            modifier = Modifier.weight(0.3f).scale(0.7f)
+                        )
+                        Text(dayStr, modifier = Modifier.weight(0.4f), style = MaterialTheme.typography.bodySmall, color = rowColor)
+                        Text(dateStr, modifier = Modifier.weight(0.8f), style = MaterialTheme.typography.bodySmall, color = rowColor)
+                        Text("—", modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
+                        Text("—", modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
+                        Text("0.0h", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
+                        Text("—", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
                         
-                        if (!isExcluded) {
-                            durations.add(totalDailyAsleep)
-                            efficiencies.add(dailyEff)
-                            val debt = sleepNeed - totalDailyAsleep
-                            totalRaw += debt
-                            totalWtd += debt * Math.pow(0.9, i.toDouble())
-                        }
+                        val debt = if (!isExcluded) sleepNeed else 0.0
+                        val weightedDebt = debt * Math.pow(0.9, i.toDouble())
+                        if (!isExcluded) { totalRaw += debt; totalWtd += weightedDebt; durations.add(0.0) }
+                        
+                        val debtColor = if (isExcluded) rowColor else Color(0xFFFF6B6B)
+                        Text(text = if (isExcluded) "—" else String.format("%+.1f", debt), modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.bodySmall, color = debtColor.copy(alpha = 0.5f), textAlign = TextAlign.End)
+                        Text(text = if (isExcluded) "—" else String.format("%+.1f", weightedDebt), modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.bodySmall, color = debtColor, textAlign = TextAlign.End)
+                    }
+                } else {
+                    val totalDailyAsleep = logsForDay.sumOf { it.minutesAsleep / 60.0 }
+                    val totalDailyBed = logsForDay.sumOf { it.timeInBed }
+                    val dailyEff = if (totalDailyBed > 0) (logsForDay.sumOf { it.minutesAsleep.toDouble() } / totalDailyBed) else 0.0
+                    
+                    if (!isExcluded) {
+                        durations.add(totalDailyAsleep)
+                        efficiencies.add(dailyEff)
+                        val debt = sleepNeed - totalDailyAsleep
+                        totalRaw += debt
+                        totalWtd += debt * Math.pow(0.9, i.toDouble())
+                    }
 
-                        logsForDay.sortedBy { it.startTime }.forEachIndexed { sessionIdx, log ->
-                            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                                if (sessionIdx == 0) {
-                                    Checkbox(
-                                        checked = !isExcluded,
-                                        onCheckedChange = { checked ->
-                                            scope.launch {
-                                                val newExcluded = if (checked) modelSettings.excludedDates.filter { it != date } else modelSettings.excludedDates + date
-                                                settingsManager.updateModelSettings(modelSettings.copy(excludedDates = newExcluded))
-                                            }
-                                        },
-                                        modifier = Modifier.weight(0.3f).scale(0.7f)
-                                    )
-                                    Text(dayStr, modifier = Modifier.weight(0.4f), style = MaterialTheme.typography.bodySmall, color = rowColor)
-                                    Text(dateStr, modifier = Modifier.weight(0.8f), style = MaterialTheme.typography.bodySmall, color = rowColor)
-                                } else {
-                                    Spacer(modifier = Modifier.weight(1.5f))
-                                }
+                    logsForDay.sortedBy { it.startTime }.forEachIndexed { sessionIdx, log ->
+                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (sessionIdx == 0) {
+                                Checkbox(
+                                    checked = !isExcluded,
+                                    onCheckedChange = { checked ->
+                                        val newExcluded = if (checked) modelSettings.excludedDates.filter { it != date } else modelSettings.excludedDates + date
+                                        onUpdateModel(modelSettings.copy(excludedDates = newExcluded))
+                                    },
+                                    modifier = Modifier.weight(0.3f).scale(0.7f)
+                                )
+                                Text(dayStr, modifier = Modifier.weight(0.4f), style = MaterialTheme.typography.bodySmall, color = rowColor)
+                                Text(dateStr, modifier = Modifier.weight(0.8f), style = MaterialTheme.typography.bodySmall, color = rowColor)
+                            } else {
+                                Spacer(modifier = Modifier.weight(1.5f))
+                            }
 
-                                val startFmt = try { java.time.LocalDateTime.parse(log.startTime.replace("Z", "")).format(java.time.format.DateTimeFormatter.ofPattern("h:mm a")) } catch (e: Exception) { log.startTime.take(5) }
-                                val endFmt = try { java.time.LocalDateTime.parse(log.endTime.replace("Z", "")).format(java.time.format.DateTimeFormatter.ofPattern("h:mm a")) } catch (e: Exception) { log.endTime.take(5) }
-                                
-                                Text(startFmt, modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
-                                Text(endFmt, modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
-                                Text("${String.format("%.1f", log.minutesAsleep/60.0)}h", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
-                                
-                                val sessEff = if (log.timeInBed > 0) (log.minutesAsleep.toDouble() / log.timeInBed * 100).toInt() else 0
-                                Text("$sessEff%", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
+                            val startFmt = try { java.time.LocalDateTime.parse(log.startTime.replace("Z", "")).format(java.time.format.DateTimeFormatter.ofPattern("h:mm a")) } catch (e: Exception) { log.startTime.take(5) }
+                            val endFmt = try { java.time.LocalDateTime.parse(log.endTime.replace("Z", "")).format(java.time.format.DateTimeFormatter.ofPattern("h:mm a")) } catch (e: Exception) { log.endTime.take(5) }
+                            
+                            Text(startFmt, modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
+                            Text(endFmt, modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
+                            Text("${String.format("%.1f", log.minutesAsleep/60.0)}h", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
+                            
+                            val sessEff = if (log.timeInBed > 0) (log.minutesAsleep.toDouble() / log.timeInBed * 100).toInt() else 0
+                            Text("$sessEff%", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
 
-                                if (sessionIdx == 0) {
-                                    val debt = sleepNeed - totalDailyAsleep
-                                    val weightedDebt = debt * Math.pow(0.9, i.toDouble())
-                                    val debtColor = if (isExcluded) rowColor else if (debt > 0.1) Color(0xFFFF6B6B) else if (debt < -0.1) Color(0xFF6BFF6B) else MaterialTheme.colorScheme.onSurface
-                                    Text(text = if (isExcluded) "—" else String.format("%+.1f", debt), modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.bodySmall, color = debtColor.copy(alpha = 0.5f), textAlign = TextAlign.End)
-                                    Text(text = if (isExcluded) "—" else String.format("%+.1f", weightedDebt), modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.bodySmall, color = debtColor, textAlign = TextAlign.End)
-                                } else {
-                                    Spacer(modifier = Modifier.weight(1.4f))
-                                }
+                            if (sessionIdx == 0) {
+                                val debt = sleepNeed - totalDailyAsleep
+                                val weightedDebt = debt * Math.pow(0.9, i.toDouble())
+                                val debtColor = if (isExcluded) rowColor else if (debt > 0.1) Color(0xFFFF6B6B) else if (debt < -0.1) Color(0xFF6BFF6B) else MaterialTheme.colorScheme.onSurface
+                                Text(text = if (isExcluded) "—" else String.format("%+.1f", debt), modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.bodySmall, color = debtColor.copy(alpha = 0.5f), textAlign = TextAlign.End)
+                                Text(text = if (isExcluded) "—" else String.format("%+.1f", weightedDebt), modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.bodySmall, color = debtColor, textAlign = TextAlign.End)
+                            } else {
+                                Spacer(modifier = Modifier.weight(1.4f))
                             }
                         }
                     }
                 }
+            }
 
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                
-                // Summary Row
-                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                    Text("AVG/TOT", modifier = Modifier.weight(1.2f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.weight(2.0f))
-                    
-                    val avgDur = if (durations.isNotEmpty()) durations.average() else 0.0
-                    val avgEff = if (efficiencies.isNotEmpty()) efficiencies.average() else 0.0
-                    
-                    Text(text = "${String.format("%.1f", avgDur)}h", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
-                    Text(text = "${(avgEff * 100).toInt()}%", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
-                    Text(text = String.format("%+.1f", totalRaw), modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, color = (if (totalRaw > 0.1) Color(0xFFFF6B6B) else if (totalRaw < -0.1) Color(0xFF6BFF6B) else MaterialTheme.colorScheme.onSurface).copy(alpha = 0.5f))
-                    Text(text = String.format("%+.1f", totalWtd), modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, color = if (totalWtd > 0.1) Color(0xFFFF6B6B) else if (totalWtd < -0.1) Color(0xFF6BFF6B) else MaterialTheme.colorScheme.onSurface)
-                }
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                Text("AVG/TOT", modifier = Modifier.weight(1.2f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.weight(2.0f))
+                val avgDur = if (durations.isNotEmpty()) durations.average() else 0.0
+                val avgEff = if (efficiencies.isNotEmpty()) efficiencies.average() else 0.0
+                Text(text = "${String.format("%.1f", avgDur)}h", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                Text(text = "${(avgEff * 100).toInt()}%", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                Text(text = String.format("%+.1f", totalRaw), modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, color = (if (totalRaw > 0.1) Color(0xFFFF6B6B) else if (totalRaw < -0.1) Color(0xFF6BFF6B) else MaterialTheme.colorScheme.onSurface).copy(alpha = 0.5f))
+                Text(text = String.format("%+.1f", totalWtd), modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, color = if (totalWtd > 0.1) Color(0xFFFF6B6B) else if (totalWtd < -0.1) Color(0xFF6BFF6B) else MaterialTheme.colorScheme.onSurface)
             }
         }
-
-        Spacer(modifier = Modifier.height(32.dp))
     }
 }
 
