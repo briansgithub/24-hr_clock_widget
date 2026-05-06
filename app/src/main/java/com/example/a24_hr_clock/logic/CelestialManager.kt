@@ -60,9 +60,25 @@ class CelestialManager(private val latitude: Double, private val longitude: Doub
         val elev = sunPos.altitude
         if (elev <= 0 || solarPeakToday <= 0) return 0
         
-        val raw = sin(Math.toRadians(max(0.0, elev)))
-        val peakRaw = sin(Math.toRadians(solarPeakToday))
-        val brightness = (255 * raw / peakRaw).roundToInt()
+        // 1. Physics: Irradiance ∝ sin(elevation) * exp(-k / sin(elevation))
+        // k = 0.12 is a typical clear-sky extinction coefficient
+        val k = 0.12
+        fun getIrradiance(e: Double): Double {
+            val s = sin(Math.toRadians(max(0.01, e)))
+            return s * exp(-k / s)
+        }
+        
+        val raw = getIrradiance(elev)
+        val peakRaw = getIrradiance(solarPeakToday)
+        
+        // 2. Normalise 0.0 - 1.0
+        val ratio = raw / peakRaw
+        
+        // 3. Perception: Gamma Correction (sRGB standard is ~2.2)
+        val gamma = 2.2
+        val correctedRatio = max(0.0, ratio).pow(1.0 / gamma)
+        
+        val brightness = (255 * correctedRatio).roundToInt()
         return brightness.coerceIn(0, 255)
     }
 

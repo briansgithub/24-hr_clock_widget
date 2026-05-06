@@ -182,14 +182,14 @@ class ClockRenderer {
         // 2. Draw Night Shading
         drawNightShading(canvas, centerX, centerY, radius, sunriseHour, sunsetHour)
 
-        // 3. Draw Calendar Events
-        if (showCalendar) {
-            drawCalendarEvents(canvas, centerX, centerY, radius, calendarEvents)
-        }
-
-        // 4. Draw Sleep Arc
+        // 3. Draw Sleep Arc
         if (showSleep && sleepLogs.isNotEmpty()) {
             drawSleepArcs(canvas, centerX, centerY, radius, sleepLogs, includeNaps, showTotalBedtime)
+        }
+
+        // 4. Draw Calendar Events
+        if (showCalendar) {
+            drawCalendarEvents(canvas, centerX, centerY, radius, calendarEvents)
         }
 
         // 5. Draw Energy Curve
