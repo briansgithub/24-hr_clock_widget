@@ -54,8 +54,8 @@ class ClockWidget:
         "background_face",
         "night_shading",
         "sun_and_moon",
-        "calendar_events",
         "sleep_arc",
+        "calendar_events",
         "perimeter_line",
         "energy_curve",
         "ticks_and_numbers",
@@ -1838,10 +1838,8 @@ class ClockWidget:
     def _get_solar_irradiance(self):
         """Return solar irradiance brightness 0-255 based on current sun elevation.
         
-        Uses Beer-Lambert approximation for atmospheric attenuation:
-          irradiance ∝ sin(elevation) when elevation > 0, else 0.
-        Normalised against the theoretical daily maximum elevation so that
-        the circle peaks at 255 at solar noon.
+        Uses Beer-Lambert approximation for atmospheric attenuation and
+        applies Gamma correction for human perception.
         """
         try:
             user_lat = getattr(self, 'lat', None)
@@ -1869,10 +1867,26 @@ class ClockWidget:
             if peak <= 0:
                 return 0
 
-            # irradiance ∝ sin(elevation); normalise to 0-1 against daily peak
-            raw = math.sin(math.radians(max(0, elev)))
-            peak_raw = math.sin(math.radians(peak))
-            brightness = int(round(255 * raw / peak_raw))
+            # 1. Physics: Irradiance ∝ sin(elevation) * exp(-k / sin(elevation))
+            # k = 0.12 is a typical clear-sky extinction coefficient
+            k = 0.12
+            def get_irradiance(e):
+                # Ensure sin(e) is not zero to avoid division by zero in exp
+                s = math.sin(math.radians(max(0.01, e)))
+                return s * math.exp(-k / s)
+                
+            raw = get_irradiance(elev)
+            peak_raw = get_irradiance(peak)
+            
+            # 2. Normalise 0.0 - 1.0
+            ratio = raw / peak_raw
+            
+            # 3. Perception: Gamma Correction (sRGB standard is ~2.2)
+            # This 'boosts' the mid-tones so the circle stays visibly bright longer
+            gamma = 2.2
+            corrected_ratio = math.pow(max(0, ratio), 1/gamma)
+            
+            brightness = int(round(255 * corrected_ratio))
             return max(0, min(255, brightness))
         except Exception:
             return 0
@@ -2078,11 +2092,65 @@ class ClockWidget:
             if not self.show_calendar.get() or not self.calendar_events:
                 return
             
+            now_aware = datetime.datetime.now(datetime.timezone.utc)
+            
+            # 1. Identify current events and their maximum end time
+            current_events = []
+            max_current_end = now_aware
+            for event in self.calendar_events:
+                if event.get('is_all_day'): continue
+                s_dt = event['start_dt']
+                e_dt = event['end_dt']
+                if s_dt <= now_aware < e_dt:
+                    current_events.append(event)
+                    if e_dt > max_current_end:
+                        max_current_end = e_dt
+            
+            window_end = max_current_end + datetime.timedelta(hours=24)
+            truncation_limit = now_aware + datetime.timedelta(hours=24)
+            
+            # 2. Filter and process events for display
+            display_list = []
             for i, event in enumerate(self.calendar_events):
                 if event.get('is_all_day'): continue
-
-                s_h = event['start_hour']
-                e_h = event['end_hour']
+                s_dt = event['start_dt']
+                e_dt = event['end_dt']
+                
+                is_current = any(e is event for e in current_events)
+                
+                # Include if it's currently occurring OR starts within the 24h window
+                if is_current or (now_aware <= s_dt < window_end):
+                    display_s_dt = s_dt
+                    display_e_dt = e_dt
+                    
+                    # If it's currently occurring, start arc from the clock hand (now)
+                    if is_current:
+                        display_s_dt = now_aware
+                    
+                    # If it starts before the 24h limit but ends after, truncate to now (clock hand)
+                    if not is_current and s_dt < truncation_limit < e_dt:
+                        display_e_dt = now_aware
+                    
+                    local_s = display_s_dt.astimezone()
+                    local_e = display_e_dt.astimezone()
+                    
+                    s_h = local_s.hour + local_s.minute / 60.0 + local_s.second / 3600.0
+                    e_h = local_e.hour + local_e.minute / 60.0 + local_e.second / 3600.0
+                    
+                    display_list.append({
+                        'summary': event.get('summary', 'No Title'),
+                        's_h': s_h,
+                        'e_h': e_h,
+                        'is_current': is_current,
+                        'original_index': i
+                    })
+            
+            # 3. Sort so current events are last (drawn on top)
+            display_list.sort(key=lambda x: (x['is_current'], x['s_h']))
+            
+            for event in display_list:
+                s_h = event['s_h']
+                e_h = event['e_h']
                 
                 duration = e_h - s_h
                 if duration < 0: duration += 24
@@ -2094,10 +2162,9 @@ class ClockWidget:
                 extent = -(duration * 15)
                 
                 # Unique color from the 24-color set
-                color = self.EVENT_COLORS[i % len(self.EVENT_COLORS)]
+                color = self.EVENT_COLORS[event['original_index'] % len(self.EVENT_COLORS)]
                 
                 # Draw further inward to avoid overlap with tick marks and sleep arcs
-                # Ticks are at margin 0.0 to 0.12, Sleep is at margin 0.15
                 margin = radius * 0.15
                 r_arc = radius - margin
                 
