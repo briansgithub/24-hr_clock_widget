@@ -235,7 +235,7 @@ class ClockWallpaperService : WallpaperService() {
                         Log.e(TAG, "Data update loop error", e)
                     }
 
-                    delay(3600000) // Update every hour
+                    delay(600000) // Update every 10 minutes
                 }
             }
         }

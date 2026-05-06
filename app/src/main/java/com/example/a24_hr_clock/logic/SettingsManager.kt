@@ -29,7 +29,7 @@ class SettingsManager(private val context: Context) {
             smallTopRight = true,
             showLifeCalendar = false,
             showCalendar = true,
-            showTotalBedtime = false,
+            showTotalBedtime = true,
             showEnergyPct = false,
             normalizeEnergy = true
         )
@@ -43,7 +43,7 @@ class SettingsManager(private val context: Context) {
             smallTopRight = false,
             showLifeCalendar = false,
             showCalendar = true,
-            showTotalBedtime = false,
+            showTotalBedtime = true,
             showEnergyPct = false,
             normalizeEnergy = false
         )
@@ -59,7 +59,8 @@ class SettingsManager(private val context: Context) {
             includeNaps = true,
             manualWakeTime = "09:00",
             showManualWake = true,
-            excludedDates = emptyList()
+            excludedDates = emptyList(),
+            lastTodayDate = ""
         )
     }
 
@@ -134,7 +135,7 @@ data class ClockSettings(
     val smallTopRight: Boolean = false,
     val showLifeCalendar: Boolean = false,
     val showCalendar: Boolean = true,
-    val showTotalBedtime: Boolean = false,
+    val showTotalBedtime: Boolean = true,
     val showEnergyPct: Boolean = false,
     val normalizeEnergy: Boolean = false
 )
@@ -151,6 +152,7 @@ data class ModelSettings(
     val includeNaps: Boolean = true,
     val manualWakeTime: String = "09:00",
     val showManualWake: Boolean = true,
-    val excludedDates: List<String> = emptyList()
+    val excludedDates: List<String> = emptyList(),
+    val lastTodayDate: String = ""
 )
 

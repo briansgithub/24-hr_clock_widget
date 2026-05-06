@@ -169,6 +169,21 @@ fun MainScreen(
     val lockSettings by settingsManager.lockSettingsFlow.collectAsState(initial = ClockSettings())
     val modelSettings by settingsManager.modelSettingsFlow.collectAsState(initial = ModelSettings())
     
+    // Automatic cleanup: when "today" becomes "yesterday", if it was excluded, re-include it.
+    val todayDate = java.time.LocalDate.now().toString()
+    LaunchedEffect(todayDate, modelSettings.lastTodayDate) {
+        if (modelSettings.lastTodayDate.isNotEmpty() && modelSettings.lastTodayDate != todayDate) {
+            // Day has changed. Remove the old "today" from excluded list if it was there.
+            val newExcluded = modelSettings.excludedDates.filter { it != modelSettings.lastTodayDate }
+            settingsManager.updateModelSettings(modelSettings.copy(
+                excludedDates = newExcluded,
+                lastTodayDate = todayDate
+            ))
+        } else if (modelSettings.lastTodayDate.isEmpty()) {
+            settingsManager.updateModelSettings(modelSettings.copy(lastTodayDate = todayDate))
+        }
+    }
+
     var selectedTab by remember { mutableIntStateOf(0) }
 
     Column(
