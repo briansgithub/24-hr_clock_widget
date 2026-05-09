@@ -19,6 +19,14 @@ import java.util.*
 
 private const val TAG = "ClockWallpaper"
 
+private data class DataSnapshot(
+    val settings: ClockSettings,
+    val model: ModelSettings,
+    val logs: List<SleepLogEntry>,
+    val debt: Double,
+    val bathy: Double?
+)
+
 class ClockWallpaperService : WallpaperService() {
 
     override fun onCreateEngine(): Engine = ClockEngine()
@@ -90,7 +98,7 @@ class ClockWallpaperService : WallpaperService() {
             
             updateLockState()
             startDataUpdates()
-            observeSettings()
+            observeAllData()
             startLocationUpdates()
 
             val filter = IntentFilter("com.example.a24_hr_clock.REFRESH_DATA")
@@ -177,20 +185,33 @@ class ClockWallpaperService : WallpaperService() {
             }
         }
 
-        private fun observeSettings() {
+        private fun observeAllData() {
             settingsJob?.cancel()
             settingsJob = scope.launch {
-                combine(
+                val uiFlow = combine(
                     settingsManager.homeSettingsFlow,
                     settingsManager.lockSettingsFlow,
-                    settingsManager.modelSettingsFlow,
                     isLockedState
-                ) { home, lock, model, isLocked ->
-                    val ui = if (isLocked) lock else home
-                    Triple(ui, model, isLocked)
-                }.collect { (ui, model, _) ->
-                    currentSettings = ui
-                    modelSettings = model
+                ) { home, lock, isLocked ->
+                    if (isLocked) lock else home
+                }
+
+                combine(
+                    uiFlow,
+                    settingsManager.modelSettingsFlow,
+                    fitbitManager.sleepLogsFlow,
+                    fitbitManager.metricsFlow
+                ) { ui, model, logs, metrics ->
+                    val (_, _, sleepNeed) = metrics
+                    val mappedLogs = logs.map { SleepLog(it.dateOfSleep, it.minutesAsleep, it.isMainSleep, it.timeInBed) }
+                    val debt = EnergyCalculator.computeSleepDebt(mappedLogs, sleepNeed, model.includeNaps, model.excludedDates)
+                    DataSnapshot(ui, model, logs, debt, metrics.first)
+                }.collect { snapshot ->
+                    currentSettings = snapshot.settings
+                    modelSettings = snapshot.model
+                    sleepLogs = snapshot.logs
+                    sleepDebt = snapshot.debt
+                    bathyphaseHour = snapshot.bathy
                     if (isVisible) {
                         drawFrame()
                     }

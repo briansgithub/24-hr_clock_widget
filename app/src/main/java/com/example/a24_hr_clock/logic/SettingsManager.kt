@@ -31,7 +31,7 @@ class SettingsManager(private val context: Context) {
             showCalendar = true,
             showTotalBedtime = true,
             showEnergyPct = false,
-            normalizeEnergy = true
+            normalizeEnergy = false
         )
 
         private val DEFAULT_LOCK_SETTINGS = ClockSettings(
@@ -60,7 +60,11 @@ class SettingsManager(private val context: Context) {
             manualWakeTime = "09:00",
             showManualWake = true,
             excludedDates = emptyList(),
-            lastTodayDate = ""
+            lastTodayDate = "",
+            userAge = 31,
+            restingHR = 55.0,
+            hrvPeakPotential = 71.0,
+            hrvMedicatedBase = 30.0
         )
     }
 
@@ -153,6 +157,10 @@ data class ModelSettings(
     val manualWakeTime: String = "09:00",
     val showManualWake: Boolean = true,
     val excludedDates: List<String> = emptyList(),
-    val lastTodayDate: String = ""
+    val lastTodayDate: String = "",
+    val userAge: Int = 31,
+    val restingHR: Double = 55.0,
+    val hrvPeakPotential: Double = 71.0,
+    val hrvMedicatedBase: Double = 30.0
 )
 

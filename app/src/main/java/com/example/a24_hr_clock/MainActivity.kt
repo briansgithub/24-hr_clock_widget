@@ -14,6 +14,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -23,6 +24,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -40,6 +47,7 @@ import com.example.a24_hr_clock.logic.*
 import com.example.a24_hr_clock.wallpaper.ClockRenderer
 import com.example.a24_hr_clock.wallpaper.ClockWallpaperService
 import com.example.a24_hr_clock.ui.theme._24_hr_clockTheme
+import androidx.compose.ui.tooling.preview.Preview
 import java.util.*
 import kotlin.math.*
 
@@ -48,7 +56,8 @@ enum class Screen {
     CONNECTIVITY,
     DISPLAY,
     MODEL,
-    LOG
+    LOG,
+    EXERCISE
 }
 
 class MainActivity : ComponentActivity() {
@@ -175,6 +184,7 @@ fun MainScreen(
     
     val isLoggedIn by fitbitManager.loginStatusFlow.collectAsState(initial = false)
     val sleepLogs by fitbitManager.sleepLogsFlow.collectAsState(initial = emptyList())
+    val exerciseMetrics by fitbitManager.exerciseMetricsFlow.collectAsState(initial = emptyList())
     val metrics by fitbitManager.metricsFlow.collectAsState(initial = Triple(null, 1.0, 9.75))
     
     val homeSettings by settingsManager.homeSettingsFlow.collectAsState(initial = ClockSettings())
@@ -222,6 +232,7 @@ fun MainScreen(
     }
 
     var currentScreen by remember { mutableStateOf(Screen.PREVIEW) }
+    var previewIsLockScreen by remember { mutableStateOf(true) }
 
     Scaffold(
         bottomBar = {
@@ -256,13 +267,19 @@ fun MainScreen(
                     label = { Text("Log") },
                     icon = { Icon(Icons.Default.List, contentDescription = null) }
                 )
+                NavigationBarItem(
+                    selected = currentScreen == Screen.EXERCISE,
+                    onClick = { currentScreen = Screen.EXERCISE },
+                    label = { Text("Exercise") },
+                    icon = { Icon(Icons.Default.FitnessCenter, contentDescription = null) }
+                )
             }
         }
     ) { innerPadding ->
         Column(modifier = Modifier.padding(innerPadding)) {
             when (currentScreen) {
                 Screen.PREVIEW -> ClockPreviewScreen(
-                    settings = homeSettings,
+                    settings = if (previewIsLockScreen) lockSettings else homeSettings,
                     modelSettings = modelSettings,
                     sleepLogs = sleepLogs,
                     metrics = metrics,
@@ -270,7 +287,10 @@ fun MainScreen(
                     celestialPositions = celestialPositions,
                     solarIrradiance = solarIrradiance,
                     calendarEvents = calendarEvents,
-                    sleepDebt = sleepDebt
+                    sleepDebt = sleepDebt,
+                    title = if (previewIsLockScreen) "Lock Screen (Tap to toggle)" else "Home Screen (Tap to toggle)",
+                    showSetWallpaper = true,
+                    modifier = Modifier.clickable { previewIsLockScreen = !previewIsLockScreen }
                 )
                 Screen.CONNECTIVITY -> ConnectivityScreen(
                     isLoggedIn = isLoggedIn,
@@ -312,6 +332,11 @@ fun MainScreen(
                     modelSettings = modelSettings,
                     onUpdateModel = { scope.launch { settingsManager.updateModelSettings(it) } }
                 )
+                Screen.EXERCISE -> ExerciseMetricsScreen(
+                    exerciseMetrics = exerciseMetrics,
+                    modelSettings = modelSettings,
+                    onUpdateModel = { scope.launch { settingsManager.updateModelSettings(it) } }
+                )
             }
         }
     }
@@ -329,7 +354,8 @@ fun ClockPreviewScreen(
     calendarEvents: List<CalendarEvent>,
     sleepDebt: Double,
     title: String = "Home Screen Preview",
-    showSetWallpaper: Boolean = true
+    showSetWallpaper: Boolean = true,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val renderer = remember { ClockRenderer() }
@@ -343,7 +369,7 @@ fun ClockPreviewScreen(
     }
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .background(Color.Black),
         contentAlignment = Alignment.Center
@@ -411,7 +437,7 @@ fun ClockPreviewScreen(
             ) {
                 Icon(Icons.Default.Wallpaper, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("Set Wallpaper")
+                Text("Set")
             }
         }
     }
@@ -797,6 +823,11 @@ fun SleepLogScreen(
     ) {
         Text(text = "Sleep Log (Last 14 Days)", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
+
+        SettingToggle("Include Naps in Debt Calculation", modelSettings.includeNaps) {
+            onUpdateModel(modelSettings.copy(includeNaps = it))
+        }
+        Spacer(modifier = Modifier.height(8.dp))
         
         Column(
             modifier = Modifier
@@ -1091,6 +1122,187 @@ fun ChecklistItem(title: String, isOk: Boolean, actionText: String = "Fix", onCl
                 modifier = Modifier.height(32.dp)
             ) {
                 Text(actionText, style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+}
+
+@Composable
+fun ExerciseMetricsScreen(
+    exerciseMetrics: List<DailyExerciseMetrics>,
+    modelSettings: ModelSettings,
+    onUpdateModel: (ModelSettings) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+    ) {
+        Text(text = "Exercise & Readiness", style = MaterialTheme.typography.headlineMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (exerciseMetrics.isEmpty()) {
+            Text("No exercise data available. Refresh Fitbit data in 'Connect' tab to fetch.")
+        } else {
+            val latest = exerciseMetrics.last()
+            val alert = ExerciseMetricsCalculator.generateSystemAlert(latest.hrv, latest.hrss, modelSettings.hrvMedicatedBase)
+            
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Text(
+                    text = alert,
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = if (alert.contains("DEPLETED") || alert.contains("OVERREACHING")) Color(0xFFFF6B6B) else if (alert.contains("OPTIMIZED")) Color(0xFF6BFF6B) else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            DualAxisChart(
+                metrics = exerciseMetrics,
+                peakPotential = modelSettings.hrvPeakPotential,
+                medicatedBase = modelSettings.hrvMedicatedBase,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(300.dp)
+                    .background(Color(0xFF121212), shape = MaterialTheme.shapes.medium)
+            )
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            Text("User Profile & Baselines", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+            SettingSlider("User Age", modelSettings.userAge.toDouble(), 10f..100f, "") {
+                onUpdateModel(modelSettings.copy(userAge = it.toInt()))
+            }
+            SettingSlider("Resting HR", modelSettings.restingHR, 30f..120f, " BPM") {
+                onUpdateModel(modelSettings.copy(restingHR = it.toDouble()))
+            }
+            SettingSlider("HRV Peak Potential (2024)", modelSettings.hrvPeakPotential, 20f..150f, " ms") {
+                onUpdateModel(modelSettings.copy(hrvPeakPotential = it.toDouble()))
+            }
+            SettingSlider("HRV Medicated Base", modelSettings.hrvMedicatedBase, 10f..100f, " ms") {
+                onUpdateModel(modelSettings.copy(hrvMedicatedBase = it.toDouble()))
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun ExerciseMetricsScreenPreview() {
+    val mockMetrics = listOf(
+        DailyExerciseMetrics("2026-05-03", 80.0, 32.0, 80.0),
+        DailyExerciseMetrics("2026-05-04", 120.0, 29.0, 120.0),
+        DailyExerciseMetrics("2026-05-05", 45.0, 36.0, 45.0),
+        DailyExerciseMetrics("2026-05-06", 160.0, 28.0, 160.0),
+        DailyExerciseMetrics("2026-05-07", 60.0, 31.0, 60.0),
+        DailyExerciseMetrics("2026-05-08", 50.0, 35.0, 50.0),
+        DailyExerciseMetrics("2026-05-09", 95.0, 30.0, 95.0)
+    )
+    val mockSettings = ModelSettings(
+        userAge = 31,
+        restingHR = 55.0,
+        hrvPeakPotential = 71.0,
+        hrvMedicatedBase = 30.0
+    )
+    _24_hr_clockTheme {
+        ExerciseMetricsScreen(
+            exerciseMetrics = mockMetrics,
+            modelSettings = mockSettings,
+            onUpdateModel = {}
+        )
+    }
+}
+
+@Composable
+fun DualAxisChart(
+    metrics: List<DailyExerciseMetrics>,
+    peakPotential: Double,
+    medicatedBase: Double,
+    modifier: Modifier = Modifier
+) {
+    val barColor = Color(0xFF00E5FF)
+    val lineColor = Color(0xFFFFB300)
+    val peakLineColor = Color(0xFF00FF00).copy(alpha = 0.5f)
+    val baseLineColor = Color(0xFFFF4444).copy(alpha = 0.5f)
+    val gridColor = Color.Gray.copy(alpha = 0.2f)
+
+    Canvas(modifier = modifier.padding(8.dp)) {
+        val width = size.width
+        val height = size.height
+        val paddingHorizontal = 40.dp.toPx()
+        val paddingVertical = 30.dp.toPx()
+        val chartWidth = width - 2 * paddingHorizontal
+        val chartHeight = height - 2 * paddingVertical
+
+        val maxHrss = (metrics.maxOfOrNull { it.hrss } ?: 100.0).coerceAtLeast(100.0) * 1.3
+        val maxHrv = 100.0
+
+        val xStep = if (metrics.size > 1) chartWidth / (metrics.size - 1) else chartWidth
+
+        // Draw Grid
+        for (i in 0..4) {
+            val y = paddingVertical + chartHeight - (i / 4f) * chartHeight
+            drawLine(gridColor, start = Offset(paddingHorizontal, y), end = Offset(paddingHorizontal + chartWidth, y))
+        }
+
+        // Draw Baselines
+        val peakY = (paddingVertical + chartHeight - (peakPotential / maxHrv) * chartHeight).toFloat()
+        val baseY = (paddingVertical + chartHeight - (medicatedBase / maxHrv) * chartHeight).toFloat()
+        
+        drawLine(peakLineColor, start = Offset(paddingHorizontal, peakY), end = Offset(paddingHorizontal + chartWidth, peakY), pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f)))
+        drawLine(baseLineColor, start = Offset(paddingHorizontal, baseY), end = Offset(paddingHorizontal + chartWidth, baseY), pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f)))
+
+        // Draw Bars (HRSS)
+        metrics.forEachIndexed { i, m ->
+            val barHeight = ((m.hrss / maxHrss) * chartHeight).toFloat()
+            val x = paddingHorizontal + i * xStep
+            val barWidth = 12.dp.toPx()
+            drawRect(
+                color = barColor,
+                topLeft = Offset(x - barWidth / 2, paddingVertical + chartHeight - barHeight),
+                size = Size(barWidth, barHeight),
+                alpha = 0.6f
+            )
+        }
+
+        // Draw Line (HRV)
+        val points = metrics.mapIndexed { i, m ->
+            val x = paddingHorizontal + i * xStep
+            val y = (paddingVertical + chartHeight - (m.hrv / maxHrv) * chartHeight).toFloat()
+            Offset(x, y)
+        }
+
+        if (points.size > 1) {
+            val path = Path().apply {
+                moveTo(points[0].x, points[0].y)
+                for (i in 1 until points.size) {
+                    lineTo(points[i].x, points[i].y)
+                }
+            }
+            drawPath(path, color = lineColor, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
+            
+            // Fill under line
+            val fillPath = Path().apply {
+                moveTo(points[0].x, points[0].y)
+                for (i in 1 until points.size) {
+                    lineTo(points[i].x, points[i].y)
+                }
+                lineTo(points.last().x, paddingVertical + chartHeight)
+                lineTo(points.first().x, paddingVertical + chartHeight)
+                close()
+            }
+            drawPath(fillPath, color = lineColor.copy(alpha = 0.1f))
+            
+            // Points
+            points.forEach { p ->
+                drawCircle(lineColor, radius = 4.dp.toPx(), center = p)
             }
         }
     }

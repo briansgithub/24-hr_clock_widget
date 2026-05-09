@@ -43,3 +43,27 @@ data class HeartRatePointEntry(
     val time: String,
     val value: Int
 )
+
+@Serializable
+data class HRVResponse(
+    val hrv: List<HRVEntry>
+)
+
+@Serializable
+data class HRVEntry(
+    val dateTime: String,
+    val value: HRVValue
+)
+
+@Serializable
+data class HRVValue(
+    val dailyRmssd: Double
+)
+
+@Serializable
+data class DailyExerciseMetrics(
+    val date: String,
+    val trimp: Double,
+    val hrv: Double,
+    val hrss: Double = 0.0
+)

@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -32,6 +33,7 @@ class FitbitManager(private val context: Context) {
     private val BATHYPHASE = androidx.datastore.preferences.core.doublePreferencesKey("bathyphase")
     private val EFFICIENCY = androidx.datastore.preferences.core.doublePreferencesKey("efficiency")
     private val SLEEP_NEED = androidx.datastore.preferences.core.doublePreferencesKey("sleep_need")
+    private val EXERCISE_METRICS = stringPreferencesKey("exercise_metrics")
 
     suspend fun saveMetrics(bathyphase: Double?, efficiency: Double, sleepNeed: Double) {
         context.dataStore.edit { prefs ->
@@ -50,6 +52,23 @@ class FitbitManager(private val context: Context) {
     }
 
     val loginStatusFlow = context.dataStore.data.map { it[ACCESS_TOKEN] != null }
+
+    val exerciseMetricsFlow: Flow<List<DailyExerciseMetrics>> = context.dataStore.data.map { prefs ->
+        val jsonStr = prefs[EXERCISE_METRICS] ?: "[]"
+        try { json.decodeFromString<List<DailyExerciseMetrics>>(jsonStr) } catch (e: Exception) { emptyList() }
+    }
+
+    suspend fun getExerciseMetrics(): List<DailyExerciseMetrics> {
+        val prefs = context.dataStore.data.first()
+        val jsonStr = prefs[EXERCISE_METRICS] ?: "[]"
+        return try { json.decodeFromString<List<DailyExerciseMetrics>>(jsonStr) } catch (e: Exception) { emptyList() }
+    }
+
+    suspend fun saveExerciseMetrics(metrics: List<DailyExerciseMetrics>) {
+        context.dataStore.edit { prefs ->
+            prefs[EXERCISE_METRICS] = json.encodeToString(metrics)
+        }
+    }
 
     suspend fun getMetrics(): Triple<Double?, Double, Double> {
         val data = context.dataStore.data.first()
@@ -246,6 +265,21 @@ class FitbitManager(private val context: Context) {
         return@withContext allPoints
     }
 
+    suspend fun fetchHRV(dateStr: String): Double? = withContext(Dispatchers.IO) {
+        val token = getAccessToken() ?: return@withContext null
+        val url = "https://api.fitbit.com/1/user/-/hrv/date/$dateStr.json"
+        val request = Request.Builder().url(url).addHeader("Authorization", "Bearer $token").build()
+        var response = client.newCall(request).execute()
+        if (response.code == 401 && refreshTokens()) {
+            val newToken = getAccessToken()
+            response = client.newCall(request.newBuilder().header("Authorization", "Bearer $newToken").build()).execute()
+        }
+        if (response.isSuccessful) {
+            val body = response.body?.string() ?: return@withContext null
+            try { json.decodeFromString<HRVResponse>(body).hrv.firstOrNull()?.value?.dailyRmssd } catch (e: Exception) { null }
+        } else null
+    }
+
     suspend fun refreshMetrics(force: Boolean = false) {
         val settingsManager = SettingsManager(context)
         val modelSettings = settingsManager.modelSettingsFlow.first()
@@ -267,6 +301,26 @@ class FitbitManager(private val context: Context) {
         val hrPoints = fetchHeartRateIntraday(mainSleep.startTime, mainSleep.endTime)
         val bathy = EnergyCalculator.findBathyphase(hrPoints.map { HeartRatePoint(it.time, it.value) })
         
-        saveMetrics(bathy, eff, modelSettings.bedtimeGoal * eff)
+        bathy?.let { b ->
+            saveMetrics(b, eff, modelSettings.bedtimeGoal * eff)
+        }
+
+        // Exercise Metrics (Last 7 Days)
+        val exerciseData = mutableListOf<DailyExerciseMetrics>()
+        for (i in 0 until 7) {
+            val date = now.minusDays(i.toLong()).toString()
+            val hrIntraday = fetchHeartRateIntraday(date + "T00:00:00", date + "T23:59:59")
+            val hrv = fetchHRV(date) ?: modelSettings.hrvMedicatedBase
+            
+            val trimp = ExerciseMetricsCalculator.calculateTrimp(hrIntraday.map { it.value }, modelSettings.restingHR, 220.0 - modelSettings.userAge)
+            exerciseData.add(DailyExerciseMetrics(date, trimp, hrv))
+        }
+        
+        val avgTrimp = if (exerciseData.isNotEmpty()) exerciseData.map { it.trimp }.average() else 0.0
+        val finalizedExerciseData = exerciseData.map { 
+            it.copy(hrss = ExerciseMetricsCalculator.calculateHrss(it.trimp, avgTrimp))
+        }.sortedBy { it.date }
+        
+        saveExerciseMetrics(finalizedExerciseData)
     }
 }
