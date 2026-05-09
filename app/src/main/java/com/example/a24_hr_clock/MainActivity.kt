@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -47,8 +48,19 @@ import com.example.a24_hr_clock.logic.*
 import com.example.a24_hr_clock.wallpaper.ClockRenderer
 import com.example.a24_hr_clock.wallpaper.ClockWallpaperService
 import com.example.a24_hr_clock.ui.theme._24_hr_clockTheme
-import androidx.compose.ui.tooling.preview.Preview
 import java.util.*
+import kotlin.math.*
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import kotlin.math.*
 
 enum class Screen {
@@ -333,6 +345,7 @@ fun MainScreen(
                     onUpdateModel = { scope.launch { settingsManager.updateModelSettings(it) } }
                 )
                 Screen.EXERCISE -> ExerciseMetricsScreen(
+                    fitbitManager = fitbitManager,
                     exerciseMetrics = exerciseMetrics,
                     modelSettings = modelSettings,
                     onUpdateModel = { scope.launch { settingsManager.updateModelSettings(it) } }
@@ -1129,10 +1142,31 @@ fun ChecklistItem(title: String, isOk: Boolean, actionText: String = "Fix", onCl
 
 @Composable
 fun ExerciseMetricsScreen(
+    fitbitManager: FitbitManager,
     exerciseMetrics: List<DailyExerciseMetrics>,
     modelSettings: ModelSettings,
     onUpdateModel: (ModelSettings) -> Unit
 ) {
+    val scope = rememberCoroutineScope()
+    var anchorDate by remember { mutableStateOf(java.time.LocalDate.now()) }
+    
+    // Calculate week range (Mon to Sun)
+    val dayOfWeek = anchorDate.dayOfWeek.value // 1 (Mon) to 7 (Sun)
+    val startOfWeek = anchorDate.minusDays((dayOfWeek - 1).toLong())
+    val endOfWeek = startOfWeek.plusDays(6)
+    
+    val weekMetrics = remember(exerciseMetrics, startOfWeek) {
+        val startStr = startOfWeek.toString()
+        val endStr = endOfWeek.toString()
+        exerciseMetrics.filter { it.date >= startStr && it.date <= endStr }
+    }
+
+    LaunchedEffect(startOfWeek) {
+        if (weekMetrics.size < 7) {
+            fitbitManager.fetchExerciseMetricsForRange(startOfWeek.toString(), endOfWeek.toString())
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1140,12 +1174,35 @@ fun ExerciseMetricsScreen(
             .padding(16.dp)
     ) {
         Text(text = "Exercise & Readiness", style = MaterialTheme.typography.headlineMedium)
+        
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = { anchorDate = anchorDate.minusWeeks(1) }) {
+                Icon(Icons.Default.ChevronLeft, contentDescription = "Prev Week")
+            }
+            Text(
+                text = "${startOfWeek.format(java.time.format.DateTimeFormatter.ofPattern("MMM d"))} - ${endOfWeek.format(java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy"))}",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
+            IconButton(onClick = { 
+                if (anchorDate.plusWeeks(1).isBefore(java.time.LocalDate.now().plusDays(1))) {
+                    anchorDate = anchorDate.plusWeeks(1)
+                }
+            }) {
+                Icon(Icons.Default.ChevronRight, contentDescription = "Next Week")
+            }
+        }
+        
         Spacer(modifier = Modifier.height(16.dp))
 
-        if (exerciseMetrics.isEmpty()) {
+        if (weekMetrics.isEmpty() && exerciseMetrics.isEmpty()) {
             Text("No exercise data available. Refresh Fitbit data in 'Connect' tab to fetch.")
         } else {
-            val latest = exerciseMetrics.last()
+            val latest = if (weekMetrics.isNotEmpty()) weekMetrics.last() else exerciseMetrics.last()
             val alert = ExerciseMetricsCalculator.generateSystemAlert(latest.hrv, latest.hrss, modelSettings.hrvMedicatedBase)
             
             Card(
@@ -1164,12 +1221,12 @@ fun ExerciseMetricsScreen(
             Spacer(modifier = Modifier.height(24.dp))
             
             DualAxisChart(
-                metrics = exerciseMetrics,
+                metrics = weekMetrics,
                 peakPotential = modelSettings.hrvPeakPotential,
                 medicatedBase = modelSettings.hrvMedicatedBase,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(300.dp)
+                    .height(350.dp)
                     .background(Color(0xFF121212), shape = MaterialTheme.shapes.medium)
             )
             
@@ -1196,6 +1253,8 @@ fun ExerciseMetricsScreen(
 @Preview(showBackground = true)
 @Composable
 fun ExerciseMetricsScreenPreview() {
+    val context = LocalContext.current
+    val fitbitManager = remember { FitbitManager(context) }
     val mockMetrics = listOf(
         DailyExerciseMetrics("2026-05-03", 80.0, 32.0, 80.0),
         DailyExerciseMetrics("2026-05-04", 120.0, 29.0, 120.0),
@@ -1213,6 +1272,7 @@ fun ExerciseMetricsScreenPreview() {
     )
     _24_hr_clockTheme {
         ExerciseMetricsScreen(
+            fitbitManager = fitbitManager,
             exerciseMetrics = mockMetrics,
             modelSettings = mockSettings,
             onUpdateModel = {}
@@ -1232,12 +1292,42 @@ fun DualAxisChart(
     val peakLineColor = Color(0xFF00FF00).copy(alpha = 0.5f)
     val baseLineColor = Color(0xFFFF4444).copy(alpha = 0.5f)
     val gridColor = Color.Gray.copy(alpha = 0.2f)
+    val textColor = Color.White.copy(alpha = 0.7f)
+    
+    val textMeasurer = rememberTextMeasurer()
+    var scrubIndex by remember { mutableStateOf<Int?>(null) }
 
-    Canvas(modifier = modifier.padding(8.dp)) {
+    Canvas(modifier = modifier
+        .padding(8.dp)
+        .pointerInput(metrics) {
+            detectDragGestures(
+                onDragStart = { offset -> 
+                    if (metrics.isNotEmpty()) {
+                        val chartWidth = size.width - 80.dp.toPx()
+                        val paddingHorizontal = 40.dp.toPx()
+                        val xStep = if (metrics.size > 1) chartWidth / (metrics.size - 1) else chartWidth
+                        val idx = ((offset.x - paddingHorizontal + xStep / 2) / xStep).toInt().coerceIn(0, metrics.size - 1)
+                        scrubIndex = idx
+                    }
+                },
+                onDrag = { change, _ ->
+                    if (metrics.isNotEmpty()) {
+                        val chartWidth = size.width - 80.dp.toPx()
+                        val paddingHorizontal = 40.dp.toPx()
+                        val xStep = if (metrics.size > 1) chartWidth / (metrics.size - 1) else chartWidth
+                        val idx = ((change.position.x - paddingHorizontal + xStep / 2) / xStep).toInt().coerceIn(0, metrics.size - 1)
+                        scrubIndex = idx
+                    }
+                },
+                onDragEnd = { scrubIndex = null },
+                onDragCancel = { scrubIndex = null }
+            )
+        }
+    ) {
         val width = size.width
         val height = size.height
-        val paddingHorizontal = 40.dp.toPx()
-        val paddingVertical = 30.dp.toPx()
+        val paddingHorizontal = 50.dp.toPx()
+        val paddingVertical = 40.dp.toPx()
         val chartWidth = width - 2 * paddingHorizontal
         val chartHeight = height - 2 * paddingVertical
 
@@ -1246,11 +1336,37 @@ fun DualAxisChart(
 
         val xStep = if (metrics.size > 1) chartWidth / (metrics.size - 1) else chartWidth
 
-        // Draw Grid
+        // Draw Axes
+        drawLine(textColor, start = Offset(paddingHorizontal, paddingVertical), end = Offset(paddingHorizontal, paddingVertical + chartHeight), strokeWidth = 1.dp.toPx())
+        drawLine(textColor, start = Offset(paddingHorizontal + chartWidth, paddingVertical), end = Offset(paddingHorizontal + chartWidth, paddingVertical + chartHeight), strokeWidth = 1.dp.toPx())
+        drawLine(textColor, start = Offset(paddingHorizontal, paddingVertical + chartHeight), end = Offset(paddingHorizontal + chartWidth, paddingVertical + chartHeight), strokeWidth = 1.dp.toPx())
+
+        // Y-Axis Labels (Left - HRSS)
         for (i in 0..4) {
             val y = paddingVertical + chartHeight - (i / 4f) * chartHeight
+            val value = (i / 4f) * maxHrss
+            drawText(
+                textMeasurer = textMeasurer,
+                text = value.toInt().toString(),
+                topLeft = Offset(paddingHorizontal - 35.dp.toPx(), y - 10.dp.toPx()),
+                style = TextStyle(color = barColor, fontSize = 10.sp)
+            )
             drawLine(gridColor, start = Offset(paddingHorizontal, y), end = Offset(paddingHorizontal + chartWidth, y))
         }
+        drawText(textMeasurer, "HRSS", Offset(paddingHorizontal - 45.dp.toPx(), paddingVertical - 25.dp.toPx()), TextStyle(color = barColor, fontSize = 10.sp, fontWeight = FontWeight.Bold))
+
+        // Y-Axis Labels (Right - HRV)
+        for (i in 0..4) {
+            val y = paddingVertical + chartHeight - (i / 4f) * chartHeight
+            val value = (i / 4f) * maxHrv
+            drawText(
+                textMeasurer = textMeasurer,
+                text = value.toInt().toString(),
+                topLeft = Offset(paddingHorizontal + chartWidth + 5.dp.toPx(), y - 10.dp.toPx()),
+                style = TextStyle(color = lineColor, fontSize = 10.sp)
+            )
+        }
+        drawText(textMeasurer, "HRV", Offset(paddingHorizontal + chartWidth + 5.dp.toPx(), paddingVertical - 25.dp.toPx()), TextStyle(color = lineColor, fontSize = 10.sp, fontWeight = FontWeight.Bold))
 
         // Draw Baselines
         val peakY = (paddingVertical + chartHeight - (peakPotential / maxHrv) * chartHeight).toFloat()
@@ -1263,12 +1379,21 @@ fun DualAxisChart(
         metrics.forEachIndexed { i, m ->
             val barHeight = ((m.hrss / maxHrss) * chartHeight).toFloat()
             val x = paddingHorizontal + i * xStep
-            val barWidth = 12.dp.toPx()
+            val barWidth = 16.dp.toPx()
             drawRect(
                 color = barColor,
                 topLeft = Offset(x - barWidth / 2, paddingVertical + chartHeight - barHeight),
                 size = Size(barWidth, barHeight),
-                alpha = 0.6f
+                alpha = if (scrubIndex != null && scrubIndex != i) 0.2f else 0.6f
+            )
+            
+            // X-Axis Date Label
+            val dateLabel = try { java.time.LocalDate.parse(m.date).format(java.time.format.DateTimeFormatter.ofPattern("E")) } catch(e: Exception) { m.date.takeLast(2) }
+            drawText(
+                textMeasurer = textMeasurer,
+                text = dateLabel,
+                topLeft = Offset(x - 10.dp.toPx(), paddingVertical + chartHeight + 5.dp.toPx()),
+                style = TextStyle(color = textColor, fontSize = 10.sp)
             )
         }
 
@@ -1286,7 +1411,7 @@ fun DualAxisChart(
                     lineTo(points[i].x, points[i].y)
                 }
             }
-            drawPath(path, color = lineColor, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
+            drawPath(path, color = lineColor, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round), alpha = if (scrubIndex != null) 0.3f else 1.0f)
             
             // Fill under line
             val fillPath = Path().apply {
@@ -1299,11 +1424,47 @@ fun DualAxisChart(
                 close()
             }
             drawPath(fillPath, color = lineColor.copy(alpha = 0.1f))
+        }
+        
+        // Points
+        points.forEachIndexed { i, p ->
+            drawCircle(lineColor, radius = 4.dp.toPx(), center = p, alpha = if (scrubIndex != null && scrubIndex != i) 0.2f else 1.0f)
+        }
+        
+        // Scrub Overlay
+        scrubIndex?.let { idx ->
+            val m = metrics[idx]
+            val x = paddingHorizontal + idx * xStep
             
-            // Points
-            points.forEach { p ->
-                drawCircle(lineColor, radius = 4.dp.toPx(), center = p)
-            }
+            // Vertical Line
+            drawLine(Color.White.copy(alpha = 0.5f), start = Offset(x, paddingVertical), end = Offset(x, paddingVertical + chartHeight), strokeWidth = 1.dp.toPx())
+            
+            // Tooltip
+            val tooltipText = "${m.date}\nHRSS: ${m.hrss.toInt()}%\nHRV: ${m.hrv.toInt()}ms\nTRIMP: ${m.trimp.toInt()}"
+            val layoutResult = textMeasurer.measure(tooltipText, style = TextStyle(color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold))
+            
+            val tooltipWidth = layoutResult.size.width.toFloat() + 20.dp.toPx()
+            val tooltipHeight = layoutResult.size.height.toFloat() + 20.dp.toPx()
+            
+            var tooltipX = x - tooltipWidth / 2
+            if (tooltipX < 0) tooltipX = 0f
+            if (tooltipX + tooltipWidth > width) tooltipX = width - tooltipWidth
+            
+            val tooltipY = paddingVertical + 10.dp.toPx()
+            
+            drawRoundRect(
+                color = Color.White.copy(alpha = 0.9f),
+                topLeft = Offset(tooltipX, tooltipY),
+                size = Size(tooltipWidth, tooltipHeight),
+                cornerRadius = CornerRadius(8.dp.toPx(), 8.dp.toPx())
+            )
+            
+            drawText(
+                textMeasurer = textMeasurer,
+                text = tooltipText,
+                topLeft = Offset(tooltipX + 10.dp.toPx(), tooltipY + 10.dp.toPx()),
+                style = TextStyle(color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            )
         }
     }
 }

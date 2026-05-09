@@ -280,47 +280,83 @@ class FitbitManager(private val context: Context) {
         } else null
     }
 
+    suspend fun fetchExerciseMetricsForRange(startDateStr: String, endDateStr: String): List<DailyExerciseMetrics> = withContext(Dispatchers.IO) {
+        val settingsManager = SettingsManager(context)
+        val modelSettings = settingsManager.modelSettingsFlow.first()
+        val todayStr = java.time.LocalDate.now().toString()
+        
+        val start = java.time.LocalDate.parse(startDateStr)
+        val end = java.time.LocalDate.parse(endDateStr)
+        
+        val existing = getExerciseMetrics().toMutableList()
+        var modified = false
+        
+        var cursor = start
+        while (!cursor.isAfter(end)) {
+            val dateStr = cursor.toString()
+            // Always re-fetch today to get current data. 
+            // Only use cache for past days.
+            val isPastDay = cursor.isBefore(java.time.LocalDate.now())
+            val cached = existing.find { it.date == dateStr }
+            
+            if (isPastDay && cached != null) {
+                // Already have this past day, do nothing
+            } else {
+                // Fetch from API
+                val hrIntraday = fetchHeartRateIntraday(dateStr + "T00:00:00", dateStr + "T23:59:59")
+                val hrv = fetchHRV(dateStr) ?: modelSettings.hrvMedicatedBase
+                val trimp = ExerciseMetricsCalculator.calculateTrimp(hrIntraday.map { it.value }, modelSettings.restingHR, 220.0 - modelSettings.userAge)
+                val newMetric = DailyExerciseMetrics(dateStr, trimp, hrv)
+                
+                if (cached != null) {
+                    existing[existing.indexOf(cached)] = newMetric
+                } else {
+                    existing.add(newMetric)
+                }
+                modified = true
+            }
+            cursor = cursor.plusDays(1)
+        }
+        
+        if (modified) {
+            val avgTrimp = if (existing.isNotEmpty()) existing.map { it.trimp }.average() else 0.0
+            val finalized = existing.map { 
+                it.copy(hrss = ExerciseMetricsCalculator.calculateHrss(it.trimp, avgTrimp))
+            }.sortedBy { it.date }
+            
+            saveExerciseMetrics(finalized)
+            return@withContext finalized.filter { it.date >= startDateStr && it.date <= endDateStr }
+        }
+        
+        return@withContext existing.filter { it.date >= startDateStr && it.date <= endDateStr }.sortedBy { it.date }
+    }
+
     suspend fun refreshMetrics(force: Boolean = false) {
         val settingsManager = SettingsManager(context)
         val modelSettings = settingsManager.modelSettingsFlow.first()
         
         val now = java.time.LocalDate.now()
         val logs = fetchSleepLogs(now.minusDays(14).toString(), now.toString())
-        if (logs.isEmpty()) return
-
-        val mainSleep = logs.filter { it.isMainSleep }.maxByOrNull { it.dateOfSleep } ?: return
         
-        // Efficiency
-        val avgEff = logs.filter { it.timeInBed > 0 }
-            .map { it.minutesAsleep.toDouble() / it.timeInBed }
-            .average()
-        
-        val eff = if (avgEff.isNaN()) 0.92 else avgEff
-        
-        // Bathyphase
-        val hrPoints = fetchHeartRateIntraday(mainSleep.startTime, mainSleep.endTime)
-        val bathy = EnergyCalculator.findBathyphase(hrPoints.map { HeartRatePoint(it.time, it.value) })
-        
-        bathy?.let { b ->
-            saveMetrics(b, eff, modelSettings.bedtimeGoal * eff)
+        // Efficiency & Bathyphase (Existing Logic)
+        if (logs.isNotEmpty()) {
+            val mainSleep = logs.filter { it.isMainSleep }.maxByOrNull { it.dateOfSleep }
+            if (mainSleep != null) {
+                val avgEff = logs.filter { it.timeInBed > 0 }
+                    .map { it.minutesAsleep.toDouble() / it.timeInBed }
+                    .average()
+                val eff = if (avgEff.isNaN()) 0.92 else avgEff
+                
+                val hrPoints = fetchHeartRateIntraday(mainSleep.startTime, mainSleep.endTime)
+                val bathy = EnergyCalculator.findBathyphase(hrPoints.map { HeartRatePoint(it.time, it.value) })
+                
+                bathy?.let { b ->
+                    saveMetrics(b, eff, modelSettings.bedtimeGoal * eff)
+                }
+            }
         }
 
-        // Exercise Metrics (Last 7 Days)
-        val exerciseData = mutableListOf<DailyExerciseMetrics>()
-        for (i in 0 until 7) {
-            val date = now.minusDays(i.toLong()).toString()
-            val hrIntraday = fetchHeartRateIntraday(date + "T00:00:00", date + "T23:59:59")
-            val hrv = fetchHRV(date) ?: modelSettings.hrvMedicatedBase
-            
-            val trimp = ExerciseMetricsCalculator.calculateTrimp(hrIntraday.map { it.value }, modelSettings.restingHR, 220.0 - modelSettings.userAge)
-            exerciseData.add(DailyExerciseMetrics(date, trimp, hrv))
-        }
-        
-        val avgTrimp = if (exerciseData.isNotEmpty()) exerciseData.map { it.trimp }.average() else 0.0
-        val finalizedExerciseData = exerciseData.map { 
-            it.copy(hrss = ExerciseMetricsCalculator.calculateHrss(it.trimp, avgTrimp))
-        }.sortedBy { it.date }
-        
-        saveExerciseMetrics(finalizedExerciseData)
+        // Smart Sync Exercise Metrics for the last 7 days
+        fetchExerciseMetricsForRange(now.minusDays(6).toString(), now.toString())
     }
 }
