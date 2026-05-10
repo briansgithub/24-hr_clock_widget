@@ -351,8 +351,8 @@ class ClockWidget:
         
 
 
-        self.sunrise_hour = 6.0
-        self.sunset_hour = 18.0
+        self.sunrise_hour = None
+        self.sunset_hour = None
        
         self.canvas.bind("<Configure>", self.on_resize)
        
@@ -917,42 +917,58 @@ class ClockWidget:
         def _fetch():
             lat, lon = None, None
             try:
-                req = urllib.request.Request("http://ip-api.com/json/?fields=lat,lon", headers={'User-Agent': 'Mozilla/5.0'})
-                resp = urllib.request.urlopen(req, timeout=3)
+                print("[ClockWidget] Fetching IP location from ip-api.com...")
+                # Try HTTPS first, fallback to HTTP
+                try:
+                    req = urllib.request.Request("https://ip-api.com/json/?fields=lat,lon", headers={'User-Agent': 'Mozilla/5.0'})
+                    resp = urllib.request.urlopen(req, timeout=3)
+                except:
+                    req = urllib.request.Request("http://ip-api.com/json/?fields=lat,lon", headers={'User-Agent': 'Mozilla/5.0'})
+                    resp = urllib.request.urlopen(req, timeout=3)
+                    
                 data = json.loads(resp.read().decode())
                 lat = data.get('lat')
                 lon = data.get('lon')
+                if lat is not None:
+                    print(f"[ClockWidget] IP Location: {lat}, {lon}")
             except Exception as e:
-                print("IP location failed, using timezone fallback:", e)
+                print(f"[ClockWidget] IP location failed ({e}), using timezone fallback.")
                
             if lat is None or lon is None:
                 offset_hours = datetime.datetime.now().astimezone().utcoffset().total_seconds() / 3600.0
                 tz_map = {
-                    -10: (21.3069, -157.8583), -9: (61.2181, -149.9003),
-                    -8: (34.0522, -118.2437), -7: (39.7392, -104.9903),
-                    -6: (41.8781, -87.6298), -5: (40.7128, -74.0060),
-                    -4: (40.7128, -74.0060), 0: (51.5074, -0.1278),
-                    1: (48.8566, 2.3522), 2: (30.0444, 31.2357),
-                    3: (55.7558, 37.6173), 5.5: (28.6139, 77.2090),
-                    8: (39.9042, 116.4074), 9: (35.6762, 139.6503),
-                    10: (-33.8688, 151.2093)
+                    -12: (0.0, -180.0), -11: (-14.235, -170.559), -10: (21.3069, -157.8583), 
+                    -9: (61.2181, -149.9003), -8: (34.0522, -118.2437), -7: (39.7392, -104.9903),
+                    -6: (41.8781, -87.6298), -5: (40.7128, -74.0060), -4: (-33.4489, -70.6693),
+                    -3: (-23.5505, -46.6333), -2: (0.0, -30.0), -1: (37.7412, -25.6756),
+                    0: (51.5074, -0.1278), 1: (48.8566, 2.3522), 2: (30.0444, 31.2357),
+                    3: (55.7558, 37.6173), 4: (25.2048, 55.2708), 5: (24.8607, 67.0011),
+                    5.5: (28.6139, 77.2090), 6: (23.8103, 90.4125), 7: (13.7563, 100.5018),
+                    8: (39.9042, 116.4074), 9: (35.6762, 139.6503), 10: (-33.8688, 151.2093),
+                    11: (-36.8485, 174.7633), 12: (-41.2865, 174.7762)
                 }
                 closest = min(tz_map.keys(), key=lambda k: abs(k - offset_hours))
                 lat, lon = tz_map[closest]
+                print(f"[ClockWidget] Timezone fallback: {lat}, {lon} (Offset: {offset_hours})")
 
             try:
                 self.lat = lat
                 self.lon = lon
                 obs = Observer(latitude=lat, longitude=lon)
-                s = sun(obs, date=datetime.date.today())
+                # Pass the local timezone to astral to ensure sun events are found for 'today'
+                local_tz = datetime.datetime.now().astimezone().tzinfo
+                s = sun(obs, date=datetime.date.today(), tzinfo=local_tz)
                
-                sunrise_dt = s['sunrise'].astimezone()
-                sunset_dt = s['sunset'].astimezone()
+                sunrise_dt = s['sunrise']
+                sunset_dt = s['sunset']
                
                 self.sunrise_hour = sunrise_dt.hour + sunrise_dt.minute / 60.0 + sunrise_dt.second / 3600.0
                 self.sunset_hour = sunset_dt.hour + sunset_dt.minute / 60.0 + sunset_dt.second / 3600.0
+                print(f"[ClockWidget] Sun times computed: {self.sunrise_hour:.2f} to {self.sunset_hour:.2f}")
             except Exception as e:
-                print("Could not compute sunrise/sunset:", e)
+                print(f"[ClockWidget] Could not compute sunrise/sunset: {e}")
+                self.sunrise_hour = None
+                self.sunset_hour = None
             finally:
                 self.root.after(0, self.show_initial)
 
@@ -1558,14 +1574,15 @@ class ClockWidget:
        
         draw.ellipse((4, 4, 60, 60), fill="#ffffff", outline="black", width=2)
        
-        night_hours = self.sunrise_hour - self.sunset_hour
-        if night_hours < 0:
-            night_hours += 24
+        if self.sunrise_hour is not None and self.sunset_hour is not None:
+            night_hours = self.sunrise_hour - self.sunset_hour
+            if night_hours < 0:
+                night_hours += 24
+               
+            start_angle = (self.sunset_hour + 6) * 15
+            extent = night_hours * 15
            
-        start_angle = (self.sunset_hour + 6) * 15
-        extent = night_hours * 15
-       
-        draw.pieslice((4, 4, 60, 60), start=start_angle, end=start_angle + extent, fill="#2C3E50")
+            draw.pieslice((4, 4, 60, 60), start=start_angle, end=start_angle + extent, fill="#2C3E50")
         draw.ellipse((4, 4, 60, 60), outline="black", width=1)
        
         current_hour = now.hour + now.minute / 60.0
@@ -1975,6 +1992,8 @@ class ClockWidget:
             )
            
         def draw_night_shading():
+            if self.sunrise_hour is None or self.sunset_hour is None:
+                return
             night_hours = self.sunrise_hour - self.sunset_hour
             if night_hours < 0:
                 night_hours += 24
@@ -2067,10 +2086,13 @@ class ClockWidget:
                 x2 = center_x + radius * math.cos(rad)
                 y2 = center_y - radius * math.sin(rad)
                
-                if self.sunset_hour > self.sunrise_hour:
-                    is_night = (h_tick >= self.sunset_hour) or (h_tick < self.sunrise_hour)
+                if self.sunrise_hour is not None and self.sunset_hour is not None:
+                    if self.sunset_hour > self.sunrise_hour:
+                        is_night = (h_tick >= self.sunset_hour) or (h_tick < self.sunrise_hour)
+                    else:
+                        is_night = (h_tick >= self.sunset_hour) and (h_tick < self.sunrise_hour)
                 else:
-                    is_night = (h_tick >= self.sunset_hour) and (h_tick < self.sunrise_hour)
+                    is_night = False
                    
                 tick_color = "white" if is_night else "black"
                 text_color = "white" if is_night else "black"
@@ -2369,14 +2391,15 @@ class ClockWidget:
         draw.ellipse([center_x - radius, center_y - radius, center_x + radius, center_y + radius], fill="#ffffff", outline="black", width=int(3 * scale))
         
         # 2. Night Shading
-        night_hours = self.sunrise_hour - self.sunset_hour
-        if night_hours < 0: night_hours += 24
-        sunset_angle_tk = (18 - self.sunset_hour) * 15
-        extent_tk = -(night_hours * 15)
-        
-        pil_start = -sunset_angle_tk
-        pil_end = pil_start - extent_tk
-        draw.pieslice([center_x - radius, center_y - radius, center_x + radius, center_y + radius], start=pil_start, end=pil_end, fill="#2C3E50")
+        if self.sunrise_hour is not None and self.sunset_hour is not None:
+            night_hours = self.sunrise_hour - self.sunset_hour
+            if night_hours < 0: night_hours += 24
+            sunset_angle_tk = (18 - self.sunset_hour) * 15
+            extent_tk = -(night_hours * 15)
+            
+            pil_start = -sunset_angle_tk
+            pil_end = pil_start - extent_tk
+            draw.pieslice([center_x - radius, center_y - radius, center_x + radius, center_y + radius], start=pil_start, end=pil_end, fill="#2C3E50")
 
         # 3. Sleep Arc
         if self.wake_hour is not None:
@@ -2415,7 +2438,10 @@ class ClockWidget:
             x2 = center_x + radius * math.cos(rad)
             y2 = center_y - radius * math.sin(rad)
             
-            is_night = (h_tick >= self.sunset_hour or h_tick < self.sunrise_hour) if self.sunset_hour > self.sunrise_hour else (h_tick >= self.sunset_hour and h_tick < self.sunrise_hour)
+            if self.sunrise_hour is not None and self.sunset_hour is not None:
+                is_night = (h_tick >= self.sunset_hour or h_tick < self.sunrise_hour) if self.sunset_hour > self.sunrise_hour else (h_tick >= self.sunset_hour and h_tick < self.sunrise_hour)
+            else:
+                is_night = False
             tick_color = "white" if is_night else "black"
             draw.line([(x1, y1), (x2, y2)], fill=tick_color, width=int(3 * scale if h_tick % 6 == 0 else 2 * scale))
 
