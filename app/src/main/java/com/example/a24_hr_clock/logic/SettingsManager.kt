@@ -18,6 +18,7 @@ class SettingsManager(private val context: Context) {
         private val HOME_SETTINGS_JSON = stringPreferencesKey("home_settings_json")
         private val LOCK_SETTINGS_JSON = stringPreferencesKey("lock_settings_json")
         private val MODEL_SETTINGS_JSON = stringPreferencesKey("model_settings_json")
+        private val CALENDAR_SETTINGS_JSON = stringPreferencesKey("calendar_settings_json")
 
         // DEFAULT SETTINGS TEMPLATES
         private val DEFAULT_HOME_SETTINGS = ClockSettings(
@@ -66,6 +67,8 @@ class SettingsManager(private val context: Context) {
             hrvPeakPotential = 71.0,
             hrvMedicatedBase = 30.0
         )
+
+        private val DEFAULT_CALENDAR_SETTINGS = CalendarSettings()
     }
 
     private val json = Json { 
@@ -91,6 +94,12 @@ class SettingsManager(private val context: Context) {
         } ?: DEFAULT_MODEL_SETTINGS
     }
 
+    val calendarSettingsFlow: Flow<CalendarSettings> = context.settingsDataStore.data.map { prefs ->
+        prefs[CALENDAR_SETTINGS_JSON]?.let {
+            try { json.decodeFromString<CalendarSettings>(it) } catch (e: Exception) { DEFAULT_CALENDAR_SETTINGS }
+        } ?: DEFAULT_CALENDAR_SETTINGS
+    }
+
 
     suspend fun updateHomeSettings(update: ClockSettings) {
         context.settingsDataStore.edit { prefs ->
@@ -107,6 +116,12 @@ class SettingsManager(private val context: Context) {
     suspend fun updateModelSettings(update: ModelSettings) {
         context.settingsDataStore.edit { prefs ->
             prefs[MODEL_SETTINGS_JSON] = json.encodeToString(update)
+        }
+    }
+
+    suspend fun updateCalendarSettings(update: CalendarSettings) {
+        context.settingsDataStore.edit { prefs ->
+            prefs[CALENDAR_SETTINGS_JSON] = json.encodeToString(update)
         }
     }
 
@@ -127,6 +142,12 @@ class SettingsManager(private val context: Context) {
             prefs[MODEL_SETTINGS_JSON] = json.encodeToString(DEFAULT_MODEL_SETTINGS)
         }
     }
+
+    suspend fun resetCalendarSettings() {
+        context.settingsDataStore.edit { prefs ->
+            prefs[CALENDAR_SETTINGS_JSON] = json.encodeToString(DEFAULT_CALENDAR_SETTINGS)
+        }
+    }
 }
 
 @Serializable
@@ -142,6 +163,12 @@ data class ClockSettings(
     val showTotalBedtime: Boolean = true,
     val showEnergyPct: Boolean = false,
     val normalizeEnergy: Boolean = false
+)
+
+@Serializable
+data class CalendarSettings(
+    val enabledIds: Set<Long> = emptySet(),
+    val initialized: Boolean = false
 )
 
 @Serializable

@@ -22,6 +22,7 @@ private const val TAG = "ClockWallpaper"
 private data class DataSnapshot(
     val settings: ClockSettings,
     val model: ModelSettings,
+    val calendar: CalendarSettings,
     val logs: List<SleepLogEntry>,
     val debt: Double,
     val bathy: Double?
@@ -84,6 +85,7 @@ class ClockWallpaperService : WallpaperService() {
         // Settings
         private var currentSettings = ClockSettings()
         private var modelSettings = ModelSettings()
+        private var calendarSettings = CalendarSettings()
         private val isLockedState = MutableStateFlow(false)
         private var previewLockScreen = false
 
@@ -199,16 +201,18 @@ class ClockWallpaperService : WallpaperService() {
                 combine(
                     uiFlow,
                     settingsManager.modelSettingsFlow,
+                    settingsManager.calendarSettingsFlow,
                     fitbitManager.sleepLogsFlow,
                     fitbitManager.metricsFlow
-                ) { ui, model, logs, metrics ->
+                ) { ui, model, cal, logs, metrics ->
                     val (_, _, sleepNeed) = metrics
                     val mappedLogs = logs.map { SleepLog(it.dateOfSleep, it.minutesAsleep, it.isMainSleep, it.timeInBed) }
                     val debt = EnergyCalculator.computeSleepDebt(mappedLogs, sleepNeed, model.includeNaps, model.excludedDates)
-                    DataSnapshot(ui, model, logs, debt, metrics.first)
+                    DataSnapshot(ui, model, cal, logs, debt, metrics.first)
                 }.collect { snapshot ->
                     currentSettings = snapshot.settings
                     modelSettings = snapshot.model
+                    calendarSettings = snapshot.calendar
                     sleepLogs = snapshot.logs
                     sleepDebt = snapshot.debt
                     bathyphaseHour = snapshot.bathy
@@ -339,7 +343,7 @@ class ClockWallpaperService : WallpaperService() {
 
         private fun updateCalendarData() {
             if (applicationContext.checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
-                calendarEvents = calendarManager.getTodayEvents()
+                calendarEvents = calendarManager.getTodayEvents(calendarSettings.enabledIds)
                 Log.d(TAG, "Calendar data updated: ${calendarEvents.size} events")
             }
         }

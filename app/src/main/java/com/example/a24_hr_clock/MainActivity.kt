@@ -65,10 +65,10 @@ import kotlin.math.*
 
 enum class Screen {
     PREVIEW,
-    CONNECTIVITY,
+    CALENDAR,
     DISPLAY,
-    MODEL,
-    LOG,
+    ENERGY,
+    SLEEP,
     EXERCISE
 }
 
@@ -202,6 +202,7 @@ fun MainScreen(
     val homeSettings by settingsManager.homeSettingsFlow.collectAsState(initial = ClockSettings())
     val lockSettings by settingsManager.lockSettingsFlow.collectAsState(initial = ClockSettings())
     val modelSettings by settingsManager.modelSettingsFlow.collectAsState(initial = ModelSettings())
+    val calendarSettings by settingsManager.calendarSettingsFlow.collectAsState(initial = CalendarSettings())
     
     // Automatic cleanup: when "today" becomes "yesterday", if it was excluded, re-include it.
     val todayDate = java.time.LocalDate.now().toString()
@@ -225,16 +226,31 @@ fun MainScreen(
     var calendarEvents by remember { mutableStateOf(emptyList<CalendarEvent>()) }
     val calendarManager = remember { CalendarManager(context) }
 
-    LaunchedEffect(isLoggedIn) {
-        val loc = locationManager.getLastKnownLocation() ?: locationManager.getCurrentLocation()
-        if (loc != null) {
-            val cm = CelestialManager(loc.first, loc.second)
-            sunTimes = cm.getSunTimes()
-            celestialPositions = cm.getCelestialPositions()
-            solarIrradiance = cm.getSolarIrradiance()
+    // Initialization of Calendar Settings if needed
+    LaunchedEffect(calendarSettings.initialized) {
+        if (!calendarSettings.initialized && ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
+            val allCals = calendarManager.getAllCalendars()
+            val primaryIds = allCals.filter { it.isPrimary }.map { it.id }.toSet()
+            settingsManager.updateCalendarSettings(calendarSettings.copy(
+                enabledIds = primaryIds.ifEmpty { calendarSettings.enabledIds },
+                initialized = true
+            ))
         }
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
-            calendarEvents = calendarManager.getTodayEvents()
+    }
+
+    LaunchedEffect(isLoggedIn, calendarSettings.enabledIds) {
+        while (true) {
+            val loc = locationManager.getLastKnownLocation() ?: locationManager.getCurrentLocation()
+            if (loc != null) {
+                val cm = CelestialManager(loc.first, loc.second)
+                sunTimes = cm.getSunTimes()
+                celestialPositions = cm.getCelestialPositions()
+                solarIrradiance = cm.getSolarIrradiance()
+            }
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
+                calendarEvents = calendarManager.getTodayEvents(calendarSettings.enabledIds)
+            }
+            delay(600000) // Update celestial and calendar data every 10 mins
         }
     }
 
@@ -256,10 +272,10 @@ fun MainScreen(
                     icon = { Icon(Icons.Default.Visibility, contentDescription = null) }
                 )
                 NavigationBarItem(
-                    selected = currentScreen == Screen.CONNECTIVITY,
-                    onClick = { currentScreen = Screen.CONNECTIVITY },
-                    label = { Text("Connect") },
-                    icon = { Icon(Icons.Default.Link, contentDescription = null) }
+                    selected = currentScreen == Screen.CALENDAR,
+                    onClick = { currentScreen = Screen.CALENDAR },
+                    label = { Text("Calendar") },
+                    icon = { Icon(Icons.Default.CalendarMonth, contentDescription = null) }
                 )
                 NavigationBarItem(
                     selected = currentScreen == Screen.DISPLAY,
@@ -268,15 +284,15 @@ fun MainScreen(
                     icon = { Icon(Icons.Default.Settings, contentDescription = null) }
                 )
                 NavigationBarItem(
-                    selected = currentScreen == Screen.MODEL,
-                    onClick = { currentScreen = Screen.MODEL },
-                    label = { Text("Model") },
+                    selected = currentScreen == Screen.ENERGY,
+                    onClick = { currentScreen = Screen.ENERGY },
+                    label = { Text("Energy") },
                     icon = { Icon(Icons.Default.Build, contentDescription = null) }
                 )
                 NavigationBarItem(
-                    selected = currentScreen == Screen.LOG,
-                    onClick = { currentScreen = Screen.LOG },
-                    label = { Text("Log") },
+                    selected = currentScreen == Screen.SLEEP,
+                    onClick = { currentScreen = Screen.SLEEP },
+                    label = { Text("Sleep") },
                     icon = { Icon(Icons.Default.List, contentDescription = null) }
                 )
                 NavigationBarItem(
@@ -304,18 +320,13 @@ fun MainScreen(
                     showSetWallpaper = true,
                     modifier = Modifier.clickable { previewIsLockScreen = !previewIsLockScreen }
                 )
-                Screen.CONNECTIVITY -> ConnectivityScreen(
-                    isLoggedIn = isLoggedIn,
-                    metrics = metrics,
-                    onLoginClick = onLoginClick,
-                    onLogoutClick = onLogoutClick,
-                    onRefresh = {
-                        scope.launch {
-                            Toast.makeText(context, "Refreshing Fitbit data...", Toast.LENGTH_SHORT).show()
-                            context.sendBroadcast(Intent("com.example.a24_hr_clock.REFRESH_DATA"))
-                            fitbitManager.refreshMetrics()
-                        }
-                    }
+                Screen.CALENDAR -> CalendarSettingsScreen(
+                    calendarSettings = calendarSettings,
+                    homeSettings = homeSettings,
+                    lockSettings = lockSettings,
+                    onUpdateCalendarSettings = { scope.launch { settingsManager.updateCalendarSettings(it) } },
+                    onUpdateHome = { scope.launch { settingsManager.updateHomeSettings(it) } },
+                    onUpdateLock = { scope.launch { settingsManager.updateLockSettings(it) } }
                 )
                 Screen.DISPLAY -> DisplaySettingsScreen(
                     homeSettings = homeSettings,
@@ -333,15 +344,25 @@ fun MainScreen(
                     onResetHome = { scope.launch { settingsManager.resetHomeSettings() } },
                     onResetLock = { scope.launch { settingsManager.resetLockSettings() } }
                 )
-                Screen.MODEL -> ModelSettingsScreen(
+                Screen.ENERGY -> ModelSettingsScreen(
                     modelSettings = modelSettings,
                     onUpdate = { scope.launch { settingsManager.updateModelSettings(it) } },
                     onReset = { scope.launch { settingsManager.resetModelSettings() } }
                 )
-                Screen.LOG -> SleepLogScreen(
+                Screen.SLEEP -> SleepLogScreen(
                     sleepLogs = sleepLogs,
                     metrics = metrics,
                     modelSettings = modelSettings,
+                    isLoggedIn = isLoggedIn,
+                    onLoginClick = onLoginClick,
+                    onLogoutClick = onLogoutClick,
+                    onRefresh = {
+                        scope.launch {
+                            Toast.makeText(context, "Refreshing Fitbit data...", Toast.LENGTH_SHORT).show()
+                            context.sendBroadcast(Intent("com.example.a24_hr_clock.REFRESH_DATA"))
+                            fitbitManager.refreshMetrics()
+                        }
+                    },
                     onUpdateModel = { scope.launch { settingsManager.updateModelSettings(it) } }
                 )
                 Screen.EXERCISE -> ExerciseMetricsScreen(
@@ -372,13 +393,17 @@ fun ClockPreviewScreen(
 ) {
     val context = LocalContext.current
     val renderer = remember { ClockRenderer() }
-    val now = remember { Calendar.getInstance() }
+    var tick by remember { mutableLongStateOf(System.currentTimeMillis()) }
     
     LaunchedEffect(Unit) {
         while(true) {
-            now.timeInMillis = System.currentTimeMillis()
             delay(10000) // Update every 10s for preview
+            tick = System.currentTimeMillis()
         }
+    }
+
+    val now = remember(tick) {
+        Calendar.getInstance().apply { timeInMillis = tick }
     }
 
     Box(
@@ -425,7 +450,8 @@ fun ClockPreviewScreen(
                     bedtimeGoal = modelSettings.bedtimeGoal,
                     showManualWake = modelSettings.showManualWake,
                     manualWakeTime = modelSettings.manualWakeTime,
-                    isPreview = false
+                    isPreview = true,
+                    previewIsLockScreen = title.contains("Lock Screen")
                 )
             }
         }
@@ -457,89 +483,40 @@ fun ClockPreviewScreen(
 }
 
 @Composable
-fun ConnectivityScreen(
-    isLoggedIn: Boolean,
-    metrics: Triple<Double?, Double, Double>,
-    onLoginClick: () -> Unit,
-    onLogoutClick: () -> Unit,
-    onRefresh: () -> Unit
+fun CalendarSettingsScreen(
+    calendarSettings: CalendarSettings,
+    homeSettings: ClockSettings,
+    lockSettings: ClockSettings,
+    onUpdateCalendarSettings: (CalendarSettings) -> Unit,
+    onUpdateHome: (ClockSettings) -> Unit,
+    onUpdateLock: (ClockSettings) -> Unit
 ) {
     val context = LocalContext.current
+    val calendarManager = remember { CalendarManager(context) }
+    var allCalendars by remember { mutableStateOf(emptyList<CalendarInfo>()) }
+    val hasCalendarPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+
+    LaunchedEffect(hasCalendarPermission) {
+        if (hasCalendarPermission) {
+            allCalendars = calendarManager.getAllCalendars()
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.Top
+            .padding(16.dp)
     ) {
-        Text(text = "Status & Connectivity", style = MaterialTheme.typography.headlineMedium)
+        Text(text = "Calendar Settings", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
-        
-        PermissionsChecklist()
-        
-        Spacer(modifier = Modifier.height(24.dp))
-        Text(text = "FITBIT", style = MaterialTheme.typography.labelLarge)
+
+        Text(text = "SYNC", style = MaterialTheme.typography.labelLarge)
         Spacer(modifier = Modifier.height(8.dp))
-        
-        Text(
-            text = if (isLoggedIn) "Status: Connected" else "Status: Not Connected",
-            color = if (isLoggedIn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodyLarge
-        )
 
-        if (isLoggedIn) {
-            val (bathy, eff, _) = metrics
-            Text(
-                text = "Overall Efficiency: ${String.format("%.1f", eff * 100)}%",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold
-            )
-            val bathyStr = if (bathy != null) {
-                val h = bathy.toInt()
-                val m = ((bathy - h) * 60).toInt()
-                val amPm = if (h < 12) "AM" else "PM"
-                val hDisp = if (h % 12 == 0) 12 else h % 12
-                String.format("%d:%02d %s", hDisp, m, amPm)
-            } else "--:--"
-            Text(
-                text = "Bathyphase: $bathyStr",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = onLoginClick, modifier = Modifier.weight(1f)) {
-                Text(if (isLoggedIn) "Relink Fitbit" else "Login with Fitbit")
-            }
-            if (isLoggedIn) {
-                OutlinedButton(onClick = onLogoutClick) {
-                    Text("Logout")
-                }
-            }
-        }
-
-        if (isLoggedIn) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Button(
-                onClick = onRefresh,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-            ) {
-                Text("API Refresh")
-            }
-        }
-
-        HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
-        Text(text = "GOOGLE CALENDAR", style = MaterialTheme.typography.labelLarge)
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        val hasCalendarPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
-        
         if (!hasCalendarPermission) {
             Button(
-                onClick = { 
+                onClick = {
                     (context as? MainActivity)?.requestPermissionLauncher?.launch(arrayOf(Manifest.permission.READ_CALENDAR))
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -566,17 +543,60 @@ fun ConnectivityScreen(
         }
 
         Spacer(modifier = Modifier.height(24.dp))
-        Button(
-            onClick = {
-                val intent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
-                    putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, 
-                        ComponentName(context, ClockWallpaperService::class.java))
+        Text(text = "DISPLAY", style = MaterialTheme.typography.labelLarge)
+        
+        SettingToggle("Show on Home Screen", homeSettings.showCalendar) {
+            onUpdateHome(homeSettings.copy(showCalendar = it))
+        }
+        SettingToggle("Show on Lock Screen", lockSettings.showCalendar) {
+            onUpdateLock(lockSettings.copy(showCalendar = it))
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(text = "MY CALENDARS", style = MaterialTheme.typography.labelLarge)
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (allCalendars.isEmpty() && hasCalendarPermission) {
+            Text("No calendars found or still loading...", style = MaterialTheme.typography.bodyMedium)
+        }
+
+        allCalendars.forEach { cal ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clickable {
+                        val newIds = if (calendarSettings.enabledIds.contains(cal.id)) {
+                            calendarSettings.enabledIds - cal.id
+                        } else {
+                            calendarSettings.enabledIds + cal.id
+                        }
+                        onUpdateCalendarSettings(calendarSettings.copy(enabledIds = newIds, initialized = true))
+                    },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(16.dp)
+                        .background(Color(cal.color), shape = MaterialTheme.shapes.small)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = cal.name, style = MaterialTheme.typography.bodyLarge)
+                    Text(text = cal.account, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                context.startActivity(intent)
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Wallpaper Picker")
+                Checkbox(
+                    checked = calendarSettings.enabledIds.contains(cal.id),
+                    onCheckedChange = { checked ->
+                        val newIds = if (checked) {
+                            calendarSettings.enabledIds + cal.id
+                        } else {
+                            calendarSettings.enabledIds - cal.id
+                        }
+                        onUpdateCalendarSettings(calendarSettings.copy(enabledIds = newIds, initialized = true))
+                    }
+                )
+            }
         }
     }
 }
@@ -677,9 +697,6 @@ fun DisplaySettingsScreen(
         SettingToggle("Life Calendar Background", currentSettings.showLifeCalendar) {
             updateFunc(currentSettings.copy(showLifeCalendar = it))
         }
-        SettingToggle("Show Calendar Events", currentSettings.showCalendar) {
-            updateFunc(currentSettings.copy(showCalendar = it))
-        }
 
         Spacer(modifier = Modifier.height(16.dp))
         Text(text = "SLEEP", style = MaterialTheme.typography.labelLarge)
@@ -730,8 +747,11 @@ fun ModelSettingsScreen(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        Text(text = "Advanced Sleep Model", style = MaterialTheme.typography.headlineMedium)
+        Text(text = "Advanced Energy Model", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
+
+        PermissionsChecklist()
+        Spacer(modifier = Modifier.height(24.dp))
 
         SettingSlider(
             label = "Bedtime Goal",
@@ -825,6 +845,10 @@ fun SleepLogScreen(
     sleepLogs: List<SleepLogEntry>,
     metrics: Triple<Double?, Double, Double>,
     modelSettings: ModelSettings,
+    isLoggedIn: Boolean,
+    onLoginClick: () -> Unit,
+    onLogoutClick: () -> Unit,
+    onRefresh: () -> Unit,
     onUpdateModel: (ModelSettings) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -834,6 +858,61 @@ fun SleepLogScreen(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
+        Text(text = "Fitbit Connection", style = MaterialTheme.typography.headlineMedium)
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = if (isLoggedIn) "Status: Connected" else "Status: Not Connected",
+            color = if (isLoggedIn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodyLarge
+        )
+
+        if (isLoggedIn) {
+            val (bathy, eff, _) = metrics
+            Text(
+                text = "Overall Efficiency: ${String.format("%.1f", eff * 100)}%",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold
+            )
+            val bathyStr = if (bathy != null) {
+                val h = bathy.toInt()
+                val m = ((bathy - h) * 60).toInt()
+                val amPm = if (h < 12) "AM" else "PM"
+                val hDisp = if (h % 12 == 0) 12 else h % 12
+                String.format("%d:%02d %s", hDisp, m, amPm)
+            } else "--:--"
+            Text(
+                text = "Bathyphase: $bathyStr",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onLoginClick, modifier = Modifier.weight(1f)) {
+                Text(if (isLoggedIn) "Relink Fitbit" else "Login with Fitbit")
+            }
+            if (isLoggedIn) {
+                OutlinedButton(onClick = onLogoutClick) {
+                    Text("Logout")
+                }
+            }
+        }
+
+        if (isLoggedIn) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = onRefresh,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+            ) {
+                Text("API Refresh")
+            }
+        }
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
+
         Text(text = "Sleep Log (Last 14 Days)", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -1303,19 +1382,19 @@ fun DualAxisChart(
             detectDragGestures(
                 onDragStart = { offset -> 
                     if (metrics.isNotEmpty()) {
-                        val chartWidth = size.width - 80.dp.toPx()
-                        val paddingHorizontal = 40.dp.toPx()
-                        val xStep = if (metrics.size > 1) chartWidth / (metrics.size - 1) else chartWidth
-                        val idx = ((offset.x - paddingHorizontal + xStep / 2) / xStep).toInt().coerceIn(0, metrics.size - 1)
+                        val chartWidth = size.width - 100.dp.toPx()
+                        val paddingHorizontal = 50.dp.toPx()
+                        val xStep = chartWidth / (metrics.size + 1)
+                        val idx = (((offset.x - paddingHorizontal) / xStep) - 1).roundToInt().coerceIn(0, metrics.size - 1)
                         scrubIndex = idx
                     }
                 },
                 onDrag = { change, _ ->
                     if (metrics.isNotEmpty()) {
-                        val chartWidth = size.width - 80.dp.toPx()
-                        val paddingHorizontal = 40.dp.toPx()
-                        val xStep = if (metrics.size > 1) chartWidth / (metrics.size - 1) else chartWidth
-                        val idx = ((change.position.x - paddingHorizontal + xStep / 2) / xStep).toInt().coerceIn(0, metrics.size - 1)
+                        val chartWidth = size.width - 100.dp.toPx()
+                        val paddingHorizontal = 50.dp.toPx()
+                        val xStep = chartWidth / (metrics.size + 1)
+                        val idx = (((change.position.x - paddingHorizontal) / xStep) - 1).roundToInt().coerceIn(0, metrics.size - 1)
                         scrubIndex = idx
                     }
                 },
@@ -1334,7 +1413,8 @@ fun DualAxisChart(
         val maxHrss = (metrics.maxOfOrNull { it.hrss } ?: 100.0).coerceAtLeast(100.0) * 1.3
         val maxHrv = 100.0
 
-        val xStep = if (metrics.size > 1) chartWidth / (metrics.size - 1) else chartWidth
+        // Buffer space: Divide width by (size + 1) to get gaps on both sides
+        val xStep = chartWidth / (metrics.size + 1)
 
         // Draw Axes
         drawLine(textColor, start = Offset(paddingHorizontal, paddingVertical), end = Offset(paddingHorizontal, paddingVertical + chartHeight), strokeWidth = 1.dp.toPx())
@@ -1348,12 +1428,12 @@ fun DualAxisChart(
             drawText(
                 textMeasurer = textMeasurer,
                 text = value.toInt().toString(),
-                topLeft = Offset(paddingHorizontal - 35.dp.toPx(), y - 10.dp.toPx()),
+                topLeft = Offset(paddingHorizontal - 40.dp.toPx(), y - 10.dp.toPx()),
                 style = TextStyle(color = barColor, fontSize = 10.sp)
             )
             drawLine(gridColor, start = Offset(paddingHorizontal, y), end = Offset(paddingHorizontal + chartWidth, y))
         }
-        drawText(textMeasurer, "HRSS", Offset(paddingHorizontal - 45.dp.toPx(), paddingVertical - 25.dp.toPx()), TextStyle(color = barColor, fontSize = 10.sp, fontWeight = FontWeight.Bold))
+        drawText(textMeasurer, "HRSS (%)", Offset(paddingHorizontal - 45.dp.toPx(), paddingVertical - 30.dp.toPx()), TextStyle(color = barColor, fontSize = 10.sp, fontWeight = FontWeight.Bold))
 
         // Y-Axis Labels (Right - HRV)
         for (i in 0..4) {
@@ -1366,7 +1446,7 @@ fun DualAxisChart(
                 style = TextStyle(color = lineColor, fontSize = 10.sp)
             )
         }
-        drawText(textMeasurer, "HRV", Offset(paddingHorizontal + chartWidth + 5.dp.toPx(), paddingVertical - 25.dp.toPx()), TextStyle(color = lineColor, fontSize = 10.sp, fontWeight = FontWeight.Bold))
+        drawText(textMeasurer, "HRV (ms)", Offset(paddingHorizontal + chartWidth + 5.dp.toPx(), paddingVertical - 30.dp.toPx()), TextStyle(color = lineColor, fontSize = 10.sp, fontWeight = FontWeight.Bold))
 
         // Draw Baselines
         val peakY = (paddingVertical + chartHeight - (peakPotential / maxHrv) * chartHeight).toFloat()
@@ -1378,8 +1458,8 @@ fun DualAxisChart(
         // Draw Bars (HRSS)
         metrics.forEachIndexed { i, m ->
             val barHeight = ((m.hrss / maxHrss) * chartHeight).toFloat()
-            val x = paddingHorizontal + i * xStep
-            val barWidth = 16.dp.toPx()
+            val x = paddingHorizontal + (i + 1) * xStep
+            val barWidth = 20.dp.toPx()
             drawRect(
                 color = barColor,
                 topLeft = Offset(x - barWidth / 2, paddingVertical + chartHeight - barHeight),
@@ -1392,14 +1472,14 @@ fun DualAxisChart(
             drawText(
                 textMeasurer = textMeasurer,
                 text = dateLabel,
-                topLeft = Offset(x - 10.dp.toPx(), paddingVertical + chartHeight + 5.dp.toPx()),
+                topLeft = Offset(x - 12.dp.toPx(), paddingVertical + chartHeight + 8.dp.toPx()),
                 style = TextStyle(color = textColor, fontSize = 10.sp)
             )
         }
 
         // Draw Line (HRV)
         val points = metrics.mapIndexed { i, m ->
-            val x = paddingHorizontal + i * xStep
+            val x = paddingHorizontal + (i + 1) * xStep
             val y = (paddingVertical + chartHeight - (m.hrv / maxHrv) * chartHeight).toFloat()
             Offset(x, y)
         }
@@ -1433,38 +1513,43 @@ fun DualAxisChart(
         
         // Scrub Overlay
         scrubIndex?.let { idx ->
-            val m = metrics[idx]
-            val x = paddingHorizontal + idx * xStep
-            
-            // Vertical Line
-            drawLine(Color.White.copy(alpha = 0.5f), start = Offset(x, paddingVertical), end = Offset(x, paddingVertical + chartHeight), strokeWidth = 1.dp.toPx())
-            
-            // Tooltip
-            val tooltipText = "${m.date}\nHRSS: ${m.hrss.toInt()}%\nHRV: ${m.hrv.toInt()}ms\nTRIMP: ${m.trimp.toInt()}"
-            val layoutResult = textMeasurer.measure(tooltipText, style = TextStyle(color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold))
-            
-            val tooltipWidth = layoutResult.size.width.toFloat() + 20.dp.toPx()
-            val tooltipHeight = layoutResult.size.height.toFloat() + 20.dp.toPx()
-            
-            var tooltipX = x - tooltipWidth / 2
-            if (tooltipX < 0) tooltipX = 0f
-            if (tooltipX + tooltipWidth > width) tooltipX = width - tooltipWidth
-            
-            val tooltipY = paddingVertical + 10.dp.toPx()
-            
-            drawRoundRect(
-                color = Color.White.copy(alpha = 0.9f),
-                topLeft = Offset(tooltipX, tooltipY),
-                size = Size(tooltipWidth, tooltipHeight),
-                cornerRadius = CornerRadius(8.dp.toPx(), 8.dp.toPx())
-            )
-            
-            drawText(
-                textMeasurer = textMeasurer,
-                text = tooltipText,
-                topLeft = Offset(tooltipX + 10.dp.toPx(), tooltipY + 10.dp.toPx()),
-                style = TextStyle(color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            )
+            if (idx in metrics.indices) {
+                val m = metrics[idx]
+                val x = paddingHorizontal + (idx + 1) * xStep
+                
+                // Vertical Line
+                drawLine(Color.White.copy(alpha = 0.5f), start = Offset(x, paddingVertical), end = Offset(x, paddingVertical + chartHeight), strokeWidth = 1.dp.toPx())
+                
+                // Tooltip
+                val dateObj = try { java.time.LocalDate.parse(m.date) } catch(e: Exception) { null }
+                val dayAbbr = dateObj?.format(java.time.format.DateTimeFormatter.ofPattern("EEE")) ?: ""
+                val tooltipText = "$dayAbbr, ${m.date}\nHRSS: ${m.hrss.toInt()}%\nHRV: ${m.hrv.toInt()}ms\nTRIMP: ${m.trimp.toInt()}"
+                
+                val layoutResult = textMeasurer.measure(tooltipText, style = TextStyle(color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold))
+                
+                val tooltipWidth = layoutResult.size.width.toFloat() + 20.dp.toPx()
+                val tooltipHeight = layoutResult.size.height.toFloat() + 20.dp.toPx()
+                
+                var tooltipX = x - tooltipWidth / 2
+                if (tooltipX < 0) tooltipX = 0f
+                if (tooltipX + tooltipWidth > width) tooltipX = width - tooltipWidth
+                
+                val tooltipY = paddingVertical + 10.dp.toPx()
+                
+                drawRoundRect(
+                    color = Color.White.copy(alpha = 0.9f),
+                    topLeft = Offset(tooltipX, tooltipY),
+                    size = Size(tooltipWidth, tooltipHeight),
+                    cornerRadius = CornerRadius(8.dp.toPx(), 8.dp.toPx())
+                )
+                
+                drawText(
+                    textMeasurer = textMeasurer,
+                    text = tooltipText,
+                    topLeft = Offset(tooltipX + 10.dp.toPx(), tooltipY + 10.dp.toPx()),
+                    style = TextStyle(color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                )
+            }
         }
     }
 }

@@ -9,13 +9,26 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 
+data class CalendarInfo(
+    val id: Long,
+    val name: String,
+    val account: String,
+    val isPrimary: Boolean,
+    val color: Int,
+    val isVisible: Boolean
+)
+
 class CalendarManager(private val context: Context) {
 
-    fun getTodayEvents(): List<CalendarEvent> {
+    fun getTodayEvents(enabledIds: Set<Long>? = null): List<CalendarEvent> {
         val events = mutableListOf<CalendarEvent>()
         
-        // 1. Find the Primary Calendar ID
-        val primaryCalendarId = getPrimaryCalendarId() ?: return emptyList()
+        // 1. Find all Visible Calendars
+        val visibleCalendarIds = getVisibleCalendarIds()
+        if (visibleCalendarIds.isEmpty()) {
+            Log.w("CalendarManager", "No visible calendars found")
+            return emptyList()
+        }
 
         val now = Instant.now()
         val nowMilli = now.toEpochMilli()
@@ -37,17 +50,14 @@ class CalendarManager(private val context: Context) {
             CalendarContract.Instances.CALENDAR_ID
         )
         
-        val selection = "${CalendarContract.Instances.CALENDAR_ID} = ?"
-        val selectionArgs = arrayOf(primaryCalendarId.toString())
-
         val rawEvents = mutableListOf<RawEvent>()
 
         try {
             val cursor = context.contentResolver.query(
                 builder.build(),
                 projection,
-                selection,
-                selectionArgs,
+                null, // Query all, filter in Kotlin for robustness
+                null,
                 CalendarContract.Instances.BEGIN + " ASC"
             )
             
@@ -57,14 +67,24 @@ class CalendarManager(private val context: Context) {
                 val endIdx = it.getColumnIndex(CalendarContract.Instances.END)
                 val allDayIdx = it.getColumnIndex(CalendarContract.Instances.ALL_DAY)
                 val colorIdx = it.getColumnIndex(CalendarContract.Instances.EVENT_COLOR)
+                val calIdIdx = it.getColumnIndex(CalendarContract.Instances.CALENDAR_ID)
                 
                 while (it.moveToNext()) {
+                    val calId = if (calIdIdx != -1) it.getLong(calIdIdx) else -1L
+                    
+                    // Filter by enabled IDs if provided, otherwise fallback to system visibility
+                    if (enabledIds != null) {
+                        if (!enabledIds.contains(calId)) continue
+                    } else if (visibleCalendarIds.isNotEmpty() && !visibleCalendarIds.contains(calId)) {
+                        continue
+                    }
+
                     rawEvents.add(RawEvent(
-                        title = it.getString(titleIdx) ?: "No Title",
-                        begin = it.getLong(beginIdx),
-                        end = it.getLong(endIdx),
-                        allDay = it.getInt(allDayIdx) != 0,
-                        color = it.getInt(colorIdx)
+                        title = if (titleIdx != -1) it.getString(titleIdx) ?: "No Title" else "No Title",
+                        begin = if (beginIdx != -1) it.getLong(beginIdx) else 0L,
+                        end = if (endIdx != -1) it.getLong(endIdx) else 0L,
+                        allDay = if (allDayIdx != -1) it.getInt(allDayIdx) != 0 else false,
+                        color = if (colorIdx != -1) it.getInt(colorIdx) else 0
                     ))
                 }
             }
@@ -141,15 +161,55 @@ class CalendarManager(private val context: Context) {
     )
 
 
-    private fun getPrimaryCalendarId(): Long? {
-        // We look for the main calendar associated with the primary Google account
+    fun getAllCalendars(): List<CalendarInfo> {
+        val calendars = mutableListOf<CalendarInfo>()
         val projection = arrayOf(
             CalendarContract.Calendars._ID,
+            CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
             CalendarContract.Calendars.ACCOUNT_NAME,
-            CalendarContract.Calendars.CALENDAR_DISPLAY_NAME
+            CalendarContract.Calendars.IS_PRIMARY,
+            CalendarContract.Calendars.CALENDAR_COLOR,
+            CalendarContract.Calendars.VISIBLE
         )
-        // IS_PRIMARY = 1 is the most reliable way to find the main user calendar
-        val selection = "${CalendarContract.Calendars.IS_PRIMARY} = 1 AND ${CalendarContract.Calendars.VISIBLE} = 1"
+        
+        try {
+            context.contentResolver.query(
+                CalendarContract.Calendars.CONTENT_URI,
+                projection,
+                null,
+                null,
+                null
+            )?.use {
+                val idIdx = it.getColumnIndex(CalendarContract.Calendars._ID)
+                val nameIdx = it.getColumnIndex(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME)
+                val accountIdx = it.getColumnIndex(CalendarContract.Calendars.ACCOUNT_NAME)
+                val primaryIdx = it.getColumnIndex(CalendarContract.Calendars.IS_PRIMARY)
+                val colorIdx = it.getColumnIndex(CalendarContract.Calendars.CALENDAR_COLOR)
+                val visibleIdx = it.getColumnIndex(CalendarContract.Calendars.VISIBLE)
+                
+                while (it.moveToNext()) {
+                    calendars.add(CalendarInfo(
+                        id = it.getLong(idIdx),
+                        name = it.getString(nameIdx) ?: "Unknown",
+                        account = it.getString(accountIdx) ?: "Unknown",
+                        isPrimary = it.getInt(primaryIdx) != 0,
+                        color = it.getInt(colorIdx),
+                        isVisible = it.getInt(visibleIdx) != 0
+                    ))
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("CalendarManager", "Error querying all calendars", e)
+        }
+        return calendars
+    }
+
+    private fun getVisibleCalendarIds(): List<Long> {
+        val ids = mutableListOf<Long>()
+        val projection = arrayOf(CalendarContract.Calendars._ID)
+        // We look for all visible calendars. 
+        // Some users might have their main calendar not marked as 'primary' but still 'visible'.
+        val selection = "${CalendarContract.Calendars.VISIBLE} = 1"
         
         try {
             context.contentResolver.query(
@@ -159,40 +219,31 @@ class CalendarManager(private val context: Context) {
                 null,
                 null
             )?.use {
-                if (it.moveToFirst()) {
-                    val id = it.getLong(0)
-                    val account = it.getString(1)
-                    val name = it.getString(2)
-                    Log.d("CalendarManager", "Found Primary Calendar: ID=$id, Account=$account, Name=$name")
-                    return id
+                while (it.moveToNext()) {
+                    ids.add(it.getLong(0))
                 }
             }
         } catch (e: Exception) {
-            Log.e("CalendarManager", "Error finding primary calendar", e)
+            Log.e("CalendarManager", "Error finding visible calendars", e)
         }
         
-        // Fallback: If no IS_PRIMARY, take the first visible one that looks like an email address
-        val fallbackSelection = "${CalendarContract.Calendars.VISIBLE} = 1"
-        try {
-            context.contentResolver.query(
-                CalendarContract.Calendars.CONTENT_URI,
-                projection,
-                fallbackSelection,
-                null,
-                null
-            )?.use {
-                while (it.moveToNext()) {
-                    val account = it.getString(1)
-                    if (account.contains("@")) {
-                        val id = it.getLong(0)
-                        Log.d("CalendarManager", "Fallback Calendar: ID=$id, Account=$account")
-                        return id
-                    }
+        if (ids.isEmpty()) {
+            Log.d("CalendarManager", "No visible calendars, trying fallback to any account-linked calendar")
+            try {
+                context.contentResolver.query(
+                    CalendarContract.Calendars.CONTENT_URI,
+                    projection,
+                    null,
+                    null,
+                    null
+                )?.use {
+                    if (it.moveToFirst()) ids.add(it.getLong(0))
                 }
-            }
-        } catch (e: Exception) {}
+            } catch (e: Exception) {}
+        }
 
-        return null
+        Log.d("CalendarManager", "Active Calendar IDs: $ids")
+        return ids
     }
 }
 

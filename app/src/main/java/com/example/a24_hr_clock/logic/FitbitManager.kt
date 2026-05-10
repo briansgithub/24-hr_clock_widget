@@ -294,15 +294,13 @@ class FitbitManager(private val context: Context) {
         var cursor = start
         while (!cursor.isAfter(end)) {
             val dateStr = cursor.toString()
-            // Always re-fetch today to get current data. 
-            // Only use cache for past days.
             val isPastDay = cursor.isBefore(java.time.LocalDate.now())
             val cached = existing.find { it.date == dateStr }
             
             if (isPastDay && cached != null) {
-                // Already have this past day, do nothing
+                // Already have this past day
             } else {
-                // Fetch from API
+                Log.d("FitbitManager", "Fetching exercise data for $dateStr")
                 val hrIntraday = fetchHeartRateIntraday(dateStr + "T00:00:00", dateStr + "T23:59:59")
                 val hrv = fetchHRV(dateStr) ?: modelSettings.hrvMedicatedBase
                 val trimp = ExerciseMetricsCalculator.calculateTrimp(hrIntraday.map { it.value }, modelSettings.restingHR, 220.0 - modelSettings.userAge)
