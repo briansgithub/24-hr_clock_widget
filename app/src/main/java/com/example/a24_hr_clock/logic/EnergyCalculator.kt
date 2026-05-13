@@ -142,6 +142,25 @@ object EnergyCalculator {
         val avgByHour = buckets.mapValues { it.value.average() }
         return avgByHour.minByOrNull { it.value }?.key?.toDouble()
     }
+
+    fun circAvg(hoursList: List<Double>): Double? {
+        if (hoursList.isEmpty()) return null
+        
+        var avgSin = 0.0
+        var avgCos = 0.0
+        
+        for (h in hoursList) {
+            val rad = h * 2.0 * PI / 24.0
+            avgSin += sin(rad)
+            avgCos += cos(rad)
+        }
+        
+        avgSin /= hoursList.size
+        avgCos /= hoursList.size
+        
+        val avgRad = atan2(avgSin, avgCos)
+        return (avgRad * 24.0 / (2.0 * PI)).mod(24.0)
+    }
 }
 
 data class SleepLog(

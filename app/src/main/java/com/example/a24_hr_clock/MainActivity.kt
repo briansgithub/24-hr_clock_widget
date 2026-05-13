@@ -209,12 +209,33 @@ fun MainScreen(
     LaunchedEffect(todayDate, modelSettings.lastTodayDate) {
         if (modelSettings.lastTodayDate.isNotEmpty() && modelSettings.lastTodayDate != todayDate) {
             val newExcluded = modelSettings.excludedDates.filter { it != modelSettings.lastTodayDate }
+            val newExplicit = modelSettings.explicitDates.filter { it != modelSettings.lastTodayDate }
             settingsManager.updateModelSettings(modelSettings.copy(
                 excludedDates = newExcluded,
+                explicitDates = newExplicit,
                 lastTodayDate = todayDate
             ))
         } else if (modelSettings.lastTodayDate.isEmpty()) {
             settingsManager.updateModelSettings(modelSettings.copy(lastTodayDate = todayDate))
+        }
+    }
+
+    // T-0 Auto-Inclusion Logic (Match Python behavior)
+    LaunchedEffect(sleepLogs, modelSettings.explicitDates) {
+        val todayStr = java.time.LocalDate.now().toString()
+        if (!modelSettings.explicitDates.contains(todayStr)) {
+            val hasTodayLog = sleepLogs.any { it.dateOfSleep == todayStr }
+            val isExcluded = modelSettings.excludedDates.contains(todayStr)
+            
+            if (hasTodayLog && isExcluded) {
+                settingsManager.updateModelSettings(modelSettings.copy(
+                    excludedDates = modelSettings.excludedDates - todayStr
+                ))
+            } else if (!hasTodayLog && !isExcluded) {
+                settingsManager.updateModelSettings(modelSettings.copy(
+                    excludedDates = modelSettings.excludedDates + todayStr
+                ))
+            }
         }
     }
 
@@ -448,7 +469,7 @@ fun ClockPreviewScreen(
                     circadianOffset = modelSettings.circadianOffset,
                     useBathyphase = modelSettings.useBathyphase,
                     bedtimeGoal = modelSettings.bedtimeGoal,
-                    showManualWake = modelSettings.showManualWake,
+                    showManualWake = settings.showManualWake,
                     manualWakeTime = modelSettings.manualWakeTime,
                     isPreview = true,
                     previewIsLockScreen = title.contains("Lock Screen")
@@ -710,6 +731,9 @@ fun DisplaySettingsScreen(
         SettingToggle("Show Time in Bed (On) vs Only Asleep (Off)", currentSettings.showTotalBedtime) {
             updateFunc(currentSettings.copy(showTotalBedtime = it))
         }
+        SettingToggle("Show Wake-up Indicator", currentSettings.showManualWake) {
+            updateFunc(currentSettings.copy(showManualWake = it))
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
         Text(text = "ENERGY", style = MaterialTheme.typography.labelLarge)
@@ -774,9 +798,6 @@ fun ModelSettingsScreen(
         }
         SettingToggle("Include Naps", modelSettings.includeNaps) {
             onUpdate(modelSettings.copy(includeNaps = it))
-        }
-        SettingToggle("Show Wake-up Indicator", modelSettings.showManualWake) {
-            onUpdate(modelSettings.copy(showManualWake = it))
         }
 
         val parts = modelSettings.manualWakeTime.split(":")
@@ -936,18 +957,20 @@ fun SleepLogScreen(
             var totalWtd = 0.0
             val durations = mutableListOf<Double>()
             val efficiencies = mutableListOf<Double>()
+            val startHours = mutableListOf<Double>()
+            val endHours = mutableListOf<Double>()
 
             // Header
             Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Inc", modifier = Modifier.weight(0.3f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                 Text("Day", modifier = Modifier.weight(0.4f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                Text("Date", modifier = Modifier.weight(0.8f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                Text("Start", modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
-                Text("End", modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                Text("Date", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                Text("Start", modifier = Modifier.weight(0.9f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                Text("End", modifier = Modifier.weight(0.9f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
                 Text("Dur", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
                 Text("Eff", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
-                Text("Raw", modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
-                Text("Wtd", modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                Text("Raw", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                Text("Wtd", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
             }
             HorizontalDivider(modifier = Modifier.padding(bottom = 4.dp))
 
@@ -966,36 +989,50 @@ fun SleepLogScreen(
                             checked = !isExcluded,
                             onCheckedChange = { checked ->
                                 val newExcluded = if (checked) modelSettings.excludedDates.filter { it != date } else modelSettings.excludedDates + date
-                                onUpdateModel(modelSettings.copy(excludedDates = newExcluded))
+                                val newExplicit = if (date !in modelSettings.explicitDates) modelSettings.explicitDates + date else modelSettings.explicitDates
+                                onUpdateModel(modelSettings.copy(excludedDates = newExcluded, explicitDates = newExplicit))
                             },
                             modifier = Modifier.weight(0.3f).scale(0.7f)
                         )
                         Text(dayStr, modifier = Modifier.weight(0.4f), style = MaterialTheme.typography.bodySmall, color = rowColor)
-                        Text(dateStr, modifier = Modifier.weight(0.8f), style = MaterialTheme.typography.bodySmall, color = rowColor)
-                        Text("—", modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
-                        Text("—", modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
+                        Text(dateStr, modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall, color = rowColor)
+                        Text("—", modifier = Modifier.weight(0.9f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
+                        Text("—", modifier = Modifier.weight(0.9f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
                         Text("0.0h", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
                         Text("—", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
                         
                         val debt = if (!isExcluded) sleepNeed else 0.0
                         val weightedDebt = debt * Math.pow(0.9, i.toDouble())
-                        if (!isExcluded) { totalRaw += debt; totalWtd += weightedDebt; durations.add(0.0) }
+                        if (!isExcluded) { 
+                            totalRaw += debt
+                            totalWtd += weightedDebt
+                            durations.add(0.0) 
+                        }
                         
                         val debtColor = if (isExcluded) rowColor else Color(0xFFFF6B6B)
-                        Text(text = if (isExcluded) "—" else String.format("%+.1f", debt), modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.bodySmall, color = debtColor.copy(alpha = 0.5f), textAlign = TextAlign.End)
-                        Text(text = if (isExcluded) "—" else String.format("%+.1f", weightedDebt), modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.bodySmall, color = debtColor, textAlign = TextAlign.End)
+                        Text(text = if (isExcluded) "—" else String.format("%+.1f", debt), modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall, color = debtColor.copy(alpha = 0.5f), textAlign = TextAlign.End)
+                        Text(text = if (isExcluded) "—" else String.format("%+.1f", weightedDebt), modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall, color = debtColor, textAlign = TextAlign.End)
                     }
                 } else {
-                    val totalDailyAsleep = logsForDay.sumOf { it.minutesAsleep / 60.0 }
-                    val totalDailyBed = logsForDay.sumOf { it.timeInBed }
-                    val dailyEff = if (totalDailyBed > 0) (logsForDay.sumOf { it.minutesAsleep.toDouble() } / totalDailyBed) else 0.0
+                    val totalDailyAsleep = if (modelSettings.includeNaps) logsForDay.sumOf { it.minutesAsleep / 60.0 } else logsForDay.filter { it.isMainSleep }.sumOf { it.minutesAsleep / 60.0 }
+                    val totalDailyBed = if (modelSettings.includeNaps) logsForDay.sumOf { it.timeInBed } else logsForDay.filter { it.isMainSleep }.sumOf { it.timeInBed }
+                    val dailyEff = if (totalDailyBed > 0) (totalDailyAsleep * 60.0 / totalDailyBed) else 0.0
                     
                     if (!isExcluded) {
                         durations.add(totalDailyAsleep)
-                        efficiencies.add(dailyEff)
+                        efficiencies.add(dailyEff * 100.0)
                         val debt = sleepNeed - totalDailyAsleep
                         totalRaw += debt
                         totalWtd += debt * Math.pow(0.9, i.toDouble())
+                        
+                        // For AVG start/end, use main sleep
+                        val mainSleep = logsForDay.find { it.isMainSleep } ?: logsForDay.first()
+                        try {
+                            val st = java.time.LocalDateTime.parse(mainSleep.startTime.replace("Z", ""))
+                            startHours.add(st.hour + st.minute / 60.0)
+                            val en = java.time.LocalDateTime.parse(mainSleep.endTime.replace("Z", ""))
+                            endHours.add(en.hour + en.minute / 60.0)
+                        } catch (e: Exception) {}
                     }
 
                     logsForDay.sortedBy { it.startTime }.forEachIndexed { sessionIdx, log ->
@@ -1005,21 +1042,22 @@ fun SleepLogScreen(
                                     checked = !isExcluded,
                                     onCheckedChange = { checked ->
                                         val newExcluded = if (checked) modelSettings.excludedDates.filter { it != date } else modelSettings.excludedDates + date
-                                        onUpdateModel(modelSettings.copy(excludedDates = newExcluded))
+                                        val newExplicit = if (date !in modelSettings.explicitDates) modelSettings.explicitDates + date else modelSettings.explicitDates
+                                        onUpdateModel(modelSettings.copy(excludedDates = newExcluded, explicitDates = newExplicit))
                                     },
                                     modifier = Modifier.weight(0.3f).scale(0.7f)
                                 )
                                 Text(dayStr, modifier = Modifier.weight(0.4f), style = MaterialTheme.typography.bodySmall, color = rowColor)
-                                Text(dateStr, modifier = Modifier.weight(0.8f), style = MaterialTheme.typography.bodySmall, color = rowColor)
+                                Text(dateStr, modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall, color = rowColor)
                             } else {
-                                Spacer(modifier = Modifier.weight(1.5f))
+                                Spacer(modifier = Modifier.weight(1.3f))
                             }
 
-                            val startFmt = try { java.time.LocalDateTime.parse(log.startTime.replace("Z", "")).format(java.time.format.DateTimeFormatter.ofPattern("h:mm a")) } catch (e: Exception) { log.startTime.take(5) }
-                            val endFmt = try { java.time.LocalDateTime.parse(log.endTime.replace("Z", "")).format(java.time.format.DateTimeFormatter.ofPattern("h:mm a")) } catch (e: Exception) { log.endTime.take(5) }
+                            val startFmt = try { java.time.LocalDateTime.parse(log.startTime.replace("Z", "")).format(java.time.format.DateTimeFormatter.ofPattern("h:mm a")).replace("AM", "a").replace("PM", "p") } catch (e: Exception) { log.startTime.take(5) }
+                            val endFmt = try { java.time.LocalDateTime.parse(log.endTime.replace("Z", "")).format(java.time.format.DateTimeFormatter.ofPattern("h:mm a")).replace("AM", "a").replace("PM", "p") } catch (e: Exception) { log.endTime.take(5) }
                             
-                            Text(startFmt, modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
-                            Text(endFmt, modifier = Modifier.weight(1.0f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
+                            Text(startFmt, modifier = Modifier.weight(0.9f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
+                            Text(endFmt, modifier = Modifier.weight(0.9f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
                             Text("${String.format("%.1f", log.minutesAsleep/60.0)}h", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
                             
                             val sessEff = if (log.timeInBed > 0) (log.minutesAsleep.toDouble() / log.timeInBed * 100).toInt() else 0
@@ -1029,10 +1067,10 @@ fun SleepLogScreen(
                                 val debt = sleepNeed - totalDailyAsleep
                                 val weightedDebt = debt * Math.pow(0.9, i.toDouble())
                                 val debtColor = if (isExcluded) rowColor else if (debt > 0.1) Color(0xFFFF6B6B) else if (debt < -0.1) Color(0xFF6BFF6B) else MaterialTheme.colorScheme.onSurface
-                                Text(text = if (isExcluded) "—" else String.format("%+.1f", debt), modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.bodySmall, color = debtColor.copy(alpha = 0.5f), textAlign = TextAlign.End)
-                                Text(text = if (isExcluded) "—" else String.format("%+.1f", weightedDebt), modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.bodySmall, color = debtColor, textAlign = TextAlign.End)
+                                Text(text = if (isExcluded) "—" else String.format("%+.1f", debt), modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall, color = debtColor.copy(alpha = 0.5f), textAlign = TextAlign.End)
+                                Text(text = if (isExcluded) "—" else String.format("%+.1f", weightedDebt), modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall, color = debtColor, textAlign = TextAlign.End)
                             } else {
-                                Spacer(modifier = Modifier.weight(1.4f))
+                                Spacer(modifier = Modifier.weight(1.2f))
                             }
                         }
                     }
@@ -1040,15 +1078,34 @@ fun SleepLogScreen(
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                Text("AVG/TOT", modifier = Modifier.weight(1.2f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.weight(2.0f))
+            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("AVG", modifier = Modifier.weight(1.3f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(0xFF00FFCC))
+                
+                val avgStart = EnergyCalculator.circAvg(startHours)
+                val avgEnd = EnergyCalculator.circAvg(endHours)
+                
+                val avgStartStr = avgStart?.let { 
+                    val h = it.toInt(); val m = ((it % 1.0) * 60).toInt()
+                    String.format("%d:%02d%s", if (h % 12 == 0) 12 else h % 12, m, if (h < 12) "a" else "p")
+                } ?: "—"
+                val avgEndStr = avgEnd?.let { 
+                    val h = it.toInt(); val m = ((it % 1.0) * 60).toInt()
+                    String.format("%d:%02d%s", if (h % 12 == 0) 12 else h % 12, m, if (h < 12) "a" else "p")
+                } ?: "—"
+                
+                Text(avgStartStr, modifier = Modifier.weight(0.9f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, color = Color.White)
+                Text(avgEndStr, modifier = Modifier.weight(0.9f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, color = Color.White)
+                
                 val avgDur = if (durations.isNotEmpty()) durations.average() else 0.0
                 val avgEff = if (efficiencies.isNotEmpty()) efficiencies.average() else 0.0
-                Text(text = "${String.format("%.1f", avgDur)}h", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
-                Text(text = "${(avgEff * 100).toInt()}%", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
-                Text(text = String.format("%+.1f", totalRaw), modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, color = (if (totalRaw > 0.1) Color(0xFFFF6B6B) else if (totalRaw < -0.1) Color(0xFF6BFF6B) else MaterialTheme.colorScheme.onSurface).copy(alpha = 0.5f))
-                Text(text = String.format("%+.1f", totalWtd), modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, color = if (totalWtd > 0.1) Color(0xFFFF6B6B) else if (totalWtd < -0.1) Color(0xFF6BFF6B) else MaterialTheme.colorScheme.onSurface)
+                Text(text = "${String.format("%.1f", avgDur)}h", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, color = Color.White)
+                Text(text = "${avgEff.toInt()}%", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, color = Color.White)
+                
+                val rawColor = if (totalRaw > 0.1) Color(0xFFFF6B6B) else if (totalRaw < -0.1) Color(0xFF6BFF6B) else Color(0xFF00FFCC)
+                val wtdColor = if (totalWtd > 0.1) Color(0xFFFF6B6B) else if (totalWtd < -0.1) Color(0xFF6BFF6B) else Color(0xFF00FFCC)
+                
+                Text(text = String.format("%+.1f", totalRaw), modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, color = rawColor.copy(alpha = 0.5f))
+                Text(text = String.format("%+.1f", totalWtd), modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, color = wtdColor)
             }
         }
     }

@@ -32,7 +32,8 @@ class SettingsManager(private val context: Context) {
             showCalendar = true,
             showTotalBedtime = true,
             showEnergyPct = false,
-            normalizeEnergy = false
+            normalizeEnergy = false,
+            showManualWake = true
         )
 
         private val DEFAULT_LOCK_SETTINGS = ClockSettings(
@@ -46,7 +47,8 @@ class SettingsManager(private val context: Context) {
             showCalendar = true,
             showTotalBedtime = true,
             showEnergyPct = false,
-            normalizeEnergy = false
+            normalizeEnergy = false,
+            showManualWake = true
         )
 
         private val DEFAULT_MODEL_SETTINGS = ModelSettings(
@@ -59,8 +61,8 @@ class SettingsManager(private val context: Context) {
             useBathyphase = true,
             includeNaps = true,
             manualWakeTime = "09:00",
-            showManualWake = true,
             excludedDates = emptyList(),
+            explicitDates = emptyList(),
             lastTodayDate = "",
             userAge = 31,
             restingHR = 55.0,
@@ -162,7 +164,8 @@ data class ClockSettings(
     val showCalendar: Boolean = true,
     val showTotalBedtime: Boolean = true,
     val showEnergyPct: Boolean = false,
-    val normalizeEnergy: Boolean = false
+    val normalizeEnergy: Boolean = false,
+    val showManualWake: Boolean = true
 )
 
 @Serializable
@@ -182,8 +185,8 @@ data class ModelSettings(
     val useBathyphase: Boolean = true,
     val includeNaps: Boolean = true,
     val manualWakeTime: String = "09:00",
-    val showManualWake: Boolean = true,
     val excludedDates: List<String> = emptyList(),
+    val explicitDates: List<String> = emptyList(),
     val lastTodayDate: String = "",
     val userAge: Int = 31,
     val restingHR: Double = 55.0,
