@@ -27,6 +27,16 @@ A collection of desktop widgets built with Python and Tkinter, featuring a uniqu
 27: - **Auto-Refresh**: Background syncing every hour and on startup ensures your schedule is always up-to-date.
 28: - **Manual Control**: Dedicated "Calendar API Refresh" button for instant updates.
 
+### Sleep Log Persistence & Inclusion Logic
+The widget features a sophisticated system for managing and persisting your sleep data across runs:
+- **15-Day History**: The sleep table maintains a rolling 15-day history (T-0 to T-14).
+- **Persistent Exclusions**: If you uncheck a date in the sleep table, that choice is saved persistently to `sleep_settings.json` (Python) or **Jetpack DataStore** (Android). It will remain excluded across restarts.
+- **Auto-Sync Logic (T-0)**: To ensure accuracy without manual effort:
+    - **Initial Auto-Exclude**: On your first run of the day, if no sleep data is yet available on Fitbit, "Today" is automatically excluded to prevent a "0.0h sleep" penalty.
+    - **Auto-Include**: Once you sync your Fitbit and the app detects today's sleep log, it automatically re-includes the date so your energy curve reflects your rest.
+- **Manual Overrides ("Explicit Dates")**: If you manually check or uncheck a date, the app marks it as an "Explicit Date." From then on, the auto-sync logic is disabled for that specific day, giving you absolute control.
+- **Weighted Debt Calculation**: Recalculates in real-time as you toggle dates. Included dates contribute to your weighted debt (0.9 daily decay), while excluded dates are skipped entirely.
+
 ## File Overview
 
 ### [clock_widget.py](clock_widget.py)
