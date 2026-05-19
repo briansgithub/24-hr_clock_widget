@@ -383,7 +383,7 @@ class ClockWallpaperService : WallpaperService() {
                     modelSettings.circadianOffset,
                     modelSettings.useBathyphase,
                     modelSettings.bedtimeGoal,
-                    modelSettings.showManualWake,
+                    currentSettings.showManualWake,
                     modelSettings.manualWakeTime,
                     isPreview,
                     previewLockScreen

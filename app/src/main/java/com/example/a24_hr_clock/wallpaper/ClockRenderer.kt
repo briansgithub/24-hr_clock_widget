@@ -205,7 +205,7 @@ class ClockRenderer {
 
         val mainSleep = activeLogs.find { it.isMainSleep } ?: activeLogs.maxByOrNull { it.endTime }
         
-        var wakeHour = mainSleep?.let {
+        var wakeHour: Double? = mainSleep?.let {
             try {
                 val endDt = java.time.LocalDateTime.parse(it.endTime.replace("Z", ""))
                 endDt.hour + endDt.minute / 60.0 + endDt.second / 3600.0
@@ -333,6 +333,11 @@ class ClockRenderer {
             val totalAsleep = if (includeNaps) activeLogs.sumOf { it.minutesAsleep / 60.0 } else (mainSleep?.minutesAsleep ?: 0) / 60.0
             
             drawEnergyPct(canvas, centerX, centerY, radius, exactHour, handRad, wakeHour, sleepDebt, totalAsleep, bathyphaseHour, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset, useBathyphase, bedtimeGoal)
+        }
+
+        // 11.5 Draw Wake-Sunrise Info
+        if (wakeHour != null) {
+            drawWakeSunriseInfo(canvas, height, wakeHour, sunriseHour, sunsetHour)
         }
 
         // 12. Draw Preview Overlay
@@ -515,6 +520,84 @@ class ClockRenderer {
         val g = (210 * (1 - v) + 75 * v).toInt()
         val b = (255 * (1 - v) + 43 * v).toInt()
         return Color.rgb(r, g, b)
+    }
+
+    private fun drawWakeSunriseInfo(
+        canvas: Canvas,
+        height: Int,
+        wakeHour: Double,
+        sunriseHour: Double,
+        sunsetHour: Double
+    ) {
+        val offset = wakeHour - sunriseHour
+        val prefix = if (offset > 0) "-" else "+"
+        val offsetVal = String.format(Locale.US, "%s%.1f hrs", prefix, abs(offset))
+        
+        val currentZoneId = java.time.ZoneId.systemDefault()
+        val currentOffsetSeconds = currentZoneId.rules.getOffset(java.time.Instant.now()).totalSeconds
+        val currentOffsetHours = currentOffsetSeconds / 3600.0
+        
+        val rawTargetOffset = currentOffsetHours + offset
+        val targetOffsetHours = rawTargetOffset.roundToInt().toDouble()
+        val clampedOffset = targetOffsetHours.coerceIn(-12.0, 14.0)
+        
+        val utcZone = com.example.a24_hr_clock.logic.TimeZoneUtils.getUtcTimeZoneStringForOffset(clampedOffset)
+        val tzName = com.example.a24_hr_clock.logic.TimeZoneUtils.getTimeZoneNameForOffset(clampedOffset)
+        val tzVal = "$utcZone, '$tzName'"
+        
+        val timeFormatter = java.time.format.DateTimeFormatter.ofPattern("h:mm a", Locale.US)
+        
+        val sunriseH = sunriseHour.toInt()
+        val sunriseM = ((sunriseHour - sunriseH) * 60).toInt()
+        val sunriseTime = java.time.LocalTime.of(sunriseH % 24, sunriseM)
+        val sunriseVal = sunriseTime.format(timeFormatter).lowercase()
+
+        val sunsetH = sunsetHour.toInt()
+        val sunsetM = ((sunsetHour - sunsetH) * 60).toInt()
+        val sunsetTime = java.time.LocalTime.of(sunsetH % 24, sunsetM)
+        val sunsetVal = sunsetTime.format(timeFormatter).lowercase()
+        
+        val location = com.example.a24_hr_clock.logic.TimeZoneUtils.getMostPopulousLocationForOffset(clampedOffset)
+
+        val infoPaint = TextPaint().apply {
+            color = Color.WHITE
+            textSize = 50f
+            textAlign = Paint.Align.LEFT
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            isAntiAlias = true
+        }
+
+        val padding = 40f
+        val lineSpacing = 15f
+        val x = padding
+        var y = height - padding
+
+        // Vertical alignment calculation
+        val labelWidth = infoPaint.measureText("Timezone: ") + 40f
+
+        // Draw from bottom up
+        // Line 5: Sunset
+        canvas.drawText("Sunset:", x, y, infoPaint)
+        canvas.drawText(sunsetVal, x + labelWidth, y, infoPaint)
+        y -= (infoPaint.textSize + lineSpacing)
+
+        // Line 4: Sunrise
+        canvas.drawText("Sunrise:", x, y, infoPaint)
+        canvas.drawText(sunriseVal, x + labelWidth, y, infoPaint)
+        y -= (infoPaint.textSize + lineSpacing)
+
+        // Line 3: Location (City)
+        canvas.drawText(location, x + labelWidth, y, infoPaint)
+        y -= (infoPaint.textSize + lineSpacing)
+
+        // Line 2: Timezone
+        canvas.drawText("Timezone:", x, y, infoPaint)
+        canvas.drawText(tzVal, x + labelWidth, y, infoPaint)
+        y -= (infoPaint.textSize + lineSpacing)
+
+        // Line 1: Offset
+        canvas.drawText("Offset:", x, y, infoPaint)
+        canvas.drawText(offsetVal, x + labelWidth, y, infoPaint)
     }
 
     private fun drawSleepDebtText(canvas: Canvas, cx: Float, cy: Float, radius: Float, debt: Double) {
