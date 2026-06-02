@@ -148,6 +148,9 @@ class ClockRenderer {
         bedtimeGoal: Double = 9.75,
         showManualWake: Boolean = false,
         manualWakeTime: String = "09:00",
+        showWakeSunriseInfo: Boolean = true,
+        showBathyphase: Boolean = false,
+        showAcrophase: Boolean = false,
         isPreview: Boolean = false,
         previewIsLockScreen: Boolean = false
     ) {
@@ -170,8 +173,9 @@ class ClockRenderer {
         } else {
             // Large centered clock
             centerX = width / 2f
-            centerY = height / 2f
             radius = min(width, height) / 2f - 150f
+            val moonDiameter = max(12f, radius / 7f)
+            centerY = height / 2f - (1.75f * moonDiameter)
         }
 
         if (radius < 20) return
@@ -283,6 +287,43 @@ class ClockRenderer {
             }
         }
 
+        // 9.5 Draw Bathyphase Indicator
+        if (showBathyphase && bathyphaseHour != null) {
+            var bathyEnergy: Double? = null
+            if (wakeHour != null) {
+                val totalAsleep = if (includeNaps) activeLogs.sumOf { it.minutesAsleep / 60.0 } else (mainSleep?.minutesAsleep ?: 0) / 60.0
+                bathyEnergy = EnergyCalculator.getEnergyLevel(
+                    bathyphaseHour, wakeHour, sleepDebt, totalAsleep,
+                    if (useBathyphase) bathyphaseHour else null,
+                    false, tauWake, tauSleep, tauInertia, debtFactor,
+                    if (useBathyphase) null else circadianOffset
+                )
+            }
+            drawBathyphaseIndicator(canvas, centerX, centerY, radius, bathyphaseHour, bathyEnergy)
+        }
+
+        // 9.6 Draw Acrophase Indicator
+        if (showAcrophase && wakeHour != null) {
+            var peakHour = 0.0
+            var peakEnergy = -1.0
+            val totalAsleep = if (includeNaps) activeLogs.sumOf { it.minutesAsleep / 60.0 } else (mainSleep?.minutesAsleep ?: 0) / 60.0
+            
+            for (i in 0..144) {
+                val h = (i.toDouble() / 144) * 24.0
+                val e = EnergyCalculator.getEnergyLevel(
+                    h, wakeHour, sleepDebt, totalAsleep,
+                    if (useBathyphase) bathyphaseHour else null,
+                    false, tauWake, tauSleep, tauInertia, debtFactor,
+                    if (useBathyphase) null else circadianOffset
+                )
+                if (e > peakEnergy) {
+                    peakEnergy = e
+                    peakHour = h
+                }
+            }
+            drawAcrophaseIndicator(canvas, centerX, centerY, radius, peakHour, peakEnergy)
+        }
+
         // 10. Draw Sun and Moon
         if (showSunMoon) {
             drawSunAndMoon(canvas, centerX, centerY, radius, sunRad, moonRad, moonPhaseValue)
@@ -336,8 +377,8 @@ class ClockRenderer {
         }
 
         // 11.5 Draw Wake-Sunrise Info
-        if (wakeHour != null) {
-            drawWakeSunriseInfo(canvas, height, wakeHour, sunriseHour, sunsetHour)
+        if (wakeHour != null && showWakeSunriseInfo) {
+            drawWakeSunriseInfo(canvas, height, wakeHour, sunriseHour, sunsetHour, smallTopRight)
         }
 
         // 12. Draw Preview Overlay
@@ -527,7 +568,8 @@ class ClockRenderer {
         height: Int,
         wakeHour: Double,
         sunriseHour: Double,
-        sunsetHour: Double
+        sunsetHour: Double,
+        smallTopRight: Boolean
     ) {
         val offset = wakeHour - sunriseHour
         val prefix = if (offset > 0) "-" else "+"
@@ -537,9 +579,16 @@ class ClockRenderer {
         val currentOffsetSeconds = currentZoneId.rules.getOffset(java.time.Instant.now()).totalSeconds
         val currentOffsetHours = currentOffsetSeconds / 3600.0
         
-        val rawTargetOffset = currentOffsetHours + offset
+        val rawTargetOffset = currentOffsetHours - offset
         val targetOffsetHours = rawTargetOffset.roundToInt().toDouble()
-        val clampedOffset = targetOffsetHours.coerceIn(-12.0, 14.0)
+        
+        // Wrap around to keep within -12 to +14 range properly if it exceeds
+        // Using standard modulo arithmetic for timezones
+        var normalizedOffset = targetOffsetHours
+        while (normalizedOffset < -12.0) normalizedOffset += 24.0
+        while (normalizedOffset > 14.0) normalizedOffset -= 24.0
+        
+        val clampedOffset = normalizedOffset
         
         val utcZone = com.example.a24_hr_clock.logic.TimeZoneUtils.getUtcTimeZoneStringForOffset(clampedOffset)
         val tzName = com.example.a24_hr_clock.logic.TimeZoneUtils.getTimeZoneNameForOffset(clampedOffset)
@@ -571,6 +620,10 @@ class ClockRenderer {
         val lineSpacing = 15f
         val x = padding
         var y = height - padding
+
+        if (smallTopRight) {
+            y -= 5 * (infoPaint.textSize + lineSpacing)
+        }
 
         // Vertical alignment calculation
         val labelWidth = infoPaint.measureText("Timezone: ") + 40f
@@ -611,11 +664,67 @@ class ClockRenderer {
         // Using a light color for better contrast against dark shading/night
         textPaint.color = Color.parseColor("#EEEEEE")
         
-        val debtInt = debt.roundToInt()
-        canvas.drawText("${debtInt}h", tx, ty, textPaint)
-        
-        textPaint.textSize = radius * 0.07f
-        canvas.drawText("Debt", tx, ty + textPaint.textSize * 1.5f, textPaint)
+        val debtVal = String.format(Locale.US, "%.1fh", debt)
+        canvas.drawText(debtVal, tx, ty, textPaint)
+    }
+
+    private fun drawBathyphaseIndicator(canvas: Canvas, cx: Float, cy: Float, radius: Float, bathyHour: Double, energyValue: Double?) {
+        val angleDegrees = (bathyHour - 18) * 15.0
+
+        val trianglePaint = Paint().apply {
+            color = if (energyValue != null) interpolateEnergyColor(energyValue) else Color.parseColor("#1E6363")
+            style = Paint.Style.FILL
+            isAntiAlias = true
+        }
+
+        val smallTickHeight = radius * 0.08f
+        val triangleSize = smallTickHeight
+        val tipRadius = radius - triangleSize
+        val baseRadius = radius
+        val baseWidth = triangleSize * 0.8f
+
+        canvas.save()
+        canvas.rotate(angleDegrees.toFloat(), cx, cy)
+
+        val path = Path()
+        // Tip of the triangle pointing inwards
+        path.moveTo(cx + tipRadius, cy)
+        // Base points on the perimeter
+        path.lineTo(cx + baseRadius, cy - baseWidth / 2f)
+        path.lineTo(cx + baseRadius, cy + baseWidth / 2f)
+        path.close()
+
+        canvas.drawPath(path, trianglePaint)
+        canvas.restore()
+    }
+
+    private fun drawAcrophaseIndicator(canvas: Canvas, cx: Float, cy: Float, radius: Float, acroHour: Double, energyValue: Double) {
+        val angleDegrees = (acroHour - 18) * 15.0
+
+        val trianglePaint = Paint().apply {
+            color = interpolateEnergyColor(energyValue)
+            style = Paint.Style.FILL
+            isAntiAlias = true
+        }
+
+        val smallTickHeight = radius * 0.08f
+        val triangleSize = smallTickHeight
+        // Pointing inwards: tip is inner, base is at radius
+        val tipRadius = radius - triangleSize
+        val baseRadius = radius
+        val baseWidth = triangleSize * 0.8f
+
+        canvas.save()
+        canvas.rotate(angleDegrees.toFloat(), cx, cy)
+
+        val path = Path()
+        path.moveTo(cx + tipRadius, cy)
+        path.lineTo(cx + baseRadius, cy - baseWidth / 2f)
+        path.lineTo(cx + baseRadius, cy + baseWidth / 2f)
+        path.close()
+
+        canvas.drawPath(path, trianglePaint)
+        canvas.restore()
     }
 
     private fun drawNightShading(canvas: Canvas, cx: Float, cy: Float, radius: Float, sunrise: Double, sunset: Double) {

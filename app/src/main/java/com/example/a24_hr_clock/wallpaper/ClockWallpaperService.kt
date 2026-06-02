@@ -309,13 +309,18 @@ class ClockWallpaperService : WallpaperService() {
                         val sleepNeedHours = modelSettings.bedtimeGoal * empiricalEfficiency
 
                         // Auto-toggle today's date if no data yet (exclude it so it doesn't skew debt)
-                        val hasTodayLog = logs.any { it.dateOfSleep == todayStr }
+                        // Trigger only on MAIN sleep (wake up time)
+                        val hasMainTodayLog = logs.any { it.dateOfSleep == todayStr && it.isMainSleep }
                         var newExcludedDates = modelSettings.excludedDates
-                        if (hasTodayLog && newExcludedDates.contains(todayStr)) {
-                            newExcludedDates = newExcludedDates.filter { it != todayStr }
-                        } else if (!hasTodayLog && !newExcludedDates.contains(todayStr)) {
-                            newExcludedDates = newExcludedDates + todayStr
+                        
+                        if (todayStr !in modelSettings.explicitDates) {
+                            if (hasMainTodayLog && newExcludedDates.contains(todayStr)) {
+                                newExcludedDates = newExcludedDates.filter { it != todayStr }
+                            } else if (!hasMainTodayLog && !newExcludedDates.contains(todayStr)) {
+                                newExcludedDates = newExcludedDates + todayStr
+                            }
                         }
+
                         if (newExcludedDates != modelSettings.excludedDates) {
                             settingsManager.updateModelSettings(modelSettings.copy(excludedDates = newExcludedDates))
                             modelSettings = modelSettings.copy(excludedDates = newExcludedDates)
@@ -352,41 +357,46 @@ class ClockWallpaperService : WallpaperService() {
             val canvas = surfaceHolder.lockCanvas() ?: return
             try {
                 renderer.draw(
-                    canvas, canvas.width, canvas.height,
-                    Calendar.getInstance(),
-                    sunriseHour,
-                    sunsetHour,
-                    sleepLogs,
-                    sunRad,
-                    moonRad,
-                    moonPhaseValue,
-                    solarIrradiance,
-                    sleepDebt,
-                    bathyphaseHour,
-                    calendarEvents,
-                    currentSettings.showNumbers,
-                    currentSettings.showSleep,
-                    currentSettings.showSunMoon,
-                    currentSettings.showSleepDebtText,
-                    currentSettings.showEnergy,
-                    currentSettings.showCalendar,
-                    currentSettings.smallTopRight,
-                    currentSettings.showLifeCalendar,
-                    currentSettings.showTotalBedtime,
-                    currentSettings.showEnergyPct,
-                    currentSettings.normalizeEnergy,
-                    modelSettings.includeNaps,
-                    modelSettings.tauWake,
-                    modelSettings.tauSleep,
-                    modelSettings.tauInertia,
-                    modelSettings.debtFactor,
-                    modelSettings.circadianOffset,
-                    modelSettings.useBathyphase,
-                    modelSettings.bedtimeGoal,
-                    currentSettings.showManualWake,
-                    modelSettings.manualWakeTime,
-                    isPreview,
-                    previewLockScreen
+                    canvas = canvas,
+                    width = canvas.width,
+                    height = canvas.height,
+                    now = Calendar.getInstance(),
+                    sunriseHour = sunriseHour,
+                    sunsetHour = sunsetHour,
+                    sleepLogs = sleepLogs,
+                    sunRad = sunRad,
+                    moonRad = moonRad,
+                    moonPhaseValue = moonPhaseValue,
+                    solarIrradiance = solarIrradiance,
+                    sleepDebt = sleepDebt,
+                    bathyphaseHour = bathyphaseHour,
+                    calendarEvents = calendarEvents,
+                    showNumbers = currentSettings.showNumbers,
+                    showSleep = currentSettings.showSleep,
+                    showSunMoon = currentSettings.showSunMoon,
+                    showSleepDebtText = currentSettings.showSleepDebtText,
+                    showEnergy = currentSettings.showEnergy,
+                    showCalendar = currentSettings.showCalendar,
+                    smallTopRight = currentSettings.smallTopRight,
+                    showLifeCalendar = currentSettings.showLifeCalendar,
+                    showTotalBedtime = currentSettings.showTotalBedtime,
+                    showEnergyPct = currentSettings.showEnergyPct,
+                    normalizeEnergy = currentSettings.normalizeEnergy,
+                    includeNaps = modelSettings.includeNaps,
+                    tauWake = modelSettings.tauWake,
+                    tauSleep = modelSettings.tauSleep,
+                    tauInertia = modelSettings.tauInertia,
+                    debtFactor = modelSettings.debtFactor,
+                    circadianOffset = modelSettings.circadianOffset,
+                    useBathyphase = modelSettings.useBathyphase,
+                    bedtimeGoal = modelSettings.bedtimeGoal,
+                    showManualWake = currentSettings.showManualWake,
+                    manualWakeTime = modelSettings.manualWakeTime,
+                    showWakeSunriseInfo = currentSettings.showWakeSunriseInfo,
+                    showBathyphase = currentSettings.showBathyphase,
+                    showAcrophase = currentSettings.showAcrophase,
+                    isPreview = isPreview,
+                    previewIsLockScreen = previewLockScreen
                 )
             } finally {
                 surfaceHolder.unlockCanvasAndPost(canvas)

@@ -339,6 +339,12 @@ fun MainScreen(
                     sleepDebt = sleepDebt,
                     title = if (previewIsLockScreen) "Lock Screen (Tap to toggle)" else "Home Screen (Tap to toggle)",
                     showSetWallpaper = true,
+                    onReset = {
+                        scope.launch {
+                            if (previewIsLockScreen) settingsManager.resetLockSettings()
+                            else settingsManager.resetHomeSettings()
+                        }
+                    },
                     modifier = Modifier.clickable { previewIsLockScreen = !previewIsLockScreen }
                 )
                 Screen.CALENDAR -> CalendarSettingsScreen(
@@ -410,6 +416,7 @@ fun ClockPreviewScreen(
     sleepDebt: Double,
     title: String = "Home Screen Preview",
     showSetWallpaper: Boolean = true,
+    onReset: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -461,6 +468,8 @@ fun ClockPreviewScreen(
                     showTotalBedtime = settings.showTotalBedtime,
                     showEnergyPct = settings.showEnergyPct,
                     normalizeEnergy = settings.normalizeEnergy,
+                    showBathyphase = settings.showBathyphase,
+                    showAcrophase = settings.showAcrophase,
                     includeNaps = modelSettings.includeNaps,
                     tauWake = modelSettings.tauWake,
                     tauSleep = modelSettings.tauSleep,
@@ -471,6 +480,7 @@ fun ClockPreviewScreen(
                     bedtimeGoal = modelSettings.bedtimeGoal,
                     showManualWake = settings.showManualWake,
                     manualWakeTime = modelSettings.manualWakeTime,
+                    showWakeSunriseInfo = settings.showWakeSunriseInfo,
                     isPreview = true,
                     previewIsLockScreen = title.contains("Lock Screen")
                 )
@@ -484,20 +494,36 @@ fun ClockPreviewScreen(
             style = MaterialTheme.typography.labelLarge
         )
 
-        if (showSetWallpaper) {
-            Button(
-                onClick = {
-                    val intent = Intent(android.app.WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
-                        putExtra(android.app.WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, 
-                            android.content.ComponentName(context, com.example.a24_hr_clock.wallpaper.ClockWallpaperService::class.java))
+        Column(
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (onReset != null) {
+                Button(
+                    onClick = onReset,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Reset to defaults")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            if (showSetWallpaper) {
+                Button(
+                    onClick = {
+                        val intent = Intent(android.app.WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
+                            putExtra(android.app.WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, 
+                                android.content.ComponentName(context, com.example.a24_hr_clock.wallpaper.ClockWallpaperService::class.java))
+                        }
+                        context.startActivity(intent)
                     }
-                    context.startActivity(intent)
-                },
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp)
-            ) {
-                Icon(Icons.Default.Wallpaper, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Set")
+                ) {
+                    Icon(Icons.Default.Wallpaper, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Set")
+                }
             }
         }
     }
@@ -660,7 +686,8 @@ fun DisplaySettingsScreen(
                     solarIrradiance = solarIrradiance,
                     calendarEvents = calendarEvents,
                     sleepDebt = sleepDebt,
-                    title = if (selectedTab == 0) "Home Screen Preview" else "Lock Screen Preview"
+                    title = if (selectedTab == 0) "Home Screen Preview" else "Lock Screen Preview",
+                    onReset = if (selectedTab == 0) onResetHome else onResetLock
                 )
                 
                 IconButton(
@@ -704,6 +731,30 @@ fun DisplaySettingsScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = onResetHome,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)),
+                contentPadding = PaddingValues(horizontal = 8.dp)
+            ) {
+                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Reset Home", maxLines = 1, softWrap = false)
+            }
+            Button(
+                onClick = onResetLock,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)),
+                contentPadding = PaddingValues(horizontal = 8.dp)
+            ) {
+                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Reset Lock", maxLines = 1, softWrap = false)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
         Text(text = "ELEMENTS", style = MaterialTheme.typography.labelLarge)
         
         SettingToggle("Numbers", currentSettings.showNumbers) { 
@@ -717,6 +768,9 @@ fun DisplaySettingsScreen(
         }
         SettingToggle("Life Calendar Background", currentSettings.showLifeCalendar) {
             updateFunc(currentSettings.copy(showLifeCalendar = it))
+        }
+        SettingToggle("Wake-up Offset & Timezone Info", currentSettings.showWakeSunriseInfo) {
+            updateFunc(currentSettings.copy(showWakeSunriseInfo = it))
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -734,6 +788,12 @@ fun DisplaySettingsScreen(
         SettingToggle("Show Wake-up Indicator", currentSettings.showManualWake) {
             updateFunc(currentSettings.copy(showManualWake = it))
         }
+        SettingToggle("Bathyphase indicator", currentSettings.showBathyphase) {
+            updateFunc(currentSettings.copy(showBathyphase = it))
+        }
+        SettingToggle("Acrophase indicator", currentSettings.showAcrophase) {
+            updateFunc(currentSettings.copy(showAcrophase = it))
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
         Text(text = "ENERGY", style = MaterialTheme.typography.labelLarge)
@@ -746,14 +806,6 @@ fun DisplaySettingsScreen(
         }
         SettingToggle("Normalize Energy", currentSettings.normalizeEnergy) {
             updateFunc(currentSettings.copy(normalizeEnergy = it))
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(
-            onClick = if (selectedTab == 0) onResetHome else onResetLock,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Reset ${if (selectedTab == 0) "Home" else "Lock"} Defaults")
         }
     }
 }
@@ -771,6 +823,11 @@ fun ModelSettingsScreen(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
+        Button(onClick = onReset, modifier = Modifier.fillMaxWidth()) {
+            Text("Reset Model Defaults")
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+
         Text(text = "Advanced Energy Model", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -854,10 +911,6 @@ fun ModelSettingsScreen(
             unit = "",
             onValueChange = { onUpdate(modelSettings.copy(debtFactor = it.toDouble())) }
         )
-
-        Button(onClick = onReset, modifier = Modifier.fillMaxWidth()) {
-            Text("Reset Model Defaults")
-        }
     }
 }
 
@@ -955,6 +1008,7 @@ fun SleepLogScreen(
 
             var totalRaw = 0.0
             var totalWtd = 0.0
+            var weightIndex = 0
             val durations = mutableListOf<Double>()
             val efficiencies = mutableListOf<Double>()
             val startHours = mutableListOf<Double>()
@@ -1002,16 +1056,20 @@ fun SleepLogScreen(
                         Text("—", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = rowColor)
                         
                         val debt = if (!isExcluded) sleepNeed else 0.0
-                        val weightedDebt = debt * Math.pow(0.9, i.toDouble())
                         if (!isExcluded) { 
+                            val weightedDebt = debt * Math.pow(0.9, weightIndex.toDouble())
                             totalRaw += debt
                             totalWtd += weightedDebt
                             durations.add(0.0) 
+                            weightIndex++
+                            
+                            val debtColor = Color(0xFFFF6B6B)
+                            Text(text = String.format("%+.1f", debt), modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall, color = debtColor.copy(alpha = 0.5f), textAlign = TextAlign.End)
+                            Text(text = String.format("%+.1f", weightedDebt), modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall, color = debtColor, textAlign = TextAlign.End)
+                        } else {
+                            Text(text = "—", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall, color = rowColor.copy(alpha = 0.5f), textAlign = TextAlign.End)
+                            Text(text = "—", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall, color = rowColor, textAlign = TextAlign.End)
                         }
-                        
-                        val debtColor = if (isExcluded) rowColor else Color(0xFFFF6B6B)
-                        Text(text = if (isExcluded) "—" else String.format("%+.1f", debt), modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall, color = debtColor.copy(alpha = 0.5f), textAlign = TextAlign.End)
-                        Text(text = if (isExcluded) "—" else String.format("%+.1f", weightedDebt), modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall, color = debtColor, textAlign = TextAlign.End)
                     }
                 } else {
                     val totalDailyAsleep = if (modelSettings.includeNaps) logsForDay.sumOf { it.minutesAsleep / 60.0 } else logsForDay.filter { it.isMainSleep }.sumOf { it.minutesAsleep / 60.0 }
@@ -1023,7 +1081,8 @@ fun SleepLogScreen(
                         efficiencies.add(dailyEff * 100.0)
                         val debt = sleepNeed - totalDailyAsleep
                         totalRaw += debt
-                        totalWtd += debt * Math.pow(0.9, i.toDouble())
+                        totalWtd += debt * Math.pow(0.9, weightIndex.toDouble())
+                        weightIndex++
                         
                         // For AVG start/end, use main sleep
                         val mainSleep = logsForDay.find { it.isMainSleep } ?: logsForDay.first()
@@ -1065,7 +1124,7 @@ fun SleepLogScreen(
 
                             if (sessionIdx == 0) {
                                 val debt = sleepNeed - totalDailyAsleep
-                                val weightedDebt = debt * Math.pow(0.9, i.toDouble())
+                                val weightedDebt = if (!isExcluded) debt * Math.pow(0.9, (weightIndex - 1).toDouble()) else 0.0
                                 val debtColor = if (isExcluded) rowColor else if (debt > 0.1) Color(0xFFFF6B6B) else if (debt < -0.1) Color(0xFF6BFF6B) else MaterialTheme.colorScheme.onSurface
                                 Text(text = if (isExcluded) "—" else String.format("%+.1f", debt), modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall, color = debtColor.copy(alpha = 0.5f), textAlign = TextAlign.End)
                                 Text(text = if (isExcluded) "—" else String.format("%+.1f", weightedDebt), modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall, color = debtColor, textAlign = TextAlign.End)

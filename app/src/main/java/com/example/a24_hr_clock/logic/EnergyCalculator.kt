@@ -113,16 +113,19 @@ object EnergyCalculator {
         val today = java.time.LocalDate.now()
         var weightedDebt = 0.0
         val decayFactor = 0.9
+        var weightIndex = 0
 
         // Process T-0 down to T-14
         for (i in 0 until 15) {
             val dateStr = today.minusDays(i.toLong()).toString()
-            val actual = dailySleep[dateStr] ?: 0.0
             if (excludedDates.contains(dateStr)) continue
 
+            val actual = dailySleep[dateStr] ?: 0.0
             val nightlyDebt = sleepNeedHours - actual
-            val weight = decayFactor.pow(i)
+            val weight = decayFactor.pow(weightIndex)
             weightedDebt += nightlyDebt * weight
+            
+            weightIndex++
         }
 
         return weightedDebt
