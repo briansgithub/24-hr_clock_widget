@@ -103,7 +103,7 @@ class ClockWidget:
         self.show_numbers = tk.BooleanVar(value=False)
         self.show_sleep = tk.BooleanVar(value=True)
         self.show_total_bedtime = tk.BooleanVar(value=True)
-        self.show_energy = tk.BooleanVar(value=False)
+        self.show_energy = tk.BooleanVar(value=True)
         self.show_energy_pct = tk.BooleanVar(value=False)
         self.show_sleep_debt = tk.BooleanVar(value=True)
         self.show_sleep_debt_text = tk.BooleanVar(value=True)
@@ -970,7 +970,11 @@ class ClockWidget:
                 self.sunrise_hour = None
                 self.sunset_hour = None
             finally:
-                self.root.after(0, self.show_initial)
+                if getattr(self, '_initial_shown', False):
+                    self.root.after(0, self.draw_clock)
+                else:
+                    self._initial_shown = True
+                    self.root.after(0, self.show_initial)
 
         threading.Thread(target=_fetch, daemon=True).start()
 
@@ -1607,6 +1611,10 @@ class ClockWidget:
             self.show_widget()
 
     def setup_tray_icon(self):
+        if getattr(self, '_tray_initialized', False):
+            return
+        self._tray_initialized = True
+
         def on_quit(icon, item):
             icon.stop()
             self.root.after(0, self.root.destroy)
