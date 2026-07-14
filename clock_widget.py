@@ -148,6 +148,8 @@ class ClockWidget:
         self.last_fitbit_update = None
         self.raw_sleep_logs     = []    # list of raw Fitbit sleep records
         self.active_sleep_date  = None  # the YYYY-MM-DD date we are currently displaying
+        self._sleep_table_needs_refresh = True
+        self._sleep_table_refresh_scheduled = False
         
         # ── Calendar Integration ──────────────────────────────────────────────
         self.calendar_svc = None # Will be initialized lazily in the background thread
@@ -252,6 +254,24 @@ class ClockWidget:
             relief=tk.FLAT
         )
         self.hover_delay_entry.pack(side=tk.LEFT, padx=5)
+
+        tk.Label(settings_frame, text="Timeout (s):", bg=self.solid_bg, fg="white", font=("Arial", 8)).pack(side=tk.LEFT, padx=(5, 0))
+        
+        self.timeout_delay_var = tk.StringVar(value="1.0")
+        
+        self.timeout_delay_entry = tk.Entry(
+            settings_frame, 
+            textvariable=self.timeout_delay_var, 
+            width=5, 
+            validate='key', 
+            validatecommand=vcmd,
+            bg="#404040",
+            fg="white",
+            insertbackground="white",
+            relief=tk.FLAT
+        )
+        self.timeout_delay_entry.pack(side=tk.LEFT, padx=5)
+
 
         self.top_toggle = add_toggle("Always On Top", self.always_on_top, self.toggle_topmost, self.left_col)
 
@@ -484,10 +504,12 @@ class ClockWidget:
             cy = self.controls_window.winfo_rooty()
             cw = self.controls_window.winfo_width()
             self.sleep_table_window.geometry(f"+{cx + cw + 10}+{cy}")
-            self.populate_sleep_table()
             self.sleep_table_window.deiconify()
             self.sleep_table_window.lift()
             self.sleep_table_window.attributes('-topmost', self.always_on_top.get())
+            if self._sleep_table_needs_refresh and not self._sleep_table_refresh_scheduled:
+                self._sleep_table_refresh_scheduled = True
+                self.sleep_table_window.after_idle(self._refresh_sleep_table_if_visible)
             # If sleep model is also shown, it must move further right
             if self.show_sleep_model.get():
                 self.update_sleep_model_visibility()
@@ -496,6 +518,14 @@ class ClockWidget:
             # Re-position sleep model if it's shown
             if self.show_sleep_model.get() and getattr(self, 'is_controls_visible', False):
                 self.update_sleep_model_visibility()
+
+    def _refresh_sleep_table_if_visible(self):
+        self._sleep_table_refresh_scheduled = False
+        if not self.show_sleep_table.get() or not getattr(self, 'is_controls_visible', False):
+            return
+        if not hasattr(self, 'sleep_table_window') or not self.sleep_table_window.winfo_viewable():
+            return
+        self.populate_sleep_table()
 
     def update_sleep_model_visibility(self):
         """Explicitly show/hide and position the sleep model based on its toggle variable."""
@@ -614,6 +644,12 @@ class ClockWidget:
                 if in_root and not getattr(self, 'is_clock_transparent', False):
                     in_controls = False
 
+        def get_timeout_ms():
+            try:
+                return int(float(self.timeout_delay_var.get()) * 1000)
+            except:
+                return 1000
+
         # Clock Timeout Logic
         if in_controls:
             if getattr(self, '_clock_hide_timer_started', False):
@@ -623,7 +659,7 @@ class ClockWidget:
         elif not in_root:
             if not getattr(self, '_clock_hide_timer_started', False):
                 self._clock_hide_timer_started = True
-                self._clock_hide_timer_id = self.root.after(1000, self.make_clock_transparent)
+                self._clock_hide_timer_id = self.root.after(get_timeout_ms(), self.make_clock_transparent)
         else:
             if getattr(self, '_clock_hide_timer_started', False):
                 self.root.after_cancel(self._clock_hide_timer_id)
@@ -634,7 +670,7 @@ class ClockWidget:
         if not in_controls and not in_root:
             if not getattr(self, '_controls_hide_timer_started', False):
                 self._controls_hide_timer_started = True
-                self._controls_hide_timer_id = self.root.after(1000, self.make_controls_hidden)
+                self._controls_hide_timer_id = self.root.after(get_timeout_ms(), self.make_controls_hidden)
         else:
             if getattr(self, '_controls_hide_timer_started', False):
                 self.root.after_cancel(self._controls_hide_timer_id)
@@ -1045,6 +1081,7 @@ class ClockWidget:
         bathy = inputs.get('bathyphase_hour')
 
         self.raw_sleep_logs = inputs.get('raw_sleep_logs', [])
+        self._sleep_table_needs_refresh = True
 
         # Handle auto-inclusion logic for Today (T-0)
         if not has_saved_setting:
@@ -1084,24 +1121,36 @@ class ClockWidget:
 
     def update_calendar_data(self):
         """Fetch today's events from Google Calendar in the background."""
-        def _task():
-            if not getattr(self, 'calendar_svc', None):
-                try:
-                    self.calendar_svc = get_calendar_service()
-                except Exception as e:
-                    print(f"[Calendar] Failed to initialize service: {e}")
-                    return
+        if getattr(self, '_calendar_refreshing', False):
+            print("[ClockWidget] Calendar refresh already in progress, skipping.")
+            return
+        
+        self._calendar_refreshing = True
 
-            if not self.calendar_svc:
-                return
+        def _task():
             try:
+                if not getattr(self, 'calendar_svc', None):
+                    try:
+                        print("[ClockWidget] Initializing Google Calendar service...")
+                        self.calendar_svc = get_calendar_service()
+                    except Exception as e:
+                        print(f"[Calendar] Failed to initialize service: {e}")
+                        return
+
+                if not self.calendar_svc:
+                    print("[ClockWidget] Calendar service is None, aborting refresh.")
+                    return
+                
+                print("[ClockWidget] Fetching calendar events...")
                 events = get_calendar_events(self.calendar_svc, 'primary')
                 self.calendar_events = events
                 self._last_calendar_refresh_time = datetime.datetime.now()
-                print(f"[Calendar] Fetched {len(events)} events.")
+                print(f"[Calendar] Successfully fetched {len(events)} events.")
                 self.root.after(0, self.draw_clock)
             except Exception as e:
                 print(f"[Calendar] Update failed: {e}")
+            finally:
+                self._calendar_refreshing = False
         
         threading.Thread(target=_task, daemon=True).start()
 
@@ -1539,6 +1588,7 @@ class ClockWidget:
         # Shrink-wrap window to exact content size
         self.sleep_table_window.update_idletasks()
         self.sleep_table_window.geometry("")
+        self._sleep_table_needs_refresh = False
 
     def update_metric_labels(self):
         """Update the Bathyphase and Efficiency labels in the controls window."""
@@ -1863,8 +1913,8 @@ class ClockWidget:
     def _get_solar_irradiance(self):
         """Return solar irradiance brightness 0-255 based on current sun elevation.
         
-        Uses Beer-Lambert approximation for atmospheric attenuation and
-        applies Gamma correction for human perception.
+        Uses Beer-Lambert approximation for atmospheric attenuation,
+        applies Gamma correction for human perception, and models twilight.
         """
         try:
             user_lat = getattr(self, 'lat', None)
@@ -1876,43 +1926,59 @@ class ClockWidget:
             obs = Observer(latitude=user_lat, longitude=user_lon)
             elev = sun_elevation(obs, now_utc)   # degrees, negative when below horizon
 
-            if elev <= 0:
-                return 0
+            sunset_intensity = 99.0 / 255.0 # Hex #636363
 
-            # Theoretical peak elevation for today (sample every 30 min)
-            if not hasattr(self, '_solar_peak_cache') or \
-               (datetime.datetime.now() - self._solar_peak_cache['ts']).total_seconds() >= 3600:
-                times = [now_utc + datetime.timedelta(minutes=30 * i) for i in range(48)]
-                elevs = [sun_elevation(obs, t) for t in times]
-                peak = max(elevs)
-                self._solar_peak_cache = {'peak': peak, 'ts': datetime.datetime.now()}
-            else:
-                peak = self._solar_peak_cache['peak']
+            if elev >= 0:
+                # Theoretical peak elevation for today (sample every 30 min)
+                if not hasattr(self, '_solar_peak_cache') or \
+                   (datetime.datetime.now() - self._solar_peak_cache['ts']).total_seconds() >= 3600:
+                    times = [now_utc + datetime.timedelta(minutes=30 * i) for i in range(48)]
+                    elevs = [sun_elevation(obs, t) for t in times]
+                    peak = max(elevs)
+                    self._solar_peak_cache = {'peak': peak, 'ts': datetime.datetime.now()}
+                else:
+                    peak = self._solar_peak_cache['peak']
 
-            if peak <= 0:
-                return 0
+                if peak <= 0:
+                    return int(round(255 * sunset_intensity))
 
-            # 1. Physics: Irradiance ∝ sin(elevation) * exp(-k / sin(elevation))
-            # k = 0.12 is a typical clear-sky extinction coefficient
-            k = 0.12
-            def get_irradiance(e):
-                # Ensure sin(e) is not zero to avoid division by zero in exp
-                s = math.sin(math.radians(max(0.01, e)))
-                return s * math.exp(-k / s)
+                # 1. Physics: Irradiance ∝ sin(elevation) * exp(-k / sin(elevation))
+                # k = 0.12 is a typical clear-sky extinction coefficient
+                k = 0.12
+                def get_irradiance(e):
+                    # Ensure sin(e) is not zero to avoid division by zero in exp
+                    s = math.sin(math.radians(max(0.01, e)))
+                    return s * math.exp(-k / s)
+                    
+                raw = get_irradiance(elev)
+                peak_raw = get_irradiance(peak)
                 
-            raw = get_irradiance(elev)
-            peak_raw = get_irradiance(peak)
-            
-            # 2. Normalise 0.0 - 1.0
-            ratio = raw / peak_raw
-            
-            # 3. Perception: Gamma Correction (sRGB standard is ~2.2)
-            # This 'boosts' the mid-tones so the circle stays visibly bright longer
-            gamma = 2.2
-            corrected_ratio = math.pow(max(0, ratio), 1/gamma)
-            
-            brightness = int(round(255 * corrected_ratio))
-            return max(0, min(255, brightness))
+                # 2. Normalise 0.0 - 1.0
+                ratio = max(0, min(1.0, raw / peak_raw))
+                
+                # 3. Perception: Gamma Correction (sRGB standard is ~2.2)
+                gamma = 2.2
+                corrected_ratio = math.pow(ratio, 1/gamma)
+                
+                # Map [0, 1] to [sunset_intensity, 1.0]
+                final_intensity = sunset_intensity + (1.0 - sunset_intensity) * corrected_ratio
+                brightness = int(round(255 * final_intensity))
+                return max(0, min(255, brightness))
+            else:
+                # Twilight: Sun below horizon
+                # Threshold for complete darkness (approx 30-45 mins at mid-latitudes)
+                darkness_elev = -8.0
+                if elev <= darkness_elev:
+                    return 0
+                
+                # Ratio goes from 1.0 at horizon (elev=0) to 0.0 at darkness_elev
+                ratio = (elev - darkness_elev) / (0.0 - darkness_elev)
+                # Faster decay using quadratic function
+                corrected_ratio = math.pow(max(0, min(1.0, ratio)), 2.0)
+                
+                final_intensity = sunset_intensity * corrected_ratio
+                brightness = int(round(255 * final_intensity))
+                return max(0, min(255, brightness))
         except Exception:
             return 0
 
@@ -2128,6 +2194,7 @@ class ClockWidget:
             current_events = []
             max_current_end = now_aware
             for event in self.calendar_events:
+                # Still skipping all-day events for the clock face as they'd clutter it
                 if event.get('is_all_day'): continue
                 s_dt = event['start_dt']
                 e_dt = event['end_dt']
@@ -2136,8 +2203,9 @@ class ClockWidget:
                     if e_dt > max_current_end:
                         max_current_end = e_dt
             
-            window_end = max_current_end + datetime.timedelta(hours=24)
-            truncation_limit = now_aware + datetime.timedelta(hours=24)
+            # Show events occurring now or starting in the next 24 hours
+            # Use a fixed 24h window from NOW for a consistent display
+            window_end = now_aware + datetime.timedelta(hours=24)
             
             # 2. Filter and process events for display
             display_list = []
@@ -2157,9 +2225,9 @@ class ClockWidget:
                     if is_current:
                         display_s_dt = now_aware
                     
-                    # If it starts before the 24h limit but ends after, truncate to now (clock hand)
-                    if not is_current and s_dt < truncation_limit < e_dt:
-                        display_e_dt = now_aware
+                    # If it ends after our 24h window, truncate it for drawing
+                    if e_dt > window_end:
+                        display_e_dt = window_end
                     
                     local_s = display_s_dt.astimezone()
                     local_e = display_e_dt.astimezone()
@@ -2167,8 +2235,18 @@ class ClockWidget:
                     s_h = local_s.hour + local_s.minute / 60.0 + local_s.second / 3600.0
                     e_h = local_e.hour + local_e.minute / 60.0 + local_e.second / 3600.0
                     
+                    orig_local_s = s_dt.astimezone()
+                    orig_local_e = e_dt.astimezone()
+                    
+                    def format_time(dt):
+                        return dt.strftime("%I:%M%p").lstrip("0").lower()
+                        
+                    time_range = f"{format_time(orig_local_s)} – {format_time(orig_local_e)}"
+                    summary_text = event.get('summary', 'No Title')
+                    full_text = f"{time_range}\n{summary_text}"
+                    
                     display_list.append({
-                        'summary': event.get('summary', 'No Title'),
+                        'summary': full_text,
                         's_h': s_h,
                         'e_h': e_h,
                         'is_current': is_current,
