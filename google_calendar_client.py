@@ -17,28 +17,39 @@ def get_calendar_service():
     Requires 'credentials.json' in the same directory.
     """
     creds = None
+    # Use absolute paths for token and credentials files
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    token_path = os.path.join(base_dir, "token.json")
+    creds_path = os.path.join(base_dir, "credentials.json")
+
     # The file token.json stores the user's access and refresh tokens, and is
     # created automatically when the authorization flow completes for the first
     # time.
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+    if os.path.exists(token_path):
+        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
     
     # If there are no (valid) credentials available, let the user log in.
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not os.path.exists("credentials.json"):
-                print("Error: 'credentials.json' not found. Please download it from the Google Cloud Console.")
+            try:
+                creds.refresh(Request())
+            except Exception as e:
+                print(f"[Calendar] Token refresh failed: {e}")
+                creds = None
+        
+        if not creds or not creds.valid:
+            if not os.path.exists(creds_path):
+                print(f"Error: '{creds_path}' not found. Please download it from the Google Cloud Console.")
                 return None
             
             flow = InstalledAppFlow.from_client_secrets_file(
-                "credentials.json", SCOPES
+                creds_path, SCOPES
             )
-            creds = flow.run_local_server(port=0, open_browser=False)
+            # Set open_browser=True to help users authenticate in a GUI environment
+            creds = flow.run_local_server(port=0, open_browser=True)
         
         # Save the credentials for the next run
-        with open("token.json", "w") as token:
+        with open(token_path, "w") as token:
             token.write(creds.to_json())
 
     try:
@@ -68,6 +79,7 @@ def get_calendar_events(service, calendar_id='primary', days=2):
             orderBy="startTime"
         ).execute()
         events = events_result.get("items", [])
+        print(f"[Calendar] API returned {len(events)} raw events.")
 
         processed_events = []
         for event in events:
