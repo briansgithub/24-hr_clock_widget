@@ -48,6 +48,7 @@ class EmpiricalEnergyNotificationHelper(private val context: Context) {
 
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setGroup("com.example.a24_hr_clock.ALERTNESS_PROMPTS")
             .setContentTitle("Current Alertness Check")
             .setContentText("How energetic are you feeling right now? Tap to log (0-100).")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -77,6 +78,7 @@ class EmpiricalEnergyNotificationHelper(private val context: Context) {
 
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setGroup("com.example.a24_hr_clock.ALERTNESS_PROMPTS")
             .setContentTitle("Missed Energy Logs Detected")
             .setContentText("You have $missedCount missed data points today. Tap to fill them in.")
             .setPriority(NotificationCompat.PRIORITY_HIGH)

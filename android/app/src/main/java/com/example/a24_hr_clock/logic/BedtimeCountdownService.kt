@@ -111,6 +111,7 @@ class BedtimeCountdownService : Service() {
 
         return NotificationCompat.Builder(this, BedtimeNotificationManager.COUNTDOWN_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_recent_history)
+            .setGroup("com.example.a24_hr_clock.BEDTIME_COUNTDOWN")
             .setContentTitle("Bedtime")
             .setSubText("Target: $timeStr")
             .setCustomContentView(remoteViews)
