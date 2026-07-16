@@ -398,6 +398,7 @@ class ClockWallpaperService : WallpaperService() {
                     showWakeSunriseInfo = currentSettings.showWakeSunriseInfo,
                     showBathyphase = currentSettings.showBathyphase,
                     showAcrophase = currentSettings.showAcrophase,
+                    showGrogginess = currentSettings.showGrogginess,
                     isPreview = isPreview,
                     previewIsLockScreen = previewLockScreen
                 )

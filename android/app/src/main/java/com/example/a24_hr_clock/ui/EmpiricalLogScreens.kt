@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -28,7 +29,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.a24_hr_clock.logic.EnergyLog
-import kotlinx.coroutines.launch
 import com.example.a24_hr_clock.logic.EmpiricalEnergyManager
 import com.example.a24_hr_clock.logic.ModelSettings
 import java.time.Instant

@@ -62,10 +62,16 @@ class BedtimeCountdownService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val now = System.currentTimeMillis()
+        
+        // Ensure currentBedtimeMillis is in the future.
+        // If it passes during the service lifecycle, flip it to tomorrow.
+        if (now >= currentBedtimeMillis) {
+            currentBedtimeMillis += (24 * 60 * 60 * 1000L)
+        }
+
         val bedtime = LocalDateTime.ofInstant(Instant.ofEpochMilli(currentBedtimeMillis), ZoneId.systemDefault())
         val timeStr = bedtime.format(DateTimeFormatter.ofPattern("h:mm a"))
-
-        val now = System.currentTimeMillis()
         
         // If the calculated next bedtime is roughly 24 hours away, 
         // check if the bedtime that just passed was within the last 6 hours.
@@ -89,6 +95,7 @@ class BedtimeCountdownService : Service() {
         }
 
         val remoteViews = RemoteViews(packageName, R.layout.notification_bedtime).apply {
+            setChronometerCountDown(R.id.bedtime_chronometer, true)
             if (isOverdue) {
                 setViewVisibility(R.id.bedtime_chronometer, View.GONE)
                 setViewVisibility(R.id.bedtime_overdue_text, View.VISIBLE)
@@ -96,7 +103,8 @@ class BedtimeCountdownService : Service() {
             } else {
                 setViewVisibility(R.id.bedtime_chronometer, View.VISIBLE)
                 setViewVisibility(R.id.bedtime_overdue_text, View.GONE)
-                setChronometer(R.id.bedtime_chronometer, currentBedtimeMillis, null, true)
+                val elapsedRealtimeBase = android.os.SystemClock.elapsedRealtime() + (currentBedtimeMillis - now)
+                setChronometer(R.id.bedtime_chronometer, elapsedRealtimeBase, null, true)
                 setTextColor(R.id.bedtime_chronometer, color)
             }
         }
@@ -109,6 +117,8 @@ class BedtimeCountdownService : Service() {
             .setStyle(NotificationCompat.DecoratedCustomViewStyle())
             .setOngoing(true)
             .setWhen(currentBedtimeMillis)
+            .setUsesChronometer(!isOverdue)
+            .setChronometerCountDown(true)
             .setContentIntent(pendingIntent)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)

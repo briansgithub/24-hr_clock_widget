@@ -47,6 +47,12 @@ class ClockRenderer {
         isAntiAlias = true
     }
 
+    private val grogginessArcPaint = Paint().apply {
+        color = Color.parseColor("#60BBBBBB") // Solid light gray with transparency
+        style = Paint.Style.FILL
+        isAntiAlias = true
+    }
+
     private val handPaint = Paint().apply {
         color = Color.parseColor("#FF9F1C")
         style = Paint.Style.STROKE
@@ -152,6 +158,7 @@ class ClockRenderer {
         showWakeSunriseInfo: Boolean = true,
         showBathyphase: Boolean = false,
         showAcrophase: Boolean = false,
+        showGrogginess: Boolean = false,
         isPreview: Boolean = false,
         previewIsLockScreen: Boolean = false
     ) {
@@ -184,20 +191,6 @@ class ClockRenderer {
         // 1. Draw solid background
         canvas.drawCircle(centerX, centerY, radius, backgroundPaint)
 
-        // 2. Draw Night Shading
-        drawNightShading(canvas, centerX, centerY, radius, sunriseHour, sunsetHour)
-
-        // 3. Draw Sleep Arc
-        if (showSleep && sleepLogs.isNotEmpty()) {
-            drawSleepArcs(canvas, centerX, centerY, radius, sleepLogs, includeNaps, showTotalBedtime)
-        }
-
-        // 4. Draw Calendar Events
-        if (showCalendar) {
-            drawCalendarEvents(canvas, centerX, centerY, radius, calendarEvents)
-        }
-
-        // 5. Draw Energy Curve
         // Identify Active Sleep Date Logs (Today or Fallback)
         val todayStr = java.time.LocalDate.now().toString()
         var activeLogs = sleepLogs.filter { it.dateOfSleep == todayStr }
@@ -208,6 +201,25 @@ class ClockRenderer {
             }
         }
 
+        // 2. Draw Night Shading
+        drawNightShading(canvas, centerX, centerY, radius, sunriseHour, sunsetHour)
+
+        // 3. Draw Sleep Arc
+        if (showSleep && activeLogs.isNotEmpty()) {
+            drawSleepArcs(canvas, centerX, centerY, radius, activeLogs, includeNaps, showTotalBedtime)
+        }
+
+        // 3.5 Draw Grogginess Arc
+        if (showSleep && activeLogs.isNotEmpty()) {
+            drawGrogginessArc(canvas, centerX, centerY, radius, activeLogs)
+        }
+
+        // 4. Draw Calendar Events
+        if (showCalendar) {
+            drawCalendarEvents(canvas, centerX, centerY, radius, calendarEvents)
+        }
+
+        // 5. Draw Energy Curve
         val mainSleep = activeLogs.find { it.isMainSleep } ?: activeLogs.maxByOrNull { it.endTime }
         
         var wakeHour: Double? = mainSleep?.let {
@@ -754,20 +766,10 @@ class ClockRenderer {
         cx: Float,
         cy: Float,
         radius: Float,
-        logs: List<com.example.a24_hr_clock.logic.SleepLogEntry>,
+        targetLogs: List<com.example.a24_hr_clock.logic.SleepLogEntry>,
         includeNaps: Boolean,
         showTotalBedtime: Boolean
     ) {
-        val todayStr = java.time.LocalDate.now().toString()
-        var targetLogs = logs.filter { it.dateOfSleep == todayStr }
-        
-        if (targetLogs.isEmpty()) {
-            val lastLog = logs.maxByOrNull { it.dateOfSleep }
-            if (lastLog != null) {
-                targetLogs = logs.filter { it.dateOfSleep == lastLog.dateOfSleep }
-            }
-        }
-        
         targetLogs.forEach { log ->
             if (!includeNaps && !log.isMainSleep) return@forEach
             
@@ -795,6 +797,46 @@ class ClockRenderer {
                 canvas.drawArc(rect, sleepStartAngle.toFloat(), sleepSweep.toFloat(), true, sleepArcPaint)
             } catch (e: Exception) {}
         }
+    }
+
+    private fun drawGrogginessArc(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        radius: Float,
+        targetLogs: List<com.example.a24_hr_clock.logic.SleepLogEntry>
+    ) {
+        val mainSleep = targetLogs.filter { it.isMainSleep }.maxByOrNull { it.dateOfSleep } ?: return
+        
+        try {
+            val endDt = java.time.LocalDateTime.parse(mainSleep.endTime.replace("Z", ""))
+            val wakeHour = endDt.hour + endDt.minute / 60.0 + endDt.second / 3600.0
+            
+            val startAngle = (wakeHour - 18.0) * 15.0
+            val sweepAngle = 1.5 * 15.0
+            
+            val margin = radius * 0.15f
+            val rect = RectF(cx - (radius - margin), cy - (radius - margin), cx + (radius - margin), cy + (radius - margin))
+            
+            // Create a gradient that goes from dark gray to light gray over the duration of the wedge
+            val darkGray = Color.parseColor("#FF555555")
+            val lightGray = Color.parseColor("#FFEEEEEE")
+            
+            val shader = SweepGradient(
+                cx, cy,
+                intArrayOf(darkGray, lightGray, lightGray),
+                floatArrayOf(0f, (sweepAngle / 360f).toFloat(), 1f)
+            )
+            
+            // Rotate the shader so its start (0 position) aligns with the wake-up time
+            val matrix = Matrix()
+            matrix.postRotate(startAngle.toFloat(), cx, cy)
+            shader.setLocalMatrix(matrix)
+            
+            grogginessArcPaint.shader = shader
+            grogginessArcPaint.alpha = 255
+            canvas.drawArc(rect, startAngle.toFloat(), sweepAngle.toFloat(), true, grogginessArcPaint)
+        } catch (e: Exception) {}
     }
 
     private fun drawWakeIndicator(canvas: Canvas, cx: Float, cy: Float, radius: Float, wakeHour: Double) {

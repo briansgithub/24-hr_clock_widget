@@ -36,7 +36,8 @@ class SettingsManager(private val context: Context) {
             showManualWake = true,
             showBathyphase = true,
             showAcrophase = true,
-            showWakeSunriseInfo = false
+            showWakeSunriseInfo = false,
+            showGrogginess = true
         )
 
         private val DEFAULT_LOCK_SETTINGS = ClockSettings(
@@ -54,7 +55,8 @@ class SettingsManager(private val context: Context) {
             showManualWake = true,
             showBathyphase = true,
             showAcrophase = true,
-            showWakeSunriseInfo = true
+            showWakeSunriseInfo = true,
+            showGrogginess = false
         )
 
         private val DEFAULT_MODEL_SETTINGS = ModelSettings(
@@ -177,7 +179,8 @@ data class ClockSettings(
     val showManualWake: Boolean = true,
     val showBathyphase: Boolean = true,
     val showAcrophase: Boolean = true,
-    val showWakeSunriseInfo: Boolean = false
+    val showWakeSunriseInfo: Boolean = false,
+    val showGrogginess: Boolean = false
 )
 
 @Serializable
