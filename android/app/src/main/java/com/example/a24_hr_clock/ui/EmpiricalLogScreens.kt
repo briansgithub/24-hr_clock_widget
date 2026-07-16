@@ -348,9 +348,9 @@ fun EmpiricalLogHistoryScreen(
                         val timeStrEnd = formatterTime.format(localTime.plusMinutes(30))
 
                         val (statusText, statusColor) = when (log.status) {
-                            "LOGGED" -> "✓ ${log.energyLevel} / 100" to Color(0xFF2E7D32)
-                            "SLEEP_EXCLUDED" -> "💤 Sleep (Ignored)" to Color.Gray
-                            else -> "⚠️ Missed (Tap to fill)" to Color(0xFFC62828)
+                            "LOGGED" -> "✓ ${log.energyLevel} / 100" to Color(0xFF1B5E20)
+                            "SLEEP_EXCLUDED" -> "💤 Sleep (Ignored)" to Color(0xFF616161)
+                            else -> "⚠️ Missed (Tap to fill)" to Color(0xFFB71C1C)
                         }
 
                         Card(
@@ -366,6 +366,11 @@ fun EmpiricalLogHistoryScreen(
                                     "LOGGED" -> Color(0xFFE8F5E9)
                                     "SLEEP_EXCLUDED" -> Color(0xFFF5F5F5)
                                     else -> Color(0xFFFFEBEE)
+                                },
+                                contentColor = when (log.status) {
+                                    "LOGGED" -> Color(0xFF1B5E20)
+                                    "SLEEP_EXCLUDED" -> Color(0xFF212121)
+                                    else -> Color(0xFFB71C1C)
                                 }
                             )
                         ) {
