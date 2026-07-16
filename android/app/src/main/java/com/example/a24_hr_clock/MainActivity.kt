@@ -1008,7 +1008,6 @@ fun SleepLogScreen(
 
             var totalRaw = 0.0
             var totalWtd = 0.0
-            var weightIndex = 0
             val durations = mutableListOf<Double>()
             val efficiencies = mutableListOf<Double>()
             val startHours = mutableListOf<Double>()
@@ -1057,11 +1056,10 @@ fun SleepLogScreen(
                         
                         val debt = if (!isExcluded) sleepNeed else 0.0
                         if (!isExcluded) { 
-                            val weightedDebt = debt * Math.pow(0.9, weightIndex.toDouble())
+                            val weightedDebt = debt * Math.pow(0.9, i.toDouble())
                             totalRaw += debt
                             totalWtd += weightedDebt
                             durations.add(0.0) 
-                            weightIndex++
                             
                             val debtColor = Color(0xFFFF6B6B)
                             Text(text = String.format("%+.1f", debt), modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall, color = debtColor.copy(alpha = 0.5f), textAlign = TextAlign.End)
@@ -1078,11 +1076,20 @@ fun SleepLogScreen(
                     
                     if (!isExcluded) {
                         durations.add(totalDailyAsleep)
-                        efficiencies.add(dailyEff * 100.0)
+                        
+                        // Mean of session ratios, assuming naps are 100%
+                        logsForDay.forEach { log ->
+                            if (modelSettings.includeNaps || log.isMainSleep) {
+                                val sessionEff = if (!log.isMainSleep) 1.0 
+                                    else if (log.timeInBed > 0) log.minutesAsleep.toDouble() / log.timeInBed 
+                                    else 0.92
+                                efficiencies.add(sessionEff * 100.0)
+                            }
+                        }
+
                         val debt = sleepNeed - totalDailyAsleep
                         totalRaw += debt
-                        totalWtd += debt * Math.pow(0.9, weightIndex.toDouble())
-                        weightIndex++
+                        totalWtd += debt * Math.pow(0.9, i.toDouble())
                         
                         // For AVG start/end, use main sleep
                         val mainSleep = logsForDay.find { it.isMainSleep } ?: logsForDay.first()
@@ -1124,7 +1131,7 @@ fun SleepLogScreen(
 
                             if (sessionIdx == 0) {
                                 val debt = sleepNeed - totalDailyAsleep
-                                val weightedDebt = if (!isExcluded) debt * Math.pow(0.9, (weightIndex - 1).toDouble()) else 0.0
+                                val weightedDebt = if (!isExcluded) debt * Math.pow(0.9, i.toDouble()) else 0.0
                                 val debtColor = if (isExcluded) rowColor else if (debt > 0.1) Color(0xFFFF6B6B) else if (debt < -0.1) Color(0xFF6BFF6B) else MaterialTheme.colorScheme.onSurface
                                 Text(text = if (isExcluded) "—" else String.format("%+.1f", debt), modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall, color = debtColor.copy(alpha = 0.5f), textAlign = TextAlign.End)
                                 Text(text = if (isExcluded) "—" else String.format("%+.1f", weightedDebt), modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall, color = debtColor, textAlign = TextAlign.End)

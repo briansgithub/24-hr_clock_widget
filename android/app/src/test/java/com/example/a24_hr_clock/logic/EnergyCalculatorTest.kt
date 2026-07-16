@@ -50,31 +50,20 @@ class EnergyCalculatorTest {
             excludedDates = listOf(today)
         )
         
-        // Scenario B: Today didn't exist in the calculation loop (same as before midnight)
-        // With the NEW logic, if today is excluded, yesterday's weight is 0.9^0 = 1.0.
+        // Anchored Logic: Today (T-0) is skipped. Yesterday (T-1) has weight 0.9^1.
         // Yesterday's debt = 8.0 - 7.0 = 1.0.
-        // HOWEVER, the loop goes up to 15 days.
-        // All days from T-1 to T-14 will be included if not in logs.
-        // T-1 (Yesterday): actual=7.0, debt=1.0, weight=0.9^0=1.0 -> 1.0
-        // T-2: actual=0.0, debt=8.0, weight=0.9^1=0.9 -> 7.2
-        // T-3: actual=0.0, debt=8.0, weight=0.9^2=0.81 -> 6.48
-        // ... and so on. 
-        // So the total debt is NOT 1.0, it's 1.0 + (rest of 13 days of full debt).
+        // T-1 (Yesterday): actual=7.0, debt=1.0, weight=0.9^1=0.9 -> 0.9
+        // T-2: actual=0.0, debt=8.0, weight=0.9^2=0.81 -> 6.48
+        // ... and so on up to T-14.
         
-        // Let's check what the value ACTUALLY is by adding a print or adjusting expectation.
-        // Actually, we want to verify STABILITY.
-        // So let's compare "Today Excluded" with "Yesterday's calculation (simulated)".
-        
-        // Pre-Midnight (Yesterday was T-0)
-        // We can't easily change LocalDate.now() without mocking or passing it as param.
-        // But we can check if it matches the manually calculated expected value.
-        // 1.0 * (0.9^0) + 8.0 * (0.9^1) + 8.0 * (0.9^2) ... 8.0 * (0.9^13)
-        var expected = 1.0
-        for (w in 1..13) {
-            expected += 8.0 * Math.pow(0.9, w.toDouble())
+        var expected = 0.0
+        for (i in 1 until 15) {
+            val actual = if (i == 1) 7.0 else 0.0
+            val nightlyDebt = sleepNeed - actual
+            expected += nightlyDebt * Math.pow(0.9, i.toDouble())
         }
         
-        assertEquals("Debt should match manually calculated stable debt", expected, debtWithExcludedToday, 0.001)
+        assertEquals("Debt should match anchored calendar offset calculation", expected, debtWithExcludedToday, 0.001)
         
         // Scenario C: Today is NOT excluded and has no sleep log yet.
         val debtWithIncludedToday = EnergyCalculator.computeSleepDebt(
@@ -85,9 +74,11 @@ class EnergyCalculatorTest {
         
         // Today's debt = 8.0 - 0.0 = 8.0.
         // Total debt = 8.0 * (0.9^0) + 1.0 * (0.9^1) + 8.0 * (0.9^2) ... 8.0 * (0.9^14)
-        var expectedIncluded = 8.0 * Math.pow(0.9, 0.0) + 1.0 * Math.pow(0.9, 1.0)
-        for (w in 2..14) {
-            expectedIncluded += 8.0 * Math.pow(0.9, w.toDouble())
+        var expectedIncluded = 0.0
+        for (i in 0 until 15) {
+            val actual = if (i == 1) 7.0 else 0.0
+            val nightlyDebt = sleepNeed - actual
+            expectedIncluded += nightlyDebt * Math.pow(0.9, i.toDouble())
         }
         
         assertEquals("Debt should increase when today is included but has no logs", expectedIncluded, debtWithIncludedToday, 0.001)
