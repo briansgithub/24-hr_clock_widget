@@ -2231,6 +2231,37 @@ class ClockWidget:
                     )
                 except (KeyError, ValueError):
                     continue
+
+            # Draw grogginess wedge for the main sleep
+            main_sleep = next((log for log in self.raw_sleep_logs if log.get('dateOfSleep') == self.active_sleep_date and log.get('isMainSleep', False)), None)
+            if main_sleep:
+                try:
+                    end_dt = datetime.datetime.fromisoformat(main_sleep['endTime'].replace('Z', ''))
+                    wake_h = end_dt.hour + end_dt.minute / 60.0 + end_dt.second / 3600.0
+                    
+                    g_start_angle = (18 - wake_h) * 15
+                    g_extent = 1.5 * 15  # 22.5 degrees (1 hr 30 min)
+                    
+                    sleep_margin = radius * 0.15
+                    num_steps = 10
+                    for i in range(num_steps):
+                        t = i / (num_steps - 1)
+                        # Interpolate from #555555 (85,85,85) to #EEEEEE (238,238,238)
+                        val = int(85 + (238 - 85) * t)
+                        slice_color = f"#{val:02x}{val:02x}{val:02x}"
+                        
+                        step_size = g_extent / num_steps
+                        s_angle = g_start_angle - i * step_size
+                        
+                        self.canvas.create_arc(
+                            center_x - (radius - sleep_margin), center_y - (radius - sleep_margin),
+                            center_x + (radius - sleep_margin), center_y + (radius - sleep_margin),
+                            start=s_angle, extent=-step_size,
+                            fill=slice_color, outline=slice_color, style=tk.PIESLICE,
+                            tags="sleep_arc"
+                        )
+                except (KeyError, ValueError):
+                    pass
            
         def draw_energy_curve():
             if self.show_energy.get() and self.wake_hour is not None:

@@ -542,6 +542,7 @@ fun ClockPreviewScreen(
                     showManualWake = settings.showManualWake,
                     manualWakeTime = modelSettings.manualWakeTime,
                     showWakeSunriseInfo = settings.showWakeSunriseInfo,
+                    showGrogginess = settings.showGrogginess,
                     isPreview = true,
                     previewIsLockScreen = title.contains("Lock Screen")
                 )
@@ -854,6 +855,9 @@ fun DisplaySettingsScreen(
         }
         SettingToggle("Acrophase indicator", currentSettings.showAcrophase) {
             updateFunc(currentSettings.copy(showAcrophase = it))
+        }
+        SettingToggle("Grogginess Wedge", currentSettings.showGrogginess) {
+            updateFunc(currentSettings.copy(showGrogginess = it))
         }
 
         Spacer(modifier = Modifier.height(16.dp))
