@@ -26,3 +26,10 @@ The wallpaper now features a detailed informational overlay in the bottom-left c
     - **SunCalc**: For precise celestial position and solar event calculations.
     - **Google Play Services Location**: For accurate sunrise/sunset calculations based on device position.
 - **Architecture**: Service-based wallpaper with custom rendering logic and Coroutine-powered data synchronization.
+
+## Local Setup
+
+The app requires Fitbit API credentials to function. These are loaded from `local.properties` (not tracked in Git).
+
+1.  Follow the **Secret Configuration** steps in the [Root README](../README.md).
+2.  Build the project in Android Studio. The keys will be automatically injected via `BuildConfig`.
