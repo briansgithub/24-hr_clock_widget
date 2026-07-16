@@ -1,7 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
-    kotlin("plugin.serialization") version "2.2.10"
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -66,6 +66,7 @@ dependencies {
     implementation("androidx.browser:browser:1.8.0")
 
     // Location services
+    implementation(libs.androidx.work.runtime.ktx)
     implementation("com.google.android.gms:play-services-location:21.3.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
 

@@ -1,0 +1,4 @@
+- [x] Fix Version Catalog (`libs.versions.toml`)
+- [x] Update root `build.gradle.kts` plugin aliases
+- [x] Standardize `:app` `build.gradle.kts` serialization plugin
+- [x] Run Gradle Sync and verify modules

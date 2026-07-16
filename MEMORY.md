@@ -19,3 +19,7 @@ External service authentication (Fitbit & Google Calendar) had friction points:
 ### Proactive Data Refreshing
 - **Interaction Triggers**: Refresh on Android unlock or Python widget hover.
 - **Aggressive Polling**: Standardized on 10-minute polling intervals for all data.
+
+## Bug Fixes & Stability (2026-07-16)
+- **Resolved Notification Crash**: Fixed an unresolved reference to `setSmallResource` by correcting it to `setSmallIcon` in `AuthNotificationManager`.
+- **Restored WorkManager**: Added the missing `androidx.work:work-runtime-ktx` dependency, resolving multiple compilation errors in the background sync logic (`SyncManager` and `SyncWorker`).

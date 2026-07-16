@@ -46,7 +46,7 @@ class AuthNotificationManager(private val context: Context) {
         )
 
         val builder = NotificationCompat.Builder(context, channelId)
-            .setSmallResource(android.R.drawable.ic_dialog_alert)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle("Fitbit Reconnection Needed")
             .setContentText("Tap to quickly reconnect and resume syncing sleep data.")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
