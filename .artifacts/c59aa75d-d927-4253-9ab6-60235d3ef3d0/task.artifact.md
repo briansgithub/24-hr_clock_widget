@@ -1,3 +1,5 @@
-- [ ] Include Python widget in `settings.gradle.kts`
-- [ ] Perform Gradle Sync
-- [ ] Verify access to both projects
+- [ ] Create root `.gitignore` with workspace file exclusion
+- [ ] Create `24-hr-clock.code-workspace` for VS Code/Cursor
+- [ ] Clean up root Gradle files (`settings.gradle`, `build.gradle.kts`)
+- [ ] Configure root `settings.gradle.kts` for Android Studio
+- [ ] Verify ignore status and IDE recognition

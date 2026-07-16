@@ -1,58 +1,31 @@
-# Streamlining Auth and Sync for Fitbit & Google Calendar
+# Implementation Plan: IDE Workspace Configuration
 
-This plan aims to reduce friction when reconnecting to external services (Fitbit and Google Calendar) across both the Android app and the Python widget.
-
-## User Review Required
-
-> [!IMPORTANT]
-> For the Python widget, I propose moving away from "Automatic browser popups on failure" in favor of a "User-triggered re-auth" via an icon in the widget. This prevents unexpected browser windows from appearing during background refreshes.
+This plan involves creating and configuring workspace files for VS Code/Cursor and ensuring the project can be opened seamlessly in Android Studio at the monorepo root.
 
 ## Proposed Changes
 
-### [Component] Android App (Kotlin)
+### [Component] VS Code / Cursor / Antigravity
 
-#### [MODIFY] [FitbitManager.kt](file:///H:/Desktop/widgets/24_hr_clock_android/app/src/main/java/com/example/a24_hr_clock/logic/FitbitManager.kt)
-- Add a `reauthRequiredFlow` to track if tokens are dead.
-- Update `refreshTokens()` to set this flag if it fails with a 401/400.
+#### [NEW] [24-hr-clock.code-workspace](file:///H:/Desktop/widgets/24-hr_clock_widget/24-hr-clock.code-workspace)
+- Configure a multi-root workspace including the `android/` and `python/` directories.
+- This allows the IDE to treat them as separate projects with their own settings and extensions within a single window.
 
-#### [MODIFY] [MainActivity.kt](file:///H:/Desktop/widgets/24_hr_clock_android/app/src/main/java/com/example/a24_hr_clock/MainActivity.kt)
-- Observe `reauthRequiredFlow`.
-- In the `Sleep` tab, show a high-visibility warning if re-auth is needed.
-- In the `Preview` screen, add a small subtle indicator (e.g., a tinted icon) if sync is failing.
+### [Component] Root Configuration
 
-#### [NEW] [AuthNotificationManager.kt](file:///H:/Desktop/widgets/24_hr_clock_android/app/src/main/java/com/example/a24_hr_clock/logic/AuthNotificationManager.kt)
-- A helper to show a system notification when background sync fails due to auth, allowing the user to tap to open the re-auth screen.
+#### [NEW] [.gitignore](file:///H:/Desktop/widgets/24-hr_clock_widget/.gitignore)
+- Ignore the `.code-workspace` files as requested.
+- Include standard ignore patterns for Python, Android, and common IDEs (`.idea`, `.vscode`, `__pycache__`, `build/`, etc.).
 
----
+#### [DELETE] [settings.gradle](file:///H:/Desktop/widgets/24-hr_clock_widget/settings.gradle)
+- Remove the stale root `settings.gradle` file.
 
-### [Component] Python Widget (Python)
-
-#### [MODIFY] [fitbit_client.py](file:///H:/Desktop/widgets/24-hr_clock_widget/fitbit_client.py)
-- Change `_request_with_refresh` to raise a specific `ReauthRequiredError` instead of calling `authorize()` directly.
-- Add an `is_authenticated` property.
-
-#### [MODIFY] [google_calendar_client.py](file:///H:/Desktop/widgets/24-hr_clock_widget/google_calendar_client.py)
-- Update `get_calendar_service` to allow a "check only" mode that doesn't pop the browser.
-- Raise `ReauthRequiredError` on refresh failure.
-
-#### [MODIFY] [clock_widget.py](file:///H:/Desktop/widgets/24-hr_clock_widget/clock_widget.py)
-- Add a "Sync Status" indicator to the UI.
-- Use a non-blocking thread to check for `ReauthRequiredError`.
-- If an error is caught, update the UI to show a "Reconnect" button/icon that the user must click to open the browser.
-
----
-
-### [Component] Project Documentation
-
-#### [NEW] [MEMORY.md](file:///H:/Desktop/widgets/24_hr_clock_android/MEMORY.md)
-- Record the friction analysis and the architectural changes made to streamline the process.
+#### [NEW] [settings.gradle.kts](file:///H:/Desktop/widgets/24-hr_clock_widget/settings.gradle.kts)
+- Create a root Gradle settings file that delegates to the `android/` project or includes it.
+- This allows Android Studio to open the monorepo root and recognize the Android module.
 
 ## Verification Plan
 
-### Automated Tests
-- For Android: Mock a 401 response and verify the re-auth flag is set in DataStore.
-- For Python: Unit test the `FitbitClient` to ensure it raises `ReauthRequiredError` when refresh fails.
-
 ### Manual Verification
-- **Android:** Revoke the app's access on the Fitbit dashboard, run the app, and verify the "Re-auth Required" UI and notification appear.
-- **Python:** Manually delete `token.json` or `fitbit_tokens.json` and verify the widget shows a "Sync Error" icon instead of immediately opening the browser.
+- Open the root directory in VS Code and verify that both `android` and `python` folders appear as distinct roots if opened via the `.code-workspace` file.
+- Open the root directory in Android Studio and verify it recognizes the Gradle project structure.
+- Check `git status` to ensure workspace files are not being tracked.
