@@ -210,7 +210,7 @@ class ClockRenderer {
         }
 
         // 3.5 Draw Grogginess Arc
-        if (showSleep && activeLogs.isNotEmpty()) {
+        if (showGrogginess && activeLogs.isNotEmpty()) {
             drawGrogginessArc(canvas, centerX, centerY, radius, activeLogs)
         }
 
@@ -812,8 +812,9 @@ class ClockRenderer {
             val endDt = java.time.LocalDateTime.parse(mainSleep.endTime.replace("Z", ""))
             val wakeHour = endDt.hour + endDt.minute / 60.0 + endDt.second / 3600.0
             
-            val startAngle = (wakeHour - 18.0) * 15.0
-            val sweepAngle = 1.5 * 15.0
+            val originalStartAngle = (wakeHour - 18.0) * 15.0
+            val startAngle = originalStartAngle - 0.5
+            val sweepAngle = 1.5 * 15.0 + 0.5
             
             val margin = radius * 0.15f
             val rect = RectF(cx - (radius - margin), cy - (radius - margin), cx + (radius - margin), cy + (radius - margin))
@@ -822,15 +823,17 @@ class ClockRenderer {
             val darkGray = Color.parseColor("#FF555555")
             val lightGray = Color.parseColor("#FFEEEEEE")
             
+            // Wrap the gradient color array with darkGray at the end (1.0f)
+            // This prevents the SweepGradient wrapping filter from blending lightGray into the start (0.0f) position.
             val shader = SweepGradient(
                 cx, cy,
-                intArrayOf(darkGray, lightGray, lightGray),
+                intArrayOf(darkGray, lightGray, darkGray),
                 floatArrayOf(0f, (sweepAngle / 360f).toFloat(), 1f)
             )
             
-            // Rotate the shader so its start (0 position) aligns with the wake-up time
+            // Rotate the shader so its 0 position aligns with the original wake-up start angle
             val matrix = Matrix()
-            matrix.postRotate(startAngle.toFloat(), cx, cy)
+            matrix.postRotate(originalStartAngle.toFloat(), cx, cy)
             shader.setLocalMatrix(matrix)
             
             grogginessArcPaint.shader = shader
