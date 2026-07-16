@@ -11,8 +11,22 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
         android:layout_marginBottom="4dp"
+        android:countDown="true"
         android:textAppearance="@style/TextAppearance.Compat.Notification.Title"
         android:textSize="24sp"
-        android:textColor="?android:attr/textColorPrimary" />
+        android:textColor="#FFFFFF" />
+
+    <TextView
+        android:id="@+id/bedtime_overdue_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="4dp"
+        android:text="GO TO BED!"
+        android:textStyle="bold"
+        android:textAppearance="@style/TextAppearance.Compat.Notification.Title"
+        android:textSize="24sp"
+        android:textColor="#888888"
+        android:visibility="gone" />
 
 </LinearLayout>

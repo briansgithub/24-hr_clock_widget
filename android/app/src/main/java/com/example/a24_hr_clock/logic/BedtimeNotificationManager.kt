@@ -91,9 +91,7 @@ class BedtimeNotificationManager(private val context: Context) {
             val now = LocalDateTime.now()
             var target = bedtime.withYear(now.year).withMonth(now.monthValue).withDayOfMonth(now.dayOfMonth)
             
-            // If the calculated time has already passed today, assume it's for the next cycle
-            // But bedtime is usually late at night. If it's 5 AM and bedtime was 11 PM yesterday, target is in the past.
-            // If it's 10 PM and bedtime is 11 PM, target is in the future.
+            // Always return the NEXT occurrence (strictly in the future)
             if (target.isBefore(now)) {
                 target = target.plusDays(1)
             }

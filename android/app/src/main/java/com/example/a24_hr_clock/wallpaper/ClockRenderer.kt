@@ -123,6 +123,7 @@ class ClockRenderer {
         sunRad: Double,
         moonRad: Double,
         moonPhaseValue: Double,
+        sunElevation: Double,
         solarIrradiance: Int,
         sleepDebt: Double,
         bathyphaseHour: Double?,
@@ -344,7 +345,7 @@ class ClockRenderer {
 
         // 10. Draw Sun and Moon
         if (showSunMoon) {
-            drawSunAndMoon(canvas, centerX, centerY, radius, sunRad, moonRad, moonPhaseValue)
+            drawSunAndMoon(canvas, centerX, centerY, radius, sunRad, moonRad, moonPhaseValue, sunElevation)
         }
 
         // 11. Draw Clock Hand
@@ -832,7 +833,16 @@ class ClockRenderer {
         canvas.drawLine(x1, y1, x2, y2, paint)
     }
 
-    private fun drawSunAndMoon(canvas: Canvas, cx: Float, cy: Float, radius: Float, sunRad: Double, moonRad: Double, moonPhase: Double) {
+    private fun drawSunAndMoon(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        radius: Float,
+        sunRad: Double,
+        moonRad: Double,
+        moonPhase: Double,
+        sunElevation: Double
+    ) {
         // Guard: If orbit logic results in default 0 coordinates at center, don't draw
         if (sunRad == 0.0 && moonRad == 0.0) return
 
@@ -846,6 +856,16 @@ class ClockRenderer {
 
         // Sun
         val sunR = iconSize / 1.6f
+        
+        // Dynamic sun color based on elevation
+        val (sunColor, sunAlpha) = interpolateSunColor(sunElevation)
+        sunPaint.color = sunColor
+        sunPaint.alpha = sunAlpha
+        
+        // Sun Outline - also dynamic but slightly more orange/darker
+        sunOutlinePaint.color = interpolateSunOutlineColor(sunElevation)
+        sunOutlinePaint.alpha = sunAlpha
+
         canvas.drawCircle(sx, sy, sunR, sunPaint)
         canvas.drawCircle(sx, sy, sunR, sunOutlinePaint)
 
@@ -874,6 +894,50 @@ class ClockRenderer {
             }
         } else if (p > 0.49 && p < 0.51) {
             canvas.drawCircle(mx, my, mR, moonLitPaint)
+        }
+    }
+    private fun interpolateSunColor(elevation: Double): Pair<Int, Int> {
+        val darkestElev = -8.0
+        
+        if (elevation >= 0) {
+            // Day/Golden Hour: Fully opaque
+            val t = (elevation / 20.0).coerceIn(0.0, 1.0)
+            
+            // Transition from Deep Orange (#FF4500) at horizon to Bright Yellow (#FFD700) at 20+ deg
+            val r = 255
+            val g = (69 * (1 - t) + 215 * t).toInt()
+            val b = 0
+            
+            return Color.rgb(r, g, b) to 255
+        } else {
+            // Twilight/Night: Alpha scales up to 255 as it approaches the horizon
+            val ratio = ((elevation - darkestElev) / (0.0 - darkestElev)).coerceIn(0.0, 1.0)
+            val alpha = (60 + (195 * ratio)).toInt() // Alpha 60 at night, 255 at horizon
+            
+            // Faint yellow/gold transition
+            val r = (139 * (1 - ratio) + 255 * ratio).toInt()
+            val g = (128 * (1 - ratio) + 69 * ratio).toInt()
+            val b = 0
+            
+            return Color.rgb(r, g, b) to alpha
+        }
+    }
+
+    private fun interpolateSunOutlineColor(elevation: Double): Int {
+        val darkestElev = -8.0
+        if (elevation >= 0) {
+            val t = (elevation / 20.0).coerceIn(0.0, 1.0)
+            // Outline stays a bit more orange/red than the fill for contrast
+            val r = 255
+            val g = (40 * (1 - t) + 165 * t).toInt() 
+            val b = 0
+            return Color.rgb(r, g, b)
+        } else {
+            // At night, the outline matches the fill to prevent the "ring" look
+            val ratio = ((elevation - darkestElev) / (0.0 - darkestElev)).coerceIn(0.0, 1.0)
+            val r = (139 * (1 - ratio) + 255 * ratio).toInt()
+            val g = (128 * (1 - ratio) + 69 * ratio).toInt()
+            return Color.rgb(r, g, 0)
         }
     }
 }

@@ -74,7 +74,9 @@ class SettingsManager(private val context: Context) {
             restingHR = 55.0,
             hrvPeakPotential = 71.0,
             hrvMedicatedBase = 30.0,
-            googleDriveUrl = ""
+            googleDriveUrl = "",
+            localBackupUri = "",
+            lastEmpiricalSync = 0L
         )
 
         private val DEFAULT_CALENDAR_SETTINGS = CalendarSettings()
@@ -202,6 +204,8 @@ data class ModelSettings(
     val restingHR: Double = 55.0,
     val hrvPeakPotential: Double = 71.0,
     val hrvMedicatedBase: Double = 30.0,
-    val googleDriveUrl: String = ""
+    val googleDriveUrl: String = "",
+    val localBackupUri: String = "",
+    val lastEmpiricalSync: Long = 0L
 )
 

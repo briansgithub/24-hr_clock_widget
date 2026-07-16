@@ -76,6 +76,7 @@ class ClockWallpaperService : WallpaperService() {
         private var sunRad = 0.0
         private var moonRad = 0.0
         private var moonPhaseValue = 0.0
+        private var sunElevation = 0.0
         private var sleepLogs = emptyList<SleepLogEntry>()
         private var sleepDebt = 0.0
         private var bathyphaseHour: Double? = null
@@ -270,10 +271,11 @@ class ClockWallpaperService : WallpaperService() {
             sunriseHour = sunrise
             sunsetHour = sunset
             
-            val (sRad, mRad, mPhase) = celestialManager.getCelestialPositions()
-            sunRad = sRad
-            moonRad = mRad
-            moonPhaseValue = mPhase
+            val celestial = celestialManager.getCelestialPositions()
+            sunRad = celestial.sunRad
+            moonRad = celestial.moonRad
+            moonPhaseValue = celestial.moonPhase
+            sunElevation = celestial.sunElevation
 
             solarIrradiance = celestialManager.getSolarIrradiance()
         }
@@ -367,6 +369,7 @@ class ClockWallpaperService : WallpaperService() {
                     sunRad = sunRad,
                     moonRad = moonRad,
                     moonPhaseValue = moonPhaseValue,
+                    sunElevation = sunElevation,
                     solarIrradiance = solarIrradiance,
                     sleepDebt = sleepDebt,
                     bathyphaseHour = bathyphaseHour,

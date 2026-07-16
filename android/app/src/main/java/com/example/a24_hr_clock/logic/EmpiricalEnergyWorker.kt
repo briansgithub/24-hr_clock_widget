@@ -18,7 +18,7 @@ class EmpiricalEnergyWorker(
 
         return try {
             val nowMs = System.currentTimeMillis()
-            
+
             // 1. Initialize this 30-minute interval as MISSED (empty) if not already logged
             val alignedTs = manager.alignTo30MinInterval(nowMs)
             val logs = manager.loadLogs()

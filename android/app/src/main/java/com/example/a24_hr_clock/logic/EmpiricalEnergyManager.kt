@@ -1,7 +1,11 @@
 package com.example.a24_hr_clock.logic
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
+import androidx.documentfile.provider.DocumentFile
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
@@ -179,10 +183,9 @@ class EmpiricalEnergyManager(private val context: Context) {
     }
 
     // Push the CSV data to a Google Apps Script deployment URL (Web App REST endpoint)
-    fun uploadToGoogleDrive(webAppUrl: String, callback: (Boolean, String) -> Unit) {
+    suspend fun uploadToGoogleDrive(webAppUrl: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         if (webAppUrl.isEmpty()) {
-            callback(false, "Web App URL is empty")
-            return
+            return@withContext false to "Web App URL is empty"
         }
 
         val csvContent = generateCSVExport()
@@ -194,18 +197,97 @@ class EmpiricalEnergyManager(private val context: Context) {
             .post(body)
             .build()
 
-        okHttpClient.newCall(request).enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {
-                callback(false, e.message ?: "Network error")
+        try {
+            val response = okHttpClient.newCall(request).execute()
+            if (response.isSuccessful) {
+                true to "Successfully exported data to Google Drive"
+            } else {
+                false to "Server error: ${response.code} ${response.message}"
             }
+        } catch (e: Exception) {
+            false to (e.message ?: "Network error")
+        }
+    }
 
-            override fun onResponse(call: Call, response: Response) {
-                if (response.isSuccessful) {
-                    callback(true, "Successfully exported data to Google Drive")
-                } else {
-                    callback(false, "Server error: ${response.code} ${response.message}")
+    // Sync the master CSV log to a public storage directory (survives uninstall)
+    fun syncToPublicStorage(uriString: String): Boolean {
+        if (uriString.isEmpty()) return false
+        return try {
+            val treeUri = Uri.parse(uriString)
+            val rootDoc = DocumentFile.fromTreeUri(context, treeUri) ?: return false
+            
+            // Look for or create the file
+            var fileDoc = rootDoc.findFile("Alertness_Master_Log.csv")
+            if (fileDoc == null) {
+                fileDoc = rootDoc.createFile("text/csv", "Alertness_Master_Log.csv")
+            }
+            
+            if (fileDoc != null) {
+                context.contentResolver.openOutputStream(fileDoc.uri)?.use { os ->
+                    os.write(generateCSVExport().toByteArray())
+                }
+                true
+            } else false
+        } catch (e: Exception) {
+            Log.e("EmpiricalEnergyManager", "Failed to sync to public storage", e)
+            false
+        }
+    }
+
+    // Import logs from the public master CSV file (restore after reinstall)
+    fun importFromPublicStorage(uriString: String): Boolean {
+        if (uriString.isEmpty()) return false
+        return try {
+            val treeUri = Uri.parse(uriString)
+            val rootDoc = DocumentFile.fromTreeUri(context, treeUri) ?: return false
+            val fileDoc = rootDoc.findFile("Alertness_Master_Log.csv") ?: return false
+            
+            val content = context.contentResolver.openInputStream(fileDoc.uri)?.bufferedReader()?.use { it.readText() } ?: return false
+            val lines = content.lines()
+            if (lines.isEmpty()) return false
+            
+            val newLogs = mutableListOf<EnergyLog>()
+            // Skip header
+            for (i in 1 until lines.size) {
+                val line = lines[i].trim()
+                if (line.isEmpty()) continue
+                val parts = line.split(",")
+                if (parts.size >= 4) {
+                    val ts = parts[0].toLongOrNull() ?: continue
+                    val level = parts[2].toIntOrNull()
+                    val status = parts[3]
+                    newLogs.add(EnergyLog(ts, level, status))
                 }
             }
-        })
+            
+            if (newLogs.isNotEmpty()) {
+                // Merge with existing internal logs
+                val existing = loadLogs().associateBy { it.timestamp }.toMutableMap()
+                for (log in newLogs) {
+                    existing[log.timestamp] = log
+                }
+                saveLogs(existing.values.toList().sortedBy { it.timestamp })
+                true
+            } else false
+        } catch (e: Exception) {
+            Log.e("EmpiricalEnergyManager", "Failed to import from public storage", e)
+            false
+        }
+    }
+
+    // Orchestrated auto-backup (to both Local and Drive). Returns true if sync happened.
+    suspend fun autoBackup(settings: ModelSettings): Boolean {
+        var didSync = false
+        if (settings.localBackupUri.isNotEmpty()) {
+            if (syncToPublicStorage(settings.localBackupUri)) {
+                didSync = true
+            }
+        }
+        if (settings.googleDriveUrl.isNotEmpty()) {
+            val (success, msg) = uploadToGoogleDrive(settings.googleDriveUrl)
+            Log.d("EmpiricalEnergyManager", "Auto-backup to Drive: $success, $msg")
+            if (success) didSync = true
+        }
+        return didSync
     }
 }
