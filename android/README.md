@@ -4,6 +4,12 @@ An Android live wallpaper that renders a 24-hour analog clock with circadian rhy
 
 ## Recent Features
 
+### 2024 Energy Model Update
+The alertness model has been overhauled to align with the latest 2024 sleep research.
+- **Updated Constants**: Uses modern time constants ($\tau_{wake}$ = 23.0h) for improved prediction accuracy.
+- **High-Precision Bathyphase**: Uses a parabolic fit on heart rate data to identify your circadian nadir with minute-level precision.
+- **Acrophase Indicator**: Displays an inward-pointing triangle at your predicted peak alertness point, derived by scanning your personalized model.
+
 ### Wake-up Correlation & Timezone Discovery
 The wallpaper now features a detailed informational overlay in the bottom-left corner that helps contextualize your sleep patterns relative to solar cycles.
 

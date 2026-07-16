@@ -13,8 +13,9 @@ A collection of desktop widgets built with Python and Tkinter, featuring a uniqu
 ### Fitbit Integration & Sleep Tracking
 - **Sleep Arc**: Visualizes your last night's sleep directly on the clock face. 
 - **Bedtime Mode**: Toggle between "Time in Bed" (total window) vs "Actual Sleep Time" (minus wake-ups) to see how efficient your rest was.
-- **Circadian Energy Curve**: A color-coded gradient (Cyan to Red) that visualizes your alertness throughout the day.
+- **Circadian Energy Curve**: A color-coded gradient (Cyan to Red) that visualizes your alertness throughout the day. Updated to 2024 research standards.
 - **Weighted Sleep Debt**: Models the impact of your last 14 days of sleep with a 90% daily decay factor, making recent rest (and naps) more influential.
+- **Bathyphase & Acrophase Indicators**: Displays inward-pointing triangles at your lowest heart rate (trough) and highest predicted energy (peak).
 - **Normalization**: Switch between an absolute "Alertness" view and a normalized view that fills the clock face for better visibility.
 - **Energy Percentage**: Displays your current alertness as a percentage (0-100%) at the tip of the clock hand.
     - **100%** represents your theoretical peak alertness today if you were fully rested (0 sleep debt and 9.75 hours of sleep).
@@ -75,13 +76,13 @@ The energy curve is powered by a research-backed **Two-Process Model of Alertnes
 - **Bedtime Goal**: Your target time spent in bed each night. 
     - *Effect*: Higher values increase your daily 'Sleep Need'. If your goal is 10h and your efficiency is 90%, your need is 9h. Increasing this makes your energy curve sink more when you sleep less than your goal.
 - **Circadian Offset**: Number of hours after wake when your primary circadian alerting signal reaches its peak.
-    - *Effect*: Default is **12.0h**. Increasing this shifts your "Evening Peak" (Wake Maintenance Zone) later in the day. Decreasing it shifts it earlier.
-- **Use Bathyphase HR**: Anchors the model to your actual physiological trough.
-    - *Effect*: When enabled, the widget uses the Fitbit-detected hour of lowest heart rate to precisely time your circadian peaks and dips.
+    - *Effect*: Default is **13.0h** (assuming 2h pre-wake nadir + 15h offset). Increasing this shifts your "Evening Peak" later in the day.
+- **Use Bathyphase HR**: Anchors the model to your actual physiological trough using a high-precision parabolic fit.
+    - *Effect*: When enabled, the widget uses your sub-hour precise HR minimum to anchor your circadian peaks and dips.
 - **Homeostatic Tau (Awake)**: The time constant for sleep pressure accumulation while awake.
-    - *Effect*: Default is **18.2h**. Higher values mean sleep pressure builds up more slowly, making you stay alert for longer during the day. Lower values mean you tire faster.
+    - *Effect*: Updated to **23.0h** (2024 Research Standard). Higher values mean sleep pressure builds up more slowly.
 - **Homeostatic Tau (Sleep)**: The time constant for sleep pressure dissipation while asleep.
-    - *Effect*: Default is **4.2h**. Higher values mean sleep is *less* effective at clearing pressure, requiring more sleep to feel rested. Lower values represent faster recovery.
+    - *Effect*: Updated to **4.0h** (2024 Research Standard). Represents the rate of recovery during sleep.
 - **Sleep Inertia**: The duration of the "fog" or suppressed alertness immediately after waking.
     - *Effect*: Default is **1.5h**. Adjusts how long the energy curve remains near zero before beginning its morning ascent.
 - **Debt Sensitivity**: A multiplier for the penalty applied by accumulated sleep debt over the last 14 days.

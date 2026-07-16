@@ -10,8 +10,8 @@ object EnergyCalculator {
         sleepDuration: Double = 7.5,
         circadianPeakOffset: Double = 10.0,
         clamp: Boolean = true,
-        tauWake: Double = 18.2,
-        tauSleep: Double = 4.2,
+        tauWake: Double = 23.0,
+        tauSleep: Double = 4.0,
         tauInertia: Double = 1.5,
         debtFactor: Double = 1.0
     ): Double {
@@ -72,8 +72,8 @@ object EnergyCalculator {
         sleepDuration: Double = 7.5,
         bathyphaseHour: Double? = null,
         clamp: Boolean = true,
-        tauWake: Double = 18.2,
-        tauSleep: Double = 4.2,
+        tauWake: Double = 23.0,
+        tauSleep: Double = 4.0,
         tauInertia: Double = 1.5,
         debtFactor: Double = 1.0,
         circadianPeakOffset: Double? = null
@@ -88,7 +88,7 @@ object EnergyCalculator {
             val peakH = (bathyphaseHour + 15.0).mod(24.0)
             (peakH - wakeHour).mod(24.0)
         } else {
-            10.0 // sensible population-average fallback
+            13.0 // sensible population-average fallback (15h post-bathy, assuming 2h pre-wake nadir)
         }
 
         return twoProcessEnergy(
@@ -140,7 +140,31 @@ object EnergyCalculator {
         if (buckets.isEmpty()) return null
 
         val avgByHour = buckets.mapValues { it.value.average() }
-        return avgByHour.minByOrNull { it.value }?.key?.toDouble()
+        val minHour = avgByHour.minByOrNull { it.value }?.key ?: return null
+
+        // Parabolic Fit for sub-hour precision
+        val y2 = avgByHour[minHour] ?: return minHour.toDouble()
+        val prevHour = (minHour - 1).mod(24)
+        val nextHour = (minHour + 1).mod(24)
+
+        val y1 = avgByHour[prevHour]
+        val y3 = avgByHour[nextHour]
+
+        if (y1 != null && y3 != null) {
+            // Vertex of parabola passing through (x1, y1), (x2, y2), (x3, y3)
+            // where x2 = x1 + 1, x3 = x2 + 1.
+            // Formula: x = x2 - 0.5 * (y3 - y1) / (y1 - 2*y2 + y3)
+            val denom = y1 - 2 * y2 + y3
+            if (abs(denom) > 0.0001) {
+                val offset = -0.5 * (y3 - y1) / denom
+                // Only apply if the offset is within [-1, 1] range to keep it sane
+                if (abs(offset) <= 1.0) {
+                    return (minHour.toDouble() + offset).mod(24.0)
+                }
+            }
+        }
+
+        return minHour.toDouble()
     }
 
     fun circAvg(hoursList: List<Double>): Double? {

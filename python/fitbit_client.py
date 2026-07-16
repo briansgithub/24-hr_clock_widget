@@ -353,15 +353,22 @@ class FitbitClient:
             if not sleep_logs:
                 raise
 
-        # -- Dynamic Sleep Need Calculation (Always run this) --------------
-        total_asleep_mins = sum(s.get('minutesAsleep', 0) for s in sleep_logs)
-        total_bed_mins    = sum(s.get('timeInBed', s.get('timeIn_bed', 0)) for s in sleep_logs)
-        
-        if total_bed_mins > 0:
-            empirical_efficiency = total_asleep_mins / total_bed_mins
+        # -- Dynamic Sleep Need Calculation (Average of Ratios, excluding naps) --
+        main_sleep_logs = [s for s in sleep_logs if s.get('isMainSleep')]
+
+        if main_sleep_logs:
+            effs = []
+            for s in main_sleep_logs:
+                asleep = s.get('minutesAsleep', 0)
+                bed = s.get('timeInBed', s.get('timeIn_bed', 0))
+                if bed > 0:
+                    effs.append(asleep / bed)
+                else:
+                    effs.append(0.92)
+            empirical_efficiency = sum(effs) / len(effs)
         else:
-            # Safety fallback only if NO sleep data exists in the 14-day window
-            print("[get_all_energy_inputs] WARNING: No sleep logs found to calculate efficiency. Defaulting to 92%.")
+            # Safety fallback only if NO main sleep data exists in the 14-day window
+            print("[get_all_energy_inputs] WARNING: No main sleep logs found to calculate efficiency. Defaulting to 92%.")
             empirical_efficiency = 0.92
         
         sleep_need_hours = bedtime_goal_hours * empirical_efficiency

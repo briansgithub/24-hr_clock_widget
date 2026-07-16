@@ -2,6 +2,16 @@
 
 A monorepo containing a 24-hour analog clock implemented as both an **Android Live Wallpaper** and a **Python Desktop Widget**. Both versions feature deep Fitbit integration and a research-backed "Two-Process Model of Alertness" to visualize your circadian rhythm and energy levels.
 
+## Overview: Streamlined Features & Energy Updates (2024)
+
+The project has been unified to use the latest sleep research and high-precision algorithms across both platforms.
+
+-   **Research-Standard Model**: Updated the Two-Process model constants to 2024 performance standards ($\tau_{wake}$ = 23.0h, $\tau_{sleep}$ = 4.0h) for a more resilient and accurate energy curve.
+-   **Precision Bathyphase**: Implemented a **Parabolic Vertex Fit** for heart rate nadir detection, providing sub-hour accuracy for circadian anchoring.
+-   **Dynamic Acrophase**: Both apps now scan your personalized curve to identify and display your true peak alertness point (Acrophase).
+-   **Unified Efficiency**: Standardized "Average of Ratios" logic for sleep efficiency. Naps are now strictly used for debt reduction only, ensuring your baseline sleep need remains stable.
+-   **Visual Synchronization**: Identical visual indicators (inward triangles) for key circadian events are now present on both the Android wallpaper and Python widget.
+
 ## Repository Structure
 
 -   **/android**: The Android application project (Kotlin/Compose).

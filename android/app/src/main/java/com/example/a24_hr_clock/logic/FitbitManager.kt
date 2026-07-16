@@ -341,11 +341,16 @@ class FitbitManager(private val context: Context) {
         if (logs.isNotEmpty()) {
             val mainSleep = logs.filter { it.isMainSleep }.maxByOrNull { it.dateOfSleep }
             if (mainSleep != null) {
-                val avgEff = logs.map { 
-                    if (!it.isMainSleep) 1.0 
-                    else if (it.timeInBed > 0) it.minutesAsleep.toDouble() / it.timeInBed 
-                    else 0.92 
-                }.average()
+                // Average of ratios (excluding naps)
+                val mainSleepLogs = logs.filter { it.isMainSleep }
+                val avgEff = if (mainSleepLogs.isNotEmpty()) {
+                    mainSleepLogs.map {
+                        if (it.timeInBed > 0) it.minutesAsleep.toDouble() / it.timeInBed
+                        else 0.92
+                    }.average()
+                } else {
+                    0.92
+                }
                 val eff = if (avgEff.isNaN()) 0.92 else avgEff
                 
                 val hrPoints = fetchHeartRateIntraday(mainSleep.startTime, mainSleep.endTime)

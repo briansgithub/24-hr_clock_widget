@@ -73,8 +73,8 @@ alertness(t) = C(t) − S(t) − W(t) − debt_penalty
 | `sleep_duration` | `float` | `7.5` | **Last night's total sleep**, in hours. Determines how much sleep pressure was discharged. Shorter sleep → higher residual pressure → lower energy. |
 | `circadian_peak_offset` | `float` | `10.0` | **Hours after wake-up** when the circadian alerting signal peaks. Derived from the bathyphase (lowest core body temperature), or defaults to 10 hours (population average). |
 | `clamp` | `bool` | `True` | Whether to clamp the output to `[0.0, 1.0]`. When `False`, raw values can exceed that range (used for normalization in the UI). |
-| `tau_wake` | `float` | `18.2` | **Wake time constant** (hours). Controls how quickly sleep pressure builds. Larger = slower build-up. At `t = tau_wake`, pressure has reached ~63% of its max. |
-| `tau_sleep` | `float` | `4.2` | **Sleep time constant** (hours). Controls how quickly sleep pressure dissipates during sleep. A 4.2h nap would clear ~63% of accumulated pressure. |
+| `tau_wake` | `float` | `23.0` | **Wake time constant** (hours). Controls how quickly sleep pressure builds. Updated to 2024 research standards (previously 18.2h). Larger = slower build-up. |
+| `tau_sleep` | `float` | `4.0` | **Sleep time constant** (hours). Controls how quickly sleep pressure dissipates during sleep. Updated to 2024 research standards (previously 4.2h). |
 | `tau_inertia` | `float` | `1.5` | **Sleep inertia time constant** (hours). Controls how quickly post-wake grogginess fades. After `1.5 × tau_inertia ≈ 2.25h`, ~78% of inertia is gone. |
 | `debt_factor` | `float` | `1.0` | **Sensitivity multiplier** for the debt penalty. Values > 1.0 make the model more punishing toward sleep debt; < 1.0 make it more forgiving. |
 
@@ -186,18 +186,18 @@ Calculates a **weighted 14-night sleep debt** from Fitbit sleep logs.
 |---------|--------|
 | **Window** | 15 days (T-0 through T-14) |
 | **Weighting** | Exponential decay: `weight = 0.9^i` where `i` = days ago. Last night has weight 1.0; 14 nights ago has weight `0.9^14 ≈ 0.23` |
+| **Efficiency** | Calculated as the **Average of Ratios** (mean of individual nightly efficiencies) for main sleep periods. |
+| **Naps** | Included in debt reduction at 100% efficiency, but **excluded** from the average sleep efficiency metric. |
 | **Missing data** | Dates without logs count as **0 hours of sleep** (worst case) |
 | **Excluded dates** | Completely skipped (useful for today's incomplete data) |
-| **Naps** | Included by default; can be excluded via `include_naps=False` |
 
 ### `find_bathyphase(intraday_hr)`
 
 Identifies the **bathyphase** — the clock hour with the lowest average heart rate during sleep.
 
-- Buckets intraday HR data (1-minute resolution) by hour
-- Returns the hour with the lowest average HR
-- This is a proxy for the **core body temperature nadir**, which anchors the circadian clock
-- Requires Fitbit "Personal" app type for intraday access
+- **Parabolic Fit**: Uses a **Parabolic Vertex Fit** algorithm. Instead of just picking the lowest 1-hour bucket, it analyzes the bucket and its two neighbors to calculate the mathematical nadir with sub-hour precision (e.g., 04:22 AM).
+- This is a proxy for the **core body temperature nadir**, which anchors the circadian clock.
+- Requires Fitbit "Personal" app type for intraday access.
 
 ---
 
@@ -209,8 +209,10 @@ The `EnergyCurve` class renders the model onto a 24-hour clock face:
 |---------|---------------|
 | **Caching** | Precomputes 1440 energy samples (one per minute) and invalidates only when parameters change |
 | **Color gradient** | Interpolates from cyan `(0, 210, 255)` at low energy to amber `(255, 75, 43)` at high energy |
-| **Radius mapping** | Energy level controls the radial distance from the clock center. In normalized mode, the range is scaled to 10%–90% of the clock radius |
-| **Drawing resolution** | 72 line segments (one every 20 minutes) for smooth visual appearance |
+| **Radius mapping** | Energy level controls the radial distance from the clock center. In normalized mode, the range is scaled to 10%–90% of the clock radius. |
+| **Visual Indicators** | Displays inward-pointing triangles for **Bathyphase** (Trough) and **Acrophase** (Peak). |
+| **Acrophase Logic** | Scans the personalized energy curve (144 samples) to mark the actual highest point of alertness today. |
+| **Drawing resolution** | 72 line segments (one every 20 minutes) for smooth visual appearance. |
 
 ---
 

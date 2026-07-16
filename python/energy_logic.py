@@ -36,8 +36,8 @@ def two_process_energy(
     sleep_duration: float = 7.5,
     circadian_peak_offset: float = 10.0,
     clamp: bool = True,
-    tau_wake: float = 18.2,
-    tau_sleep: float = 4.2,
+    tau_wake: float = 23.0,
+    tau_sleep: float = 4.0,
     tau_inertia: float = 1.5,
     debt_factor: float = 1.0,
 ) -> float:
@@ -136,8 +136,8 @@ def get_energy_level(
     sleep_duration: float = 7.5,
     bathyphase_hour: float = None,
     clamp: bool = True,
-    tau_wake: float = 18.2,
-    tau_sleep: float = 4.2,
+    tau_wake: float = 23.0,
+    tau_sleep: float = 4.0,
     tau_inertia: float = 1.5,
     debt_factor: float = 1.0,
     circadian_peak_offset: float = None,
@@ -157,7 +157,7 @@ def get_energy_level(
         peak_h = (bathyphase_hour + 15.0) % 24
         peak_offset = (peak_h - wake_hour) % 24
     else:
-        peak_offset = 10.0  # sensible population-average fallback
+        peak_offset = 13.0  # sensible population-average fallback (15h post-bathy, assuming 2h pre-wake nadir)
 
     if not _energy_summary_printed:
         # (Logging omitted for brevity in multi_replace, but in practice keep it)
@@ -236,6 +236,7 @@ def compute_sleep_debt(
 def find_bathyphase(intraday_hr: list[dict]) -> float | None:
     """
     Finds the bathyphase (lowest HR clock-hour) from Fitbit intraday HR data.
+    Uses Parabolic Vertex Fit for sub-hour precision.
     """
     print(f"\n{'-'*50}")
     print(f"[find_bathyphase] intraday HR points received = {len(intraday_hr)}")
@@ -259,11 +260,30 @@ def find_bathyphase(intraday_hr: list[dict]) -> float | None:
         avg_by_hour[h] = avg
         print(f"  {h:02d}:00  avg HR = {avg:.1f} bpm")
 
-    best_h = min(avg_by_hour, key=avg_by_hour.get)
-    print(f"[find_bathyphase] RESULT = {best_h}:00  (avg {avg_by_hour[best_h]:.1f} bpm)")
+    min_h = min(avg_by_hour, key=avg_by_hour.get)
+    
+    # Parabolic Fit
+    y2 = avg_by_hour[min_h]
+    prev_h = (min_h - 1) % 24
+    next_h = (min_h + 1) % 24
+    
+    y1 = avg_by_hour.get(prev_h)
+    y3 = avg_by_hour.get(next_h)
+    
+    if y1 is not None and y3 is not None:
+        denom = y1 - 2*y2 + y3
+        if abs(denom) > 0.0001:
+            offset = -0.5 * (y3 - y1) / denom
+            if abs(offset) <= 1.0:
+                result = (min_h + offset) % 24
+                print(f"[find_bathyphase] RESULT = {result:.2f} (Parabolic Fit, offset={offset:.2f})")
+                print(f"{'-'*50}\n")
+                return result
+
+    print(f"[find_bathyphase] RESULT = {min_h:.2f} (Simple Minimum)")
     print(f"{'-'*50}\n")
 
-    return float(best_h)
+    return float(min_h)
 
 class EnergyCurve:
     def __init__(self, canvas, color="#00A8FF"):
@@ -276,8 +296,8 @@ class EnergyCurve:
         self.normalize         = True
         
         # Model Parameters
-        self.tau_wake     = 18.2
-        self.tau_sleep    = 4.2
+        self.tau_wake     = 23.0
+        self.tau_sleep    = 4.0
         self.tau_inertia  = 1.5
         self.debt_factor   = 1.0
         self.circadian_peak_offset = None # If None, use bathyphase logic
@@ -383,3 +403,44 @@ class EnergyCurve:
                         tags="energy_curve",
                     )
             last_px, last_py = px, py
+
+    def _draw_indicator(self, cx, cy, radius, hour, color):
+        angle = (18 - hour) * 15
+        rad = math.radians(angle)
+
+        triangle_size = radius * 0.08
+        base_width = triangle_size * 0.8
+
+        tip_r = radius - triangle_size
+        base_r = radius
+
+        # Tip point
+        tx = cx + tip_r * math.cos(rad)
+        ty = cy - tip_r * math.sin(rad)
+
+        # Base points (perpendicular to the radial line)
+        # rad + pi/2 gives the direction of the base line
+        perp_rad = rad + math.pi/2
+        dx = math.cos(perp_rad) * (base_width / 2)
+        dy = -math.sin(perp_rad) * (base_width / 2)
+
+        bx = cx + base_r * math.cos(rad)
+        by = cy - base_r * math.sin(rad)
+
+        x1, y1 = bx + dx, by + dy
+        x2, y2 = bx - dx, by - dy
+
+        self.canvas.create_polygon(
+            tx, ty, x1, y1, x2, y2,
+            fill=color, outline="", tags="energy_indicators"
+        )
+
+    def draw_bathyphase_indicator(self, cx, cy, radius, bathy_hour, energy_val=None):
+        if bathy_hour is None: return
+        color = self.interpolate_color(energy_val) if energy_val is not None else "#1E6363"
+        self._draw_indicator(cx, cy, radius, bathy_hour, color)
+
+    def draw_acrophase_indicator(self, cx, cy, radius, acro_hour, energy_val):
+        if acro_hour is None: return
+        color = self.interpolate_color(energy_val)
+        self._draw_indicator(cx, cy, radius, acro_hour, color)
