@@ -1,0 +1,3 @@
+- [ ] Include Python widget in `settings.gradle.kts`
+- [ ] Perform Gradle Sync
+- [ ] Verify access to both projects

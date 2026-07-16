@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">24_hr_clock</string>
+    <string name="wallpaper_description">A 24-hour clock live wallpaper with energy curve and celestial data.</string>
+</resources>
