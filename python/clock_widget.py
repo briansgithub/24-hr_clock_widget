@@ -115,14 +115,16 @@ class ClockWidget:
         self.include_naps = tk.BooleanVar(value=True)
         self.show_sun_moon = tk.BooleanVar(value=True)
         self.show_manual_wake = tk.BooleanVar(value=True)
+        self.show_bathyphase = tk.BooleanVar(value=True)
+        self.show_acrophase = tk.BooleanVar(value=True)
         self.show_sleep_table = tk.BooleanVar(value=True)
         self.show_calendar = tk.BooleanVar(value=True)
         self.show_sleep_model = tk.BooleanVar(value=False)
 
         # -- Model Parameters --------------------------
         self.bedtime_goal = tk.DoubleVar(value=9.75)
-        self.tau_wake = tk.DoubleVar(value=18.2)
-        self.tau_sleep = tk.DoubleVar(value=4.2)
+        self.tau_wake = tk.DoubleVar(value=23.0)
+        self.tau_sleep = tk.DoubleVar(value=4.0)
         self.tau_inertia = tk.DoubleVar(value=1.5)
         self.debt_factor = tk.DoubleVar(value=1.0)
         self.circadian_offset = tk.DoubleVar(value=12.0)
@@ -138,6 +140,8 @@ class ClockWidget:
         # Model parameters will redraw on slider release (handled in _add_slider)
         # except for boolean toggles which still trace or use command
         self.use_bathyphase.trace_add("write", lambda *args: getattr(self, 'canvas', None) and self.draw_clock())
+        self.show_bathyphase.trace_add("write", lambda *args: getattr(self, 'canvas', None) and (self.draw_clock(), self._save_sleep_settings()))
+        self.show_acrophase.trace_add("write", lambda *args: getattr(self, 'canvas', None) and (self.draw_clock(), self._save_sleep_settings()))
         self.manual_wake_time.trace_add("write", lambda *args: getattr(self, 'canvas', None) and (self.draw_clock(), self._save_sleep_settings()))
 
         # ── Fitbit Integration ────────────────────────────────────────────────
@@ -746,6 +750,8 @@ class ClockWidget:
                         self.use_bathyphase.set(p.get("use_bathyphase", True))
                         self.manual_wake_time.set(p.get("manual_wake_time", "9:00"))
                         self.show_manual_wake.set(p.get("show_manual_wake", True))
+                        self.show_bathyphase.set(p.get("show_bathyphase", True))
+                        self.show_acrophase.set(p.get("show_acrophase", True))
 
                     return data.get("excluded_dates", [today_str])
             except:
@@ -782,7 +788,9 @@ class ClockWidget:
                     "circadian_offset": self.circadian_offset.get(),
                     "use_bathyphase": self.use_bathyphase.get(),
                     "manual_wake_time": self.manual_wake_time.get(),
-                    "show_manual_wake": self.show_manual_wake.get()
+                    "show_manual_wake": self.show_manual_wake.get(),
+                    "show_bathyphase": self.show_bathyphase.get(),
+                    "show_acrophase": self.show_acrophase.get()
                 }
             }
             with open(self.sleep_settings_file, 'w') as f:
@@ -1336,12 +1344,14 @@ class ClockWidget:
             
         def reset_model_defaults():
             self.bedtime_goal.set(9.75)
-            self.circadian_offset.set(12.0)
+            self.circadian_offset.set(13.0)
             self.use_bathyphase.set(True)
-            self.tau_wake.set(18.2)
-            self.tau_sleep.set(4.2)
+            self.tau_wake.set(23.0)
+            self.tau_sleep.set(4.0)
             self.tau_inertia.set(1.5)
             self.debt_factor.set(1.0)
+            self.show_bathyphase.set(True)
+            self.show_acrophase.set(True)
             on_model_change()
 
         self._add_divider("GENERAL GOALS", content)
@@ -1361,6 +1371,12 @@ class ClockWidget:
                          tooltip="Duration of morning grogginess. Controls how long it takes to reach full alertness after waking.")
         self._add_slider("Debt Sensitivity:", self.debt_factor, 0.0, 3.0, content, command=on_model_change,
                          tooltip="Multiplier for sleep debt penalty. Higher values make your curve sink lower when you lack sleep.")
+
+        self._add_divider("VISUAL INDICATORS", content)
+        self._add_toggle("Show Bathyphase (Trough)", self.show_bathyphase, on_model_change, content,
+                         tooltip="Show an inward-pointing triangle at your lowest heart rate / energy trough.")
+        self._add_toggle("Show Acrophase (Peak)", self.show_acrophase, on_model_change, content,
+                         tooltip="Show an inward-pointing triangle at your highest predicted energy point today.")
 
         # Reset button
         reset_btn = tk.Button(
@@ -2190,6 +2206,28 @@ class ClockWidget:
                 self._apply_energy_curve_params()
                 self.energy_curve.normalize = self.normalize_energy.get()
                 self.energy_curve.draw(center_x, center_y, radius, self.wake_hour)
+
+                # Draw Visual Indicators (Bathyphase and Acrophase)
+                if self.show_bathyphase.get() and self.bathyphase_hour is not None:
+                    bathy_e = get_energy_level(
+                        self.bathyphase_hour, self.wake_hour, self.sleep_debt_hours, self.sleep_duration,
+                        self.bathyphase_hour if self.use_bathyphase.get() else None,
+                        clamp=False,
+                        tau_wake=self.tau_wake.get(),
+                        tau_sleep=self.tau_sleep.get(),
+                        tau_inertia=self.tau_inertia.get(),
+                        debt_factor=self.debt_factor.get(),
+                        circadian_peak_offset=None if self.use_bathyphase.get() else self.circadian_offset.get()
+                    )
+                    self.energy_curve.draw_bathyphase_indicator(center_x, center_y, radius, self.bathyphase_hour, bathy_e)
+
+                if self.show_acrophase.get():
+                    max_e = self.energy_curve._cached_e_max
+                    try:
+                        idx = self.energy_curve._cached_levels.index(max_e)
+                        acro_h = (idx / (len(self.energy_curve._cached_levels) - 1)) * 24.0
+                        self.energy_curve.draw_acrophase_indicator(center_x, center_y, radius, acro_h, max_e)
+                    except: pass
 
         def draw_perimeter_line():
             self.canvas.create_oval(

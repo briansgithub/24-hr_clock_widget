@@ -1,0 +1,25 @@
+# Task List - Unified Sleep & Energy Logic (2024 Research Update)
+
+- [x] **Android App Updates**
+    - [x] Update `EnergyCalculator.kt`
+        - [x] Update constants (`tauWake = 23.0`, `tauSleep = 4.0`)
+        - [x] Implement Parabolic Vertex Fit for `findBathyphase`
+        - [x] Update `getEnergyLevel` fallback and peak logic
+    - [x] Update `FitbitManager.kt`
+        - [x] Refactor efficiency to Average of Ratios (excluding naps)
+    - [x] Update `ClockRenderer.kt`
+        - [x] Align Acrophase and Energy % peak scanning
+- [x] **Python Widget Updates**
+    - [x] Update `energy_logic.py`
+        - [x] Update constants (`tau_wake = 23.0`, `tau_sleep = 4.0`)
+        - [x] Implement Parabolic Vertex Fit for `find_bathyphase`
+    - [x] Update `fitbit_client.py`
+        - [x] Refactor efficiency to Average of Ratios (excluding naps)
+    - [x] Update `clock_widget.py`
+        - [x] Implement `draw_bathyphase_indicator` and `draw_acrophase_indicator` in `EnergyCurve`
+        - [x] Update UI default variables for constants
+- [x] **Verification**
+    - [x] Run Python `test_debt_logic.py`
+    - [x] Create Python `test_bathyphase.py` and run it
+    - [x] Run Android `EnergyCalculatorTest.kt`
+    - [x] Manual visual verification

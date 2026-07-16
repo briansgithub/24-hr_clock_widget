@@ -302,26 +302,44 @@ class ClockRenderer {
             drawBathyphaseIndicator(canvas, centerX, centerY, radius, bathyphaseHour, bathyEnergy)
         }
 
-        // 9.6 Draw Acrophase Indicator
-        if (showAcrophase && wakeHour != null) {
-            var peakHour = 0.0
-            var peakEnergy = -1.0
+        // 9.6 Draw Acrophase Indicator & Calculate Peak for %
+        var peakEnergyToday = -1.0
+        var peakHourToday = 0.0
+        var maxEPerfection = -1.0
+
+        if (wakeHour != null) {
             val totalAsleep = if (includeNaps) activeLogs.sumOf { it.minutesAsleep / 60.0 } else (mainSleep?.minutesAsleep ?: 0) / 60.0
-            
+
             for (i in 0..144) {
                 val h = (i.toDouble() / 144) * 24.0
-                val e = EnergyCalculator.getEnergyLevel(
+
+                // Today's curve (with debt and actual sleep)
+                val eToday = EnergyCalculator.getEnergyLevel(
                     h, wakeHour, sleepDebt, totalAsleep,
                     if (useBathyphase) bathyphaseHour else null,
                     false, tauWake, tauSleep, tauInertia, debtFactor,
                     if (useBathyphase) null else circadianOffset
                 )
-                if (e > peakEnergy) {
-                    peakEnergy = e
-                    peakHour = h
+                if (eToday > peakEnergyToday) {
+                    peakEnergyToday = eToday
+                    peakHourToday = h
+                }
+
+                // Perfection curve (0 debt, goal sleep)
+                val ePerf = EnergyCalculator.getEnergyLevel(
+                    h, wakeHour, 0.0, bedtimeGoal,
+                    if (useBathyphase) bathyphaseHour else null,
+                    false, tauWake, tauSleep, tauInertia, debtFactor,
+                    if (useBathyphase) null else circadianOffset
+                )
+                if (ePerf > maxEPerfection) {
+                    maxEPerfection = ePerf
                 }
             }
-            drawAcrophaseIndicator(canvas, centerX, centerY, radius, peakHour, peakEnergy)
+
+            if (showAcrophase) {
+                drawAcrophaseIndicator(canvas, centerX, centerY, radius, peakHourToday, peakEnergyToday)
+            }
         }
 
         // 10. Draw Sun and Moon
@@ -343,7 +361,7 @@ class ClockRenderer {
 
         val arrowLen = radius * 0.12f
         val arrowAngle = Math.toRadians(30.0)
-        
+
         val x1 = hx - arrowLen * cos(handRad + arrowAngle).toFloat()
         val y1 = hy - arrowLen * sin(handRad + arrowAngle).toFloat()
         val x2 = hx - arrowLen * cos(handRad - arrowAngle).toFloat()
@@ -372,8 +390,8 @@ class ClockRenderer {
             }
             val mainSleep = activeLogs.find { it.isMainSleep } ?: activeLogs.maxByOrNull { it.endTime }
             val totalAsleep = if (includeNaps) activeLogs.sumOf { it.minutesAsleep / 60.0 } else (mainSleep?.minutesAsleep ?: 0) / 60.0
-            
-            drawEnergyPct(canvas, centerX, centerY, radius, exactHour, handRad, wakeHour, sleepDebt, totalAsleep, bathyphaseHour, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset, useBathyphase, bedtimeGoal)
+
+            drawEnergyPct(canvas, centerX, centerY, radius, exactHour, handRad, wakeHour, sleepDebt, totalAsleep, bathyphaseHour, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset, useBathyphase, maxEPerfection)
         }
 
         // 11.5 Draw Wake-Sunrise Info
@@ -423,7 +441,7 @@ class ClockRenderer {
         debtFactor: Double,
         circadianOffset: Double,
         useBathyphase: Boolean,
-        bedtimeGoal: Double
+        maxEPerfection: Double
     ) {
         val currentE = EnergyCalculator.getEnergyLevel(
             exactHour, wakeHour, sleepDebt, sleepDuration,
@@ -432,13 +450,7 @@ class ClockRenderer {
             if (useBathyphase) null else circadianOffset
         )
 
-        // Max possible today if rested
-        val maxE = EnergyCalculator.twoProcessEnergy(
-            12.0, 0.0, 9.75, 10.0, false, 
-            tauWake, tauSleep, tauInertia, debtFactor
-        )
-
-        val pct = if (maxE > 0) (currentE / maxE * 100).roundToInt().coerceAtLeast(0) else 0
+        val pct = if (maxEPerfection > 0) (currentE / maxEPerfection * 100).roundToInt().coerceAtLeast(0) else 0
         
         val textRadius = radius + 60f
         val tx = cx + textRadius * cos(handRad).toFloat()
