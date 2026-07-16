@@ -23,3 +23,4 @@ External service authentication (Fitbit & Google Calendar) had friction points:
 ## Bug Fixes & Stability (2026-07-16)
 - **Resolved Notification Crash**: Fixed an unresolved reference to `setSmallResource` by correcting it to `setSmallIcon` in `AuthNotificationManager`.
 - **Restored WorkManager**: Added the missing `androidx.work:work-runtime-ktx` dependency, resolving multiple compilation errors in the background sync logic (`SyncManager` and `SyncWorker`).
+- **Git History Scrubbed**: Performed a full repository history rewrite using `git filter-branch` to remove sensitive OAuth credentials and tokens from all past commits. Updated `.gitignore` to prevent future tracking of these files.

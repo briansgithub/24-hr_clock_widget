@@ -31,12 +31,29 @@ android {
             )
         }
     }
+
+    val localProperties = java.util.Properties()
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localProperties.load(localPropertiesFile.inputStream())
+    }
+
+    val fitbitClientId: String = localProperties.getProperty("FITBIT_CLIENT_ID") ?: ""
+    val fitbitClientSecret: String = localProperties.getProperty("FITBIT_CLIENT_SECRET") ?: ""
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
+    defaultConfig {
+        buildConfigField("String", "FITBIT_CLIENT_ID", "\"$fitbitClientId\"")
+        buildConfigField("String", "FITBIT_CLIENT_SECRET", "\"$fitbitClientSecret\"")
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
-    }
-    buildFeatures {
-        compose = true
     }
 }
 

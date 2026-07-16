@@ -19,21 +19,14 @@ env/
 .pytest_cache/
 
 # Data and Secrets
-token.json
-credentials.json
-fitbit_tokens.json
-fitbit_summary.json
-fitbit_sleep_logs.json
-fitbit_hr_intraday.json
-sleep_settings.json
-python/token.json
-python/credentials.json
-python/fitbit_tokens.json
-python/fitbit_summary.json
-python/fitbit_sleep_logs.json
-python/fitbit_hr_intraday.json
+*.json
+!fitbit_config.json.example
+!package.json
+!google-services.json
+!project.json
+python/*.json
+!python/fitbit_config.json.example
 python/saved_curves/
-python/sleep_settings.json
 
 # System
 .DS_Store
