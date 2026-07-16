@@ -335,4 +335,109 @@ class EmpiricalEnergyManager(private val context: Context) {
         }
         return didSync
     }
+
+    // Read logs from the public storage master CSV file without saving
+    fun readLogsFromPublicStorage(uriString: String): List<EnergyLog> {
+        if (uriString.isEmpty()) return emptyList()
+        return try {
+            val treeUri = Uri.parse(uriString)
+            val rootDoc = DocumentFile.fromTreeUri(context, treeUri) ?: return emptyList()
+            val fileDoc = rootDoc.findFile("Alertness_Master_Log.csv") ?: return emptyList()
+            
+            val content = context.contentResolver.openInputStream(fileDoc.uri)?.bufferedReader()?.use { it.readText() } ?: return emptyList()
+            val lines = content.lines()
+            if (lines.isEmpty()) return emptyList()
+            
+            val parsedLogs = mutableListOf<EnergyLog>()
+            // Skip header
+            for (i in 1 until lines.size) {
+                val line = lines[i].trim()
+                if (line.isEmpty()) continue
+                val parts = line.split(",")
+                if (parts.size >= 4) {
+                    val ts = parts[0].toLongOrNull() ?: continue
+                    val level = parts[2].toIntOrNull()
+                    val status = parts[3]
+                    parsedLogs.add(EnergyLog(ts, level, status))
+                }
+            }
+            parsedLogs
+        } catch (e: Exception) {
+            Log.e("EmpiricalEnergyManager", "Failed to read logs from public storage", e)
+            emptyList()
+        }
+    }
+
+    // Update the last public modified timestamp in preferences
+    fun updateLastPublicModifiedTime(uriString: String) {
+        if (uriString.isEmpty()) return
+        try {
+            val treeUri = Uri.parse(uriString)
+            val rootDoc = DocumentFile.fromTreeUri(context, treeUri)
+            val fileDoc = rootDoc?.findFile("Alertness_Master_Log.csv")
+            if (fileDoc != null) {
+                val currentModified = fileDoc.lastModified()
+                prefs.edit().putLong("last_public_modified", currentModified).apply()
+            }
+        } catch (e: Exception) {
+            Log.e("EmpiricalEnergyManager", "Failed to update last public modified time", e)
+        }
+    }
+
+    // Merges internal app logs and public storage CSV logs based on precedence rules
+    fun mergeLogs(appLogs: List<EnergyLog>, publicLogs: List<EnergyLog>): MergeResult {
+        val appMap = appLogs.associateBy { it.timestamp }
+        val publicMap = publicLogs.associateBy { it.timestamp }
+        
+        val allTimestamps = (appMap.keys + publicMap.keys).sorted()
+        val merged = mutableListOf<EnergyLog>()
+        val conflicts = mutableListOf<MergeConflict>()
+        
+        for (ts in allTimestamps) {
+            val appLog = appMap[ts]
+            val publicLog = publicMap[ts]
+            
+            if (appLog != null && publicLog != null) {
+                val appVal = appLog.energyLevel
+                val publicVal = publicLog.energyLevel
+                
+                if (appVal != null && publicVal != null) {
+                    if (appVal == publicVal) {
+                        merged.add(appLog)
+                    } else {
+                        // Conflict! We temporarily place the appLog (since app value takes precedence)
+                        // but record the conflict so the user can choose.
+                        conflicts.add(MergeConflict(ts, appVal, publicVal))
+                        merged.add(appLog)
+                    }
+                } else if (appVal != null) {
+                    // Logged value takes precedence over no value
+                    merged.add(appLog)
+                } else if (publicVal != null) {
+                    // Logged value takes precedence over no value
+                    merged.add(publicLog)
+                } else {
+                    // Both null/missed, keep app status
+                    merged.add(appLog)
+                }
+            } else if (appLog != null) {
+                merged.add(appLog)
+            } else if (publicLog != null) {
+                merged.add(publicLog)
+            }
+        }
+        return MergeResult(merged, conflicts)
+    }
 }
+
+@Serializable
+data class MergeConflict(
+    val timestamp: Long,
+    val appValue: Int,
+    val publicValue: Int
+)
+
+data class MergeResult(
+    val mergedLogs: List<EnergyLog>,
+    val conflicts: List<MergeConflict>
+)

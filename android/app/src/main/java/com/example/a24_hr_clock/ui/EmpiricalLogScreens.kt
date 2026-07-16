@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import com.example.a24_hr_clock.logic.EnergyLog
 import com.example.a24_hr_clock.logic.EmpiricalEnergyManager
 import com.example.a24_hr_clock.logic.ModelSettings
+import com.example.a24_hr_clock.logic.MergeConflict
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -145,6 +146,11 @@ fun EmpiricalLogHistoryScreen(
     var logs by remember { mutableStateOf(emptyList<EnergyLog>()) }
     var selectedLogForEdit by remember { mutableStateOf<EnergyLog?>(null) }
     var showEditDialog by remember { mutableStateOf(false) }
+    
+    var activeConflicts by remember { mutableStateOf<List<MergeConflict>>(emptyList()) }
+    var tempMergedLogs by remember { mutableStateOf<List<EnergyLog>>(emptyList()) }
+    var resolvedConflictValues by remember { mutableStateOf<Map<Long, Int>>(emptyMap()) }
+    var showConflictDialog by remember { mutableStateOf(false) }
 
     // Google Drive script config
     var driveUrlInput by remember { mutableStateOf(modelSettings.googleDriveUrl) }
@@ -166,6 +172,43 @@ fun EmpiricalLogHistoryScreen(
 
     fun refreshData() {
         logs = manager.getFullLogHistory(30) // Show last 30 days
+    }
+
+    fun triggerSync() {
+        if (modelSettings.localBackupUri.isEmpty()) {
+            localBackupStatusMessage = "Sync failed. No folder linked."
+            return
+        }
+        val appLogs = manager.getFullLogHistory(60) // Merge last 60 days
+        val publicLogs = manager.readLogsFromPublicStorage(modelSettings.localBackupUri)
+        
+        if (publicLogs.isEmpty()) {
+            // Public file doesn't exist or is empty, just write current app logs to public storage
+            if (manager.syncToPublicStorage(modelSettings.localBackupUri)) {
+                localBackupStatusMessage = "Successfully synced current logs to backup"
+                refreshData()
+            } else {
+                localBackupStatusMessage = "Sync failed. Check folder permissions."
+            }
+            return
+        }
+        
+        val result = manager.mergeLogs(appLogs, publicLogs)
+        if (result.conflicts.isEmpty()) {
+            // No conflicts, save directly
+            manager.saveLogs(result.mergedLogs, syncPublic = true)
+            // Update preferences last modified
+            manager.updateLastPublicModifiedTime(modelSettings.localBackupUri)
+            localBackupStatusMessage = "Sync Complete: Merged successfully"
+            refreshData()
+        } else {
+            // Show conflicts dialog
+            tempMergedLogs = result.mergedLogs
+            activeConflicts = result.conflicts
+            // Default to app value for all conflicts initially
+            resolvedConflictValues = result.conflicts.associate { it.timestamp to it.appValue }
+            showConflictDialog = true
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -244,6 +287,148 @@ fun EmpiricalLogHistoryScreen(
         )
     }
 
+    // Merge conflicts dialog
+    if (showConflictDialog && activeConflicts.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { showConflictDialog = false },
+            title = { Text("Merge Conflicts Detected") },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp)) {
+                    Text(
+                        text = "We found different scores for the same time slots. Select which value to keep:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    
+                    // Bulk Action Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                resolvedConflictValues = activeConflicts.associate { it.timestamp to it.appValue }
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                        ) {
+                            Text("Use App for All", fontSize = 11.sp)
+                        }
+                        Button(
+                            onClick = {
+                                resolvedConflictValues = activeConflicts.associate { it.timestamp to it.publicValue }
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                        ) {
+                            Text("Use Backup for All", fontSize = 11.sp)
+                        }
+                    }
+
+                    HorizontalDivider()
+
+                    // Scrollable list of conflicts
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(vertical = 8.dp)
+                    ) {
+                        items(activeConflicts) { conflict ->
+                            val ldt = LocalDateTime.ofInstant(Instant.ofEpochMilli(conflict.timestamp), ZoneId.systemDefault())
+                            val dateStr = DateTimeFormatter.ofPattern("MMM dd, hh:mm a").withLocale(Locale.US).format(ldt)
+                            
+                            val selectedVal = resolvedConflictValues[conflict.timestamp]
+
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                            ) {
+                                Column(modifier = Modifier.padding(8.dp)) {
+                                    Text(
+                                        text = dateStr,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.padding(bottom = 4.dp)
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        // App Value Button
+                                        OutlinedCard(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clickable {
+                                                    resolvedConflictValues = resolvedConflictValues + (conflict.timestamp to conflict.appValue)
+                                                },
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = if (selectedVal == conflict.appValue) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                                            )
+                                        ) {
+                                            Text(
+                                                text = "App: ${conflict.appValue}",
+                                                textAlign = TextAlign.Center,
+                                                fontWeight = if (selectedVal == conflict.appValue) FontWeight.Bold else FontWeight.Normal,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                modifier = Modifier.fillMaxWidth().padding(8.dp)
+                                            )
+                                        }
+
+                                        // Public Value Button
+                                        OutlinedCard(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clickable {
+                                                    resolvedConflictValues = resolvedConflictValues + (conflict.timestamp to conflict.publicValue)
+                                                },
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = if (selectedVal == conflict.publicValue) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                                            )
+                                        ) {
+                                            Text(
+                                                text = "Backup: ${conflict.publicValue}",
+                                                textAlign = TextAlign.Center,
+                                                fontWeight = if (selectedVal == conflict.publicValue) FontWeight.Bold else FontWeight.Normal,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                modifier = Modifier.fillMaxWidth().padding(8.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val finalLogs = tempMergedLogs.map { log ->
+                            val resolvedVal = resolvedConflictValues[log.timestamp]
+                            if (resolvedVal != null) {
+                                log.copy(energyLevel = resolvedVal, status = "LOGGED")
+                            } else {
+                                log
+                            }
+                        }
+                        manager.saveLogs(finalLogs, syncPublic = true)
+                        manager.updateLastPublicModifiedTime(modelSettings.localBackupUri)
+                        showConflictDialog = false
+                        localBackupStatusMessage = "Sync Complete: Conflicts resolved and merged"
+                        refreshData()
+                    }
+                ) {
+                    Text("Confirm Merge")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConflictDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -314,39 +499,15 @@ fun EmpiricalLogHistoryScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            Button(
+                                onClick = {
+                                    triggerSync()
+                                },
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                OutlinedButton(
-                                    onClick = {
-                                        if (manager.syncToPublicStorage(modelSettings.localBackupUri)) {
-                                            localBackupStatusMessage = "Manually synced to Documents"
-                                        } else {
-                                            localBackupStatusMessage = "Sync failed. Check folder permissions."
-                                        }
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Icon(Icons.Default.Sync, contentDescription = null)
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("Sync Now")
-                                }
-                                OutlinedButton(
-                                    onClick = {
-                                        if (manager.importFromPublicStorage(modelSettings.localBackupUri)) {
-                                            localBackupStatusMessage = "Successfully restored logs from backup"
-                                            refreshData()
-                                        } else {
-                                            localBackupStatusMessage = "Restore failed. Backup file not found."
-                                        }
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Icon(Icons.Default.Restore, contentDescription = null)
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("Restore")
-                                }
+                                Icon(Icons.Default.Sync, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Sync")
                             }
                             TextButton(
                                 onClick = { onUpdateLocalBackupUri("") },
