@@ -6,6 +6,8 @@ import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
@@ -32,6 +34,7 @@ class EmpiricalEnergyManager(private val context: Context) {
     private val file = File(context.filesDir, "empirical_energy_logs.json")
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
     private val okHttpClient = OkHttpClient()
+    private val prefs = context.getSharedPreferences("empirical_energy_prefs", Context.MODE_PRIVATE)
 
     // Helper to format ISO timestamps from Fitbit
     private fun parseIsoTimestamp(isoStr: String): Long {
@@ -60,8 +63,14 @@ class EmpiricalEnergyManager(private val context: Context) {
         return cal.timeInMillis
     }
 
-    // Load logs from JSON file
+    // Load logs checking for public backup updates first
     fun loadLogs(): List<EnergyLog> {
+        checkForPublicUpdate()
+        return loadInternalLogs()
+    }
+
+    // Load logs directly from internal JSON file
+    private fun loadInternalLogs(): List<EnergyLog> {
         if (!file.exists()) return emptyList()
         return try {
             val content = file.readText()
@@ -72,11 +81,43 @@ class EmpiricalEnergyManager(private val context: Context) {
         }
     }
 
+    private fun checkForPublicUpdate() {
+        try {
+            val settings = SettingsManager(context)
+            val modelSettings = runBlocking { settings.modelSettingsFlow.first() }
+            val uriString = modelSettings.localBackupUri
+            if (uriString.isNotEmpty()) {
+                val treeUri = Uri.parse(uriString)
+                val rootDoc = DocumentFile.fromTreeUri(context, treeUri)
+                val fileDoc = rootDoc?.findFile("Alertness_Master_Log.csv")
+                if (fileDoc != null && fileDoc.exists()) {
+                    val publicModified = fileDoc.lastModified()
+                    val lastImported = prefs.getLong("last_public_modified", 0L)
+                    if (publicModified > lastImported) {
+                        Log.i("EmpiricalEnergyManager", "Newer public backup found ($publicModified > $lastImported). Importing...")
+                        importFromPublicStorage(uriString)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("EmpiricalEnergyManager", "Failed to check for public update", e)
+        }
+    }
+
     // Save logs to JSON file
-    fun saveLogs(logs: List<EnergyLog>) {
+    fun saveLogs(logs: List<EnergyLog>, syncPublic: Boolean = true) {
         try {
             val content = json.encodeToString(logs)
             file.writeText(content)
+            
+            if (syncPublic) {
+                val settings = SettingsManager(context)
+                val modelSettings = runBlocking { settings.modelSettingsFlow.first() }
+                val uriString = modelSettings.localBackupUri
+                if (uriString.isNotEmpty()) {
+                    syncToPublicStorage(uriString)
+                }
+            }
         } catch (e: Exception) {
             Log.e("EmpiricalEnergyManager", "Failed to save energy logs", e)
         }
@@ -85,7 +126,7 @@ class EmpiricalEnergyManager(private val context: Context) {
     // Log or update a specific 30-min interval
     fun logEnergy(timestamp: Long, level: Int?) {
         val alignedTs = alignTo30MinInterval(timestamp)
-        val logs = loadLogs().toMutableList()
+        val logs = loadInternalLogs().toMutableList()
         val index = logs.indexOfFirst { it.timestamp == alignedTs }
 
         val status = if (level == null) "MISSED" else "LOGGED"
@@ -102,7 +143,7 @@ class EmpiricalEnergyManager(private val context: Context) {
 
     // Correlate existing logs against Fitbit sleep logs
     fun runRetroactiveSleepFilter(sleepLogs: List<SleepLogEntry>) {
-        val logs = loadLogs().toMutableList()
+        val logs = loadInternalLogs().toMutableList()
         var modified = false
 
         for (i in logs.indices) {
@@ -226,6 +267,8 @@ class EmpiricalEnergyManager(private val context: Context) {
                 context.contentResolver.openOutputStream(fileDoc.uri)?.use { os ->
                     os.write(generateCSVExport().toByteArray())
                 }
+                val currentModified = fileDoc.lastModified()
+                prefs.edit().putLong("last_public_modified", currentModified).apply()
                 true
             } else false
         } catch (e: Exception) {
@@ -262,11 +305,13 @@ class EmpiricalEnergyManager(private val context: Context) {
             
             if (newLogs.isNotEmpty()) {
                 // Merge with existing internal logs
-                val existing = loadLogs().associateBy { it.timestamp }.toMutableMap()
+                val existing = loadInternalLogs().associateBy { it.timestamp }.toMutableMap()
                 for (log in newLogs) {
                     existing[log.timestamp] = log
                 }
-                saveLogs(existing.values.toList().sortedBy { it.timestamp })
+                saveLogs(existing.values.toList().sortedBy { it.timestamp }, syncPublic = false)
+                val currentModified = fileDoc.lastModified()
+                prefs.edit().putLong("last_public_modified", currentModified).apply()
                 true
             } else false
         } catch (e: Exception) {
