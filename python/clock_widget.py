@@ -11,9 +11,11 @@ from astral.sun import sun, elevation as sun_elevation
 from astral.moon import phase, elevation as moon_elevation
 from PIL import Image, ImageDraw, ImageTk, ImageFont
 import pystray
-from fitbit_client import FitbitClient
+import pystray
+from pystray import MenuItem as item
+from fitbit_client import FitbitClient, ReauthRequiredError
+from google_calendar_client import get_calendar_service, get_calendar_events, ReauthRequiredError as CalReauthRequiredError
 from energy_logic import EnergyCurve, get_energy_level
-from google_calendar_client import get_calendar_service, get_calendar_events
 
 class Tooltip:
     def __init__(self, widget, text):
@@ -62,6 +64,7 @@ class ClockWidget:
         "manual_wake_tick",
         "solar_circle",
         "sleep_debt_text",
+        "reauth_indicators",
         "clock_hand"
     ]
 
@@ -107,7 +110,7 @@ class ClockWidget:
         self.show_energy_pct = tk.BooleanVar(value=False)
         self.show_sleep_debt = tk.BooleanVar(value=True)
         self.show_sleep_debt_text = tk.BooleanVar(value=True)
-        self.normalize_energy = tk.BooleanVar(value=True)
+        self.normalize_energy = tk.BooleanVar(value=False)
         self.include_naps = tk.BooleanVar(value=True)
         self.show_sun_moon = tk.BooleanVar(value=True)
         self.show_manual_wake = tk.BooleanVar(value=True)
@@ -150,6 +153,9 @@ class ClockWidget:
         self.active_sleep_date  = None  # the YYYY-MM-DD date we are currently displaying
         self._sleep_table_needs_refresh = True
         self._sleep_table_refresh_scheduled = False
+        
+        self.reauth_needed_fitbit = False
+        self.reauth_needed_calendar = False
         
         # ── Calendar Integration ──────────────────────────────────────────────
         self.calendar_svc = None # Will be initialized lazily in the background thread
@@ -229,7 +235,7 @@ class ClockWidget:
         
         tk.Label(settings_frame, text="Hover Delay (s):", bg=self.solid_bg, fg="white", font=("Arial", 8)).pack(side=tk.LEFT)
         
-        self.hover_delay_var = tk.StringVar(value="1.0")
+        self.hover_delay_var = tk.StringVar(value="0.2")
         
         def validate_num(P):
             if P == "": return True
@@ -257,7 +263,7 @@ class ClockWidget:
 
         tk.Label(settings_frame, text="Timeout (s):", bg=self.solid_bg, fg="white", font=("Arial", 8)).pack(side=tk.LEFT, padx=(5, 0))
         
-        self.timeout_delay_var = tk.StringVar(value="1.0")
+        self.timeout_delay_var = tk.StringVar(value="0.3")
         
         self.timeout_delay_entry = tk.Entry(
             settings_frame, 
@@ -557,11 +563,19 @@ class ClockWidget:
         self.make_clock_solid()
         self.make_controls_visible()
         
-        # Trigger an opportunistic background refresh if data is stale (> 5s)
+        # Trigger an opportunistic background refresh if data is stale (> 5 min)
         now = datetime.datetime.now()
-        last_refresh = getattr(self, '_last_calendar_refresh_time', None)
-        if last_refresh is None or (now - last_refresh).total_seconds() > 5:
-            print("[ClockWidget] Opportunistic hover refresh.")
+        
+        # 1. Fitbit refresh
+        last_fitbit = getattr(self, 'last_fitbit_update', None)
+        if last_fitbit is None or (now - last_fitbit).total_seconds() > 300:
+            print("[ClockWidget] Opportunistic hover refresh: Fitbit.")
+            self.update_fitbit_data()
+
+        # 2. Calendar refresh
+        last_cal = getattr(self, '_last_calendar_refresh_time', None)
+        if last_cal is None or (now - last_cal).total_seconds() > 300:
+            print("[ClockWidget] Opportunistic hover refresh: Calendar.")
             self.update_calendar_data()
             
         if not getattr(self, '_checking_nearby', False):
@@ -1033,6 +1047,11 @@ class ClockWidget:
                     excluded_dates=excluded_dates
                 )
                 
+                # If we got here, reauth is NOT needed
+                self.root.after(0, lambda: self._set_reauth_status('fitbit', False))
+
+                # ... (rest of the logic)
+                
                 # Print the dynamic calculation for user visibility
                 eff = inputs.get('empirical_efficiency', 1.0)
                 need = inputs.get('sleep_need_hours', bedtime_goal)
@@ -1065,6 +1084,9 @@ class ClockWidget:
                     inputs, today_str, has_today_log, has_saved_setting, should_save_image
                 ))
 
+            except ReauthRequiredError:
+                print("[update_fitbit_data] Fitbit re-authentication required.")
+                self.root.after(0, lambda: self._set_reauth_status('fitbit', True))
             except Exception as e:
                 print(f"[update_fitbit_data] Fitbit background update failed: {e}")
        
@@ -1146,7 +1168,10 @@ class ClockWidget:
                 self.calendar_events = events
                 self._last_calendar_refresh_time = datetime.datetime.now()
                 print(f"[Calendar] Successfully fetched {len(events)} events.")
-                self.root.after(0, self.draw_clock)
+                self.root.after(0, lambda: (self._set_reauth_status('calendar', False), self.draw_clock()))
+            except CalReauthRequiredError:
+                print("[Calendar] Re-authentication required.")
+                self.root.after(0, lambda: self._set_reauth_status('calendar', True))
             except Exception as e:
                 print(f"[Calendar] Update failed: {e}")
             finally:
@@ -1716,14 +1741,10 @@ class ClockWidget:
                 self.fetch_sun_times()
                 self.update_fitbit_data(force=True)
                 self.update_calendar_data()
-            # 2. Hourly refresh (Fitbit + Calendar)
-            elif now.minute == 0:
-                print(f"[ClockWidget] Hourly refresh at {now}")
-                self.update_fitbit_data()
-                self.update_calendar_data()
-            # 3. 10-minute calendar refresh (at :10, :20, :30, :40, :50)
+            # 2. 10-minute polling (Fitbit + Calendar + Celestial)
             elif now.minute % 10 == 0:
-                print(f"[ClockWidget] 10-minute calendar poll at {now}")
+                print(f"[ClockWidget] 10-minute polling refresh at {now}")
+                self.update_fitbit_data()
                 self.update_calendar_data()
 
             self._last_drawn_minute = current_minute
@@ -2040,8 +2061,18 @@ class ClockWidget:
                 )
                 self.canvas.tag_lower(self._tooltip_bg_id, self._tooltip_id)
 
+    def _set_reauth_status(self, service, needed):
+        if service == 'fitbit':
+            self.reauth_needed_fitbit = needed
+        else:
+            self.reauth_needed_calendar = needed
+        
+        # Update UI if needed
+        self.draw_clock()
+
     def draw_clock(self):
         self.canvas.delete("all")
+        # ... (rest of the function)
         self._calendar_item_map.clear() # Clear item map on redraw
         w = self.canvas.winfo_width()
         h = self.canvas.winfo_height()
@@ -2427,6 +2458,42 @@ class ClockWidget:
         def draw_solar_circle():
             self._draw_solar_circle(center_x, center_y, radius)
 
+        def draw_reauth_indicators():
+            if not self.reauth_needed_fitbit and not self.reauth_needed_calendar:
+                return
+            
+            # Draw a warning icon in the top-left of the clock face
+            icon_r = radius * 0.15
+            margin = radius * 0.2
+            ix = center_x - radius + margin
+            iy = center_y - radius + margin
+            
+            # Fitbit warning (blue-ish)
+            if self.reauth_needed_fitbit:
+                fid = self.canvas.create_oval(
+                    ix - icon_r, iy - icon_r, ix + icon_r, iy + icon_r,
+                    fill="#00ccff", outline="white", width=2, tags="reauth_icon_fitbit"
+                )
+                self.canvas.create_text(ix, iy, text="F", fill="white", font=("Arial", int(icon_r), "bold"), tags="reauth_icon_fitbit")
+                self.canvas.tag_bind("reauth_icon_fitbit", "<Button-1>", lambda e: self.fitbit.authorize())
+                Tooltip(self.canvas, "Fitbit Auth Expired - Click to Re-link")
+                iy += icon_r * 2.5
+                
+            # Calendar warning (purple-ish)
+            if self.reauth_needed_calendar:
+                cid = self.canvas.create_oval(
+                    ix - icon_r, iy - icon_r, ix + icon_r, iy + icon_r,
+                    fill="#9370DB", outline="white", width=2, tags="reauth_icon_cal"
+                )
+                self.canvas.create_text(ix, iy, text="C", fill="white", font=("Arial", int(icon_r), "bold"), tags="reauth_icon_cal")
+                # Trigger Google Calendar auth
+                def trigger_cal_auth(e):
+                    # Reset service to force re-auth flow
+                    self.calendar_svc = None
+                    self.update_calendar_data()
+                self.canvas.tag_bind("reauth_icon_cal", "<Button-1>", trigger_cal_auth)
+                Tooltip(self.canvas, "Calendar Auth Expired - Click to Re-link")
+
         # Map string names to their drawing functions
         layers = {
             "background_face": draw_background_face,
@@ -2440,6 +2507,7 @@ class ClockWidget:
             "manual_wake_tick": draw_manual_wake_tick,
             "solar_circle": draw_solar_circle,
             "sleep_debt_text": draw_sleep_debt_text,
+            "reauth_indicators": draw_reauth_indicators,
             "clock_hand": draw_clock_hand
         }
 

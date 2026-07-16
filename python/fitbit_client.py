@@ -9,6 +9,9 @@ import time
 from datetime import datetime, timedelta
 from energy_logic import compute_sleep_debt, find_bathyphase
 
+class ReauthRequiredError(Exception):
+    """Raised when tokens are expired or invalid and require user interaction."""
+    pass
 
 class FitbitClient:
     def __init__(self, client_id, client_secret, token_file='fitbit_tokens.json'):
@@ -144,7 +147,7 @@ class FitbitClient:
     def _request_with_refresh(self, url):
         """API call with one automatic token-refresh retry."""
         if not self.tokens:
-            self.tokens = self.authorize()
+            raise ReauthRequiredError("No tokens available")
         try:
             return self._make_request(url)
         except Exception as e:
@@ -158,10 +161,9 @@ class FitbitClient:
                     except Exception as e2:
                         print(f"[FitbitClient] Request still failed after refresh: {e2}")
                 
-                # If refresh failed or still failing with 401/400, trigger full re-auth
-                print("[FitbitClient] Token appears dead — triggering full re-authorization...")
-                self.tokens = self.authorize()
-                return self._make_request(url)
+                # If refresh failed or still failing with 401/400, trigger re-auth error
+                print("[FitbitClient] Token appears dead — re-authentication required.")
+                raise ReauthRequiredError("Token refresh failed or expired")
             
             # For other errors (network, etc.), just raise
             raise
