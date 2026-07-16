@@ -23,8 +23,8 @@ class FitbitManager(private val context: Context) {
     private val client = OkHttpClient()
     private val json = Json { ignoreUnknownKeys = true }
 
-    private val clientId = "YOUR_FITBIT_CLIENT_ID" // From Python script
-    private val clientSecret = "YOUR_FITBIT_CLIENT_SECRET" // From Python script
+    private val clientId = BuildConfig.FITBIT_CLIENT_ID
+    private val clientSecret = BuildConfig.FITBIT_CLIENT_SECRET
     private val redirectUri = "fitbit24h://callback" // Simple scheme for Fitbit dashboard
 
     private val ACCESS_TOKEN = stringPreferencesKey("access_token")

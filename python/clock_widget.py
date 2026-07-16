@@ -76,8 +76,9 @@ class ClockWidget:
     ]
 
     # --- CONFIGURE YOUR FITBIT CREDENTIALS HERE ---
-    FITBIT_CLIENT_ID = 'YOUR_FITBIT_CLIENT_ID'
-    FITBIT_CLIENT_SECRET = 'YOUR_FITBIT_CLIENT_SECRET'
+    # Secrets will be loaded from fitbit_config.json
+    FITBIT_CLIENT_ID = None
+    FITBIT_CLIENT_SECRET = None
     # -- PERSONAL GOALS ----------------------------
     # Your target time spent in bed (9h 45m = 9.75)
     # The app will automatically calculate your 'Sleep Need'
@@ -130,6 +131,9 @@ class ClockWidget:
 
         self.sleep_settings_file = os.path.join(os.path.dirname(__file__), "sleep_settings.json")
         self.excluded_dates = self._load_sleep_settings()
+
+        # Load Fitbit Config
+        self._load_fitbit_config()
 
         # Model parameters will redraw on slider release (handled in _add_slider)
         # except for boolean toggles which still trace or use command
@@ -723,6 +727,7 @@ class ClockWidget:
     def _load_sleep_settings(self):
         """Load settings from JSON."""
         today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+        self.explicit_dates = []
         if os.path.exists(self.sleep_settings_file):
             try:
                 with open(self.sleep_settings_file, 'r') as f:
@@ -745,8 +750,22 @@ class ClockWidget:
                     return data.get("excluded_dates", [today_str])
             except:
                 pass
-        self.explicit_dates = []
         return [today_str]
+
+    def _load_fitbit_config(self):
+        config_path = os.path.join(os.path.dirname(__file__), "fitbit_config.json")
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    self.FITBIT_CLIENT_ID = config.get("FITBIT_CLIENT_ID")
+                    self.FITBIT_CLIENT_SECRET = config.get("FITBIT_CLIENT_SECRET")
+                    print("[Fitbit] Config loaded from fitbit_config.json")
+            except Exception as e:
+                print(f"[Fitbit] Error loading config: {e}")
+        
+        if not self.FITBIT_CLIENT_ID or not self.FITBIT_CLIENT_SECRET:
+            print("[Fitbit] WARNING: Credentials missing. Please create fitbit_config.json")
 
     def _save_sleep_settings(self):
         """Save settings to JSON."""
