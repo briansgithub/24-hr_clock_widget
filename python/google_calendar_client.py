@@ -8,6 +8,10 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+class ReauthRequiredError(Exception):
+    """Raised when tokens are expired or invalid and require user interaction."""
+    pass
+
 # If modifying these scopes, delete the file token.json.
 SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 
@@ -42,11 +46,9 @@ def get_calendar_service():
                 print(f"Error: '{creds_path}' not found. Please download it from the Google Cloud Console.")
                 return None
             
-            flow = InstalledAppFlow.from_client_secrets_file(
-                creds_path, SCOPES
-            )
-            # Set open_browser=True to help users authenticate in a GUI environment
-            creds = flow.run_local_server(port=0, open_browser=True)
+            # Instead of automatically running local server, we might want to signal re-auth
+            # But for simplicity, we'll just catch the need for it.
+            raise ReauthRequiredError("Google Calendar re-authentication required")
         
         # Save the credentials for the next run
         with open(token_path, "w") as token:
