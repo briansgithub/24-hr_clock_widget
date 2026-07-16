@@ -24,3 +24,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "24_hr_clock"
 include(":app")
+
+include(":python-widget")
+project(":python-widget").projectDir = file("../24-hr_clock_widget")
