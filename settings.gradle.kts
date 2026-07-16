@@ -11,9 +11,6 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
-plugins {
-    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
-}
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
@@ -22,8 +19,12 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "24_hr_clock"
-include(":app")
+rootProject.name = "24-hr-clock-hub"
 
-include(":python-widget")
-project(":python-widget").projectDir = file("../python")
+// Include the Android App
+include(":app")
+project(":app").projectDir = file("android/app")
+
+// Include Python as a module for visibility in IDE
+include(":python")
+project(":python").projectDir = file("python")
