@@ -65,6 +65,7 @@ class ClockWidget:
         "solar_circle",
         "sleep_debt_text",
         "reauth_indicators",
+        "energy_indicators",
         "clock_hand"
     ]
 
@@ -2207,6 +2208,8 @@ class ClockWidget:
                 self.energy_curve.normalize = self.normalize_energy.get()
                 self.energy_curve.draw(center_x, center_y, radius, self.wake_hour)
 
+        def draw_energy_indicators():
+            if self.show_energy.get() and self.wake_hour is not None:
                 # Draw Visual Indicators (Bathyphase and Acrophase)
                 if self.show_bathyphase.get() and self.bathyphase_hour is not None:
                     bathy_e = get_energy_level(
@@ -2222,12 +2225,13 @@ class ClockWidget:
                     self.energy_curve.draw_bathyphase_indicator(center_x, center_y, radius, self.bathyphase_hour, bathy_e)
 
                 if self.show_acrophase.get():
-                    max_e = self.energy_curve._cached_e_max
-                    try:
-                        idx = self.energy_curve._cached_levels.index(max_e)
-                        acro_h = (idx / (len(self.energy_curve._cached_levels) - 1)) * 24.0
-                        self.energy_curve.draw_acrophase_indicator(center_x, center_y, radius, acro_h, max_e)
-                    except: pass
+                    max_e = getattr(self.energy_curve, '_cached_e_max', None)
+                    if max_e is not None:
+                        try:
+                            idx = self.energy_curve._cached_levels.index(max_e)
+                            acro_h = (idx / (len(self.energy_curve._cached_levels) - 1)) * 24.0
+                            self.energy_curve.draw_acrophase_indicator(center_x, center_y, radius, acro_h, max_e)
+                        except: pass
 
         def draw_perimeter_line():
             self.canvas.create_oval(
@@ -2565,6 +2569,7 @@ class ClockWidget:
             "solar_circle": draw_solar_circle,
             "sleep_debt_text": draw_sleep_debt_text,
             "reauth_indicators": draw_reauth_indicators,
+            "energy_indicators": draw_energy_indicators,
             "clock_hand": draw_clock_hand
         }
 

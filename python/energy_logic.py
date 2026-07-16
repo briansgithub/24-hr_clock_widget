@@ -408,7 +408,7 @@ class EnergyCurve:
         angle = (18 - hour) * 15
         rad = math.radians(angle)
 
-        triangle_size = radius * 0.08
+        triangle_size = radius * 0.12
         base_width = triangle_size * 0.8
 
         tip_r = radius - triangle_size
