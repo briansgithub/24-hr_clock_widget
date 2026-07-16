@@ -135,12 +135,14 @@ To use the heart rate features (Bathyphase), you must register your application 
 2.  **OAuth Scopes**: Ensure `sleep` and `heartrate` are enabled.
 3.  **Redirect URI**: Set to `http://localhost:8080`.
 
-Update the `FITBIT_CLIENT_ID` and `FITBIT_CLIENT_SECRET` in `clock_widget.py` with your credentials.
+**Credentials Setup**:
+Create `python/fitbit_config.json` and add your `FITBIT_CLIENT_ID` and `FITBIT_CLIENT_SECRET`. See `fitbit_config.json.example` for the required format.
+
 ### Google Calendar API Configuration
 To enable schedule visualization:
 1.  Create a project in the [Google Cloud Console](https://console.cloud.google.com/).
 2.  Enable the **Google Calendar API**.
 3.  Configure the **OAuth Consent Screen** (add your email as a test user).
 4.  Create **OAuth 2.0 Client ID** credentials (Desktop Application).
-5.  Download the JSON and save it as `credentials.json` in the project root.
+5.  Download the JSON and save it as `credentials.json` in the `python/` directory. See `credentials.json.example` for the required format.
 6.  Run the app; the first launch will open a browser for one-time authorization.

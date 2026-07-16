@@ -1,0 +1,6 @@
+# Android SDK location (automatically managed by Android Studio)
+sdk.dir=/path/to/your/android/sdk
+
+# Fitbit API Credentials (from https://dev.fitbit.com)
+FITBIT_CLIENT_ID=YOUR_CLIENT_ID_HERE
+FITBIT_CLIENT_SECRET=YOUR_CLIENT_SECRET_HERE
