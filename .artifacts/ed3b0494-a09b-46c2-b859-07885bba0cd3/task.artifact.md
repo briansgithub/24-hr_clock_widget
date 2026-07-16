@@ -1,0 +1,7 @@
+- [x] Fix `uploadToGoogleDrive` call in `EmpiricalLogScreens.kt`
+    - [x] Add `kotlinx.coroutines.launch` import
+    - [x] Add `rememberCoroutineScope()`
+    - [x] Wrap call in `scope.launch` and handle `Pair` result
+- [x] Fix `uploadToGoogleDrive` call in `MissedDataCheckWorker.kt`
+    - [x] Remove callback and handle `Pair` result directly
+- [x] Verify build

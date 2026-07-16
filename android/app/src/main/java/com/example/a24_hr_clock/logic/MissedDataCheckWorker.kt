@@ -40,12 +40,11 @@ class MissedDataCheckWorker(
             val modelSettings = settings.modelSettingsFlow.first()
             if (modelSettings.googleDriveUrl.isNotEmpty()) {
                 Log.d("MissedDataCheckWorker", "Triggering daily auto-export to Google Drive")
-                manager.uploadToGoogleDrive(modelSettings.googleDriveUrl) { success, message ->
-                    if (success) {
-                        Log.i("MissedDataCheckWorker", "Google Drive export succeeded: $message")
-                    } else {
-                        Log.e("MissedDataCheckWorker", "Google Drive export failed: $message")
-                    }
+                val (success, message) = manager.uploadToGoogleDrive(modelSettings.googleDriveUrl)
+                if (success) {
+                    Log.i("MissedDataCheckWorker", "Google Drive export succeeded: $message")
+                } else {
+                    Log.e("MissedDataCheckWorker", "Google Drive export failed: $message")
                 }
             } else {
                 Log.w("MissedDataCheckWorker", "Google Drive export skipped: Web App URL is empty")

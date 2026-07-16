@@ -1,16 +1,20 @@
 package com.example.a24_hr_clock.ui
 
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.a24_hr_clock.logic.EnergyLog
+import kotlinx.coroutines.launch
 import com.example.a24_hr_clock.logic.EmpiricalEnergyManager
 import com.example.a24_hr_clock.logic.ModelSettings
 import java.time.Instant
@@ -48,7 +53,7 @@ fun EnergyLogInputScreen(
                 title = { Text("Log Current Alertness") },
                 navigationIcon = {
                     IconButton(onClick = onCancel) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -132,9 +137,11 @@ fun EmpiricalLogHistoryScreen(
     manager: EmpiricalEnergyManager,
     modelSettings: ModelSettings,
     onUpdateGoogleDriveUrl: (String) -> Unit,
+    onUpdateLocalBackupUri: (String) -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var logs by remember { mutableStateOf(emptyList<EnergyLog>()) }
     var selectedLogForEdit by remember { mutableStateOf<EnergyLog?>(null) }
     var showEditDialog by remember { mutableStateOf(false) }
@@ -143,6 +150,19 @@ fun EmpiricalLogHistoryScreen(
     var driveUrlInput by remember { mutableStateOf(modelSettings.googleDriveUrl) }
     var exportStatusMessage by remember { mutableStateOf<String?>(null) }
     var isExporting by remember { mutableStateOf(false) }
+
+    // Local Storage Backup
+    var localBackupStatusMessage by remember { mutableStateOf<String?>(null) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            // Take persistable permission
+            val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            context.contentResolver.takePersistableUriPermission(uri, takeFlags)
+            
+            onUpdateLocalBackupUri(uri.toString())
+        }
+    }
 
     fun refreshData() {
         logs = manager.getFullLogHistory(30) // Show last 30 days
@@ -230,171 +250,265 @@ fun EmpiricalLogHistoryScreen(
                 title = { Text("Empirical Energy History") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
         }
     ) { innerPadding ->
-        Column(
+        // Group list items by formatted date string
+        val formatterDate = DateTimeFormatter.ofPattern("EEEE, MMM dd, yyyy").withLocale(Locale.US)
+        val formatterTime = DateTimeFormatter.ofPattern("hh:mm a").withLocale(Locale.US)
+
+        val groupedLogs = remember(logs) {
+            logs.groupBy {
+                formatterDate.format(
+                    LocalDateTime.ofInstant(Instant.ofEpochMilli(it.timestamp), ZoneId.systemDefault())
+                )
+            }
+        }
+
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            // Google Drive config box
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Google Drive Auto-Export Config",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = driveUrlInput,
-                        onValueChange = {
-                            driveUrlInput = it
-                            onUpdateGoogleDriveUrl(it)
-                        },
-                        label = { Text("Web App Deployment URL") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Button(
-                            onClick = {
-                                isExporting = true
-                                exportStatusMessage = "Exporting..."
-                                manager.uploadToGoogleDrive(driveUrlInput) { success, msg ->
-                                    isExporting = false
-                                    exportStatusMessage = msg
-                                }
-                            },
-                            enabled = !isExporting && driveUrlInput.isNotEmpty(),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.CloudUpload, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Export Now")
-                        }
-                    }
-                    exportStatusMessage?.let {
+            item {
+                // Local Storage Backup Card
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = it,
+                            text = "On-Device Persistence (Survives Uninstall)",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Data is saved as CSV in your Documents folder.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (it.contains("Successfully")) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(top = 8.dp)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        if (modelSettings.localBackupUri.isEmpty()) {
+                            Button(
+                                onClick = { launcher.launch(null) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Folder, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Select Backup Folder")
+                            }
+                        } else {
+                            Text(
+                                text = "Status: Linked to Documents",
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        if (manager.syncToPublicStorage(modelSettings.localBackupUri)) {
+                                            localBackupStatusMessage = "Manually synced to Documents"
+                                        } else {
+                                            localBackupStatusMessage = "Sync failed. Check folder permissions."
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.Sync, contentDescription = null)
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Sync Now")
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        if (manager.importFromPublicStorage(modelSettings.localBackupUri)) {
+                                            localBackupStatusMessage = "Successfully restored logs from backup"
+                                            refreshData()
+                                        } else {
+                                            localBackupStatusMessage = "Restore failed. Backup file not found."
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.Restore, contentDescription = null)
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Restore")
+                                }
+                            }
+                            TextButton(
+                                onClick = { onUpdateLocalBackupUri("") },
+                                modifier = Modifier.align(Alignment.End)
+                            ) {
+                                Text("Unlink Folder", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                        localBackupStatusMessage?.let {
+                            Text(
+                                text = it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (it.contains("Successfully") || it.contains("synced")) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
+                        }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            item {
+                // Google Drive config box
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "Google Drive Auto-Export Config",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = driveUrlInput,
+                            onValueChange = {
+                                driveUrlInput = it
+                                onUpdateGoogleDriveUrl(it)
+                            },
+                            label = { Text("Web App Deployment URL") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
 
-            Text(
-                text = "Past 30 Days Logging History",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Button(
+                                onClick = {
+                                    isExporting = true
+                                    exportStatusMessage = "Exporting..."
+                                    scope.launch {
+                                        val (_, msg) = manager.uploadToGoogleDrive(driveUrlInput)
+                                        isExporting = false
+                                        exportStatusMessage = msg
+                                    }
+                                },
+                                enabled = !isExporting && driveUrlInput.isNotEmpty(),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.CloudUpload, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Export Now")
+                            }
+                        }
+                        exportStatusMessage?.let {
+                            Text(
+                                text = it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (it.contains("Successfully")) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
+                        }
+                    }
+                }
+            }
 
-            // Group list items by formatted date string
-            val formatterDate = DateTimeFormatter.ofPattern("EEEE, MMM dd, yyyy").withLocale(Locale.US)
-            val formatterTime = DateTimeFormatter.ofPattern("hh:mm a").withLocale(Locale.US)
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
 
-            val groupedLogs = remember(logs) {
-                logs.groupBy {
-                    formatterDate.format(
-                        LocalDateTime.ofInstant(Instant.ofEpochMilli(it.timestamp), ZoneId.systemDefault())
+                Text(
+                    text = "Past 30 Days Logging History",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
+
+            groupedLogs.forEach { (dateHeader, dayLogs) ->
+                item {
+                    Text(
+                        text = dateHeader,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surface)
+                            .padding(top = 16.dp, bottom = 8.dp)
                     )
                 }
-            }
 
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                groupedLogs.forEach { (dateHeader, dayLogs) ->
-                    item {
-                        Text(
-                            text = dateHeader,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surface)
-                                .padding(top = 16.dp, bottom = 8.dp)
-                        )
+                items(dayLogs) { log ->
+                    val localTime = LocalDateTime.ofInstant(
+                        Instant.ofEpochMilli(log.timestamp),
+                        ZoneId.systemDefault()
+                    )
+                    val timeStrStart = formatterTime.format(localTime)
+                    val timeStrEnd = formatterTime.format(localTime.plusMinutes(30))
+
+                    val (statusText, statusColor) = when (log.status) {
+                        "LOGGED" -> "✓ ${log.energyLevel} / 100" to Color(0xFF1B5E20)
+                        "SLEEP_EXCLUDED" -> "💤 Sleep (Ignored)" to Color(0xFF616161)
+                        else -> "⚠️ Missed (Tap to fill)" to Color(0xFFB71C1C)
                     }
 
-                    items(dayLogs) { log ->
-                        val localTime = LocalDateTime.ofInstant(
-                            Instant.ofEpochMilli(log.timestamp),
-                            ZoneId.systemDefault()
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clickable {
+                                selectedLogForEdit = log
+                                showEditDialog = true
+                            },
+                        colors = CardDefaults.cardColors(
+                            containerColor = when (log.status) {
+                                "LOGGED" -> Color(0xFFE8F5E9)
+                                "SLEEP_EXCLUDED" -> Color(0xFFF5F5F5)
+                                else -> Color(0xFFFFEBEE)
+                            },
+                            contentColor = when (log.status) {
+                                "LOGGED" -> Color(0xFF1B5E20)
+                                "SLEEP_EXCLUDED" -> Color(0xFF212121)
+                                else -> Color(0xFFB71C1C)
+                            }
                         )
-                        val timeStrStart = formatterTime.format(localTime)
-                        val timeStrEnd = formatterTime.format(localTime.plusMinutes(30))
-
-                        val (statusText, statusColor) = when (log.status) {
-                            "LOGGED" -> "✓ ${log.energyLevel} / 100" to Color(0xFF1B5E20)
-                            "SLEEP_EXCLUDED" -> "💤 Sleep (Ignored)" to Color(0xFF616161)
-                            else -> "⚠️ Missed (Tap to fill)" to Color(0xFFB71C1C)
-                        }
-
-                        Card(
+                    ) {
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .clickable {
-                                    selectedLogForEdit = log
-                                    showEditDialog = true
-                                },
-                            colors = CardDefaults.cardColors(
-                                containerColor = when (log.status) {
-                                    "LOGGED" -> Color(0xFFE8F5E9)
-                                    "SLEEP_EXCLUDED" -> Color(0xFFF5F5F5)
-                                    else -> Color(0xFFFFEBEE)
-                                },
-                                contentColor = when (log.status) {
-                                    "LOGGED" -> Color(0xFF1B5E20)
-                                    "SLEEP_EXCLUDED" -> Color(0xFF212121)
-                                    else -> Color(0xFFB71C1C)
-                                }
-                            )
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text(
-                                        text = "$timeStrStart – $timeStrEnd",
-                                        fontWeight = FontWeight.SemiBold,
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                }
+                            Column {
                                 Text(
-                                    text = statusText,
-                                    color = statusColor,
-                                    fontWeight = FontWeight.Bold,
+                                    text = "$timeStrStart – $timeStrEnd",
+                                    fontWeight = FontWeight.SemiBold,
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                             }
+                            Text(
+                                text = statusText,
+                                color = statusColor,
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
                         }
                     }
                 }

@@ -1,0 +1,7 @@
+- [ ] Update `AndroidManifest.xml` with permissions and components
+- [ ] Implement `BedtimeNotificationManager.kt`
+- [ ] Implement `BedtimeReminderReceiver.kt`
+- [ ] Implement `BedtimeCountdownService.kt`
+- [ ] Update `MainActivity.kt` for permissions and initialization
+- [ ] Update `SyncWorker.kt` to trigger notification updates
+- [ ] Verify implementation
