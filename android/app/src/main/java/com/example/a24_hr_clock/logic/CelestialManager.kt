@@ -83,10 +83,10 @@ class CelestialManager(private val latitude: Double, private val longitude: Doub
     }
 
     /**
-     * Returns (sunRad, moonRad, moonPhaseValue)
+     * Returns (sunRad, moonRad, moonPhaseValue, sunElevation)
      * Radian angles are mapped based on the altitude-based mapping in the Python script.
      */
-    fun getCelestialPositions(): Triple<Double, Double, Double> {
+    fun getCelestialPositions(): SunMoonPosition {
         val now = ZonedDateTime.now()
         updateExtremes()
         
@@ -110,8 +110,15 @@ class CelestialManager(private val latitude: Double, private val longitude: Doub
         val phaseDegrees = moonIllum.phase 
         val moonPhaseValue = ((phaseDegrees + 180.0) % 360.0) / 360.0 * 29.530588
         
-        return Triple(sunRad, moonRad, moonPhaseValue)
+        return SunMoonPosition(sunRad, moonRad, moonPhaseValue, sunPos.altitude)
     }
+
+    data class SunMoonPosition(
+        val sunRad: Double,
+        val moonRad: Double,
+        val moonPhase: Double,
+        val sunElevation: Double
+    )
 
     private fun calculateMappedAngle(altitude: Double, rising: Boolean, eMax: Double, eMin: Double): Double {
         val valIn = if (altitude >= 0) {

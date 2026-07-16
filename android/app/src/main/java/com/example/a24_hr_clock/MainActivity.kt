@@ -102,6 +102,12 @@ class MainActivity : ComponentActivity() {
         
         checkPermissions()
         
+        // Initialize Bedtime Notifications
+        lifecycleScope.launch {
+            val bedtimeManager = BedtimeNotificationManager(this@MainActivity)
+            bedtimeManager.updateNotifications()
+        }
+
         enableEdgeToEdge()
         setContent {
             _24_hr_clockTheme {
@@ -140,6 +146,12 @@ class MainActivity : ComponentActivity() {
         
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED) {
             permissionsToRequest.add(Manifest.permission.READ_CALENDAR)
+        }
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
         }
 
         if (permissionsToRequest.isNotEmpty()) {
@@ -259,7 +271,7 @@ fun MainScreen(
     // --- Data for Preview ---
     val locationManager = remember { LocationManager(context) }
     var sunTimes by remember { mutableStateOf(Pair(6.0, 18.0)) }
-    var celestialPositions by remember { mutableStateOf(Triple(0.0, 0.0, 0.0)) }
+    var celestialPositions by remember { mutableStateOf(CelestialManager.SunMoonPosition(0.0, 0.0, 0.0, 0.0)) }
     var solarIrradiance by remember { mutableIntStateOf(255) }
     var calendarEvents by remember { mutableStateOf(emptyList<CalendarEvent>()) }
     val calendarManager = remember { CalendarManager(context) }
@@ -410,6 +422,9 @@ fun MainScreen(
                     onUpdateGoogleDriveUrl = { url ->
                         scope.launch { settingsManager.updateModelSettings(modelSettings.copy(googleDriveUrl = url)) }
                     },
+                    onUpdateLocalBackupUri = { uri ->
+                        scope.launch { settingsManager.updateModelSettings(modelSettings.copy(localBackupUri = uri)) }
+                    },
                     onBack = { currentScreen = Screen.ENERGY }
                 )
                 Screen.LOG_INPUT -> EnergyLogInputScreen(
@@ -432,6 +447,7 @@ fun MainScreen(
                             Toast.makeText(context, "Refreshing Fitbit data...", Toast.LENGTH_SHORT).show()
                             context.sendBroadcast(Intent("com.example.a24_hr_clock.REFRESH_DATA"))
                             fitbitManager.refreshMetrics()
+                            BedtimeNotificationManager(context).updateNotifications()
                         }
                     },
                     onUpdateModel = { scope.launch { settingsManager.updateModelSettings(it) } }
@@ -454,7 +470,7 @@ fun ClockPreviewScreen(
     sleepLogs: List<SleepLogEntry>,
     metrics: Triple<Double?, Double, Double>,
     sunTimes: Pair<Double, Double>,
-    celestialPositions: Triple<Double, Double, Double>,
+    celestialPositions: CelestialManager.SunMoonPosition,
     solarIrradiance: Int,
     calendarEvents: List<CalendarEvent>,
     sleepDebt: Double,
@@ -494,9 +510,10 @@ fun ClockPreviewScreen(
                     sunTimes.first,
                     sunTimes.second,
                     sleepLogs,
-                    celestialPositions.first,
-                    celestialPositions.second,
-                    celestialPositions.third,
+                    celestialPositions.sunRad,
+                    celestialPositions.moonRad,
+                    celestialPositions.moonPhase,
+                    celestialPositions.sunElevation,
                     solarIrradiance,
                     sleepDebt,
                     metrics.first,
@@ -700,7 +717,7 @@ fun DisplaySettingsScreen(
     sleepLogs: List<SleepLogEntry>,
     metrics: Triple<Double?, Double, Double>,
     sunTimes: Pair<Double, Double>,
-    celestialPositions: Triple<Double, Double, Double>,
+    celestialPositions: CelestialManager.SunMoonPosition,
     solarIrradiance: Int,
     calendarEvents: List<CalendarEvent>,
     sleepDebt: Double,

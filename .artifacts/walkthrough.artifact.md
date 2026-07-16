@@ -17,11 +17,19 @@ I have implemented dynamic sun color and brightness adjustment in both the Andro
 
 ## Verification Results
 
-### Logic Check
-- **Daytime (Elevation > 20°)**: Sun is bright yellow (#FFD700).
-- **Golden Hour (Elevation 0° to 20°)**: Sun transitions from yellow to deep orange (#FF4500).
-- **Sunset/Twilight (Elevation 0° to -8°)**: Sun fades from orange to a dimmer gold/yellow.
-- **Night (Elevation < -8°)**: Sun remains visible as a high-alpha (opaque), faint yellow icon (Dim Gold #8B8000).
+### Refined Sun Aesthetics
+
+I have made further adjustments to improve the sun's appearance and realism:
+
+- **Dynamic Alpha**: The sun is now fully opaque (Alpha 255) only when it is above the horizon. Below the horizon, it smoothly fades down to a minimum alpha of 60 at the darkness threshold (-8°).
+- **Outline Removal at Night**: To prevent the "ring" look mentioned, the outline color now matches the fill color precisely when the sun is below the horizon.
+- **Enhanced Daytime Outline**: During the day, the outline color is now dynamically derived from the fill color, staying slightly more saturated/vibrant to give it a "glow" effect without looking like a separate ring.
+
+## Logic Check
+- **Daytime (Elevation > 20°)**: Sun is bright yellow, fully opaque.
+- **Golden Hour (Elevation 0° to 20°)**: Sun transitions from yellow to deep orange, fully opaque.
+- **Twilight (Elevation 0° to -8°)**: Sun fades from orange to dim gold, with alpha scaling from 255 down to 60.
+- **Night (Elevation < -8°)**: Sun remains at a constant dim gold/brown with a low alpha (60), no distinct outline.
 
 ### Build Check
 - Android code was updated consistently across the service, main activity, and renderer to ensure no compilation errors.
