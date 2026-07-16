@@ -45,6 +45,7 @@ import androidx.compose.foundation.Canvas
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.example.a24_hr_clock.logic.*
+import com.example.a24_hr_clock.ui.*
 import com.example.a24_hr_clock.wallpaper.ClockRenderer
 import com.example.a24_hr_clock.wallpaper.ClockWallpaperService
 import com.example.a24_hr_clock.ui.theme._24_hr_clockTheme
@@ -69,12 +70,15 @@ enum class Screen {
     DISPLAY,
     ENERGY,
     SLEEP,
-    EXERCISE
+    EXERCISE,
+    LOG_HISTORY,
+    LOG_INPUT
 }
 
 class MainActivity : ComponentActivity() {
     private lateinit var fitbitManager: FitbitManager
     private lateinit var settingsManager: SettingsManager
+    private var initialAction by mutableStateOf<String?>(null)
 
     val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -105,6 +109,8 @@ class MainActivity : ComponentActivity() {
                     MainScreen(
                         fitbitManager = fitbitManager,
                         settingsManager = settingsManager,
+                        initialAction = initialAction,
+                        onClearAction = { initialAction = null },
                         modifier = Modifier.padding(innerPadding),
                         onLoginClick = { 
                             val intent = CustomTabsIntent.Builder().build()
@@ -120,6 +126,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
+        val syncManager = SyncManager(this)
+        syncManager.schedulePeriodicSync()
+        syncManager.scheduleEmpiricalEnergyWorker()
+        syncManager.scheduleMissedDataCheckWorker()
 
         handleIntent(intent)
     }
@@ -164,6 +175,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
+        val actionExtra = intent?.getStringExtra("action")
+        if (actionExtra != null) {
+            initialAction = actionExtra
+        }
         val data = intent?.data
         if (data != null && data.toString().startsWith("fitbit24h://callback")) {
             val code = data.getQueryParameter("code")
@@ -187,6 +202,8 @@ class MainActivity : ComponentActivity() {
 fun MainScreen(
     fitbitManager: FitbitManager,
     settingsManager: SettingsManager,
+    initialAction: String? = null,
+    onClearAction: () -> Unit = {},
     modifier: Modifier = Modifier,
     onLoginClick: () -> Unit,
     onLogoutClick: () -> Unit
@@ -283,6 +300,16 @@ fun MainScreen(
     var currentScreen by remember { mutableStateOf(Screen.PREVIEW) }
     var previewIsLockScreen by remember { mutableStateOf(true) }
 
+    LaunchedEffect(initialAction) {
+        if (initialAction != null) {
+            when (initialAction) {
+                "log_energy" -> currentScreen = Screen.LOG_INPUT
+                "log_history" -> currentScreen = Screen.LOG_HISTORY
+            }
+            onClearAction()
+        }
+    }
+
     Scaffold(
         bottomBar = {
             NavigationBar {
@@ -374,7 +401,24 @@ fun MainScreen(
                 Screen.ENERGY -> ModelSettingsScreen(
                     modelSettings = modelSettings,
                     onUpdate = { scope.launch { settingsManager.updateModelSettings(it) } },
-                    onReset = { scope.launch { settingsManager.resetModelSettings() } }
+                    onReset = { scope.launch { settingsManager.resetModelSettings() } },
+                    onNavigateToLogHistory = { currentScreen = Screen.LOG_HISTORY }
+                )
+                Screen.LOG_HISTORY -> EmpiricalLogHistoryScreen(
+                    manager = remember { EmpiricalEnergyManager(context) },
+                    modelSettings = modelSettings,
+                    onUpdateGoogleDriveUrl = { url ->
+                        scope.launch { settingsManager.updateModelSettings(modelSettings.copy(googleDriveUrl = url)) }
+                    },
+                    onBack = { currentScreen = Screen.ENERGY }
+                )
+                Screen.LOG_INPUT -> EnergyLogInputScreen(
+                    onSave = { value ->
+                        val manager = EmpiricalEnergyManager(context)
+                        manager.logEnergy(System.currentTimeMillis(), value)
+                        currentScreen = Screen.LOG_HISTORY
+                    },
+                    onCancel = { currentScreen = Screen.PREVIEW }
                 )
                 Screen.SLEEP -> SleepLogScreen(
                     sleepLogs = sleepLogs,
@@ -814,7 +858,8 @@ fun DisplaySettingsScreen(
 fun ModelSettingsScreen(
     modelSettings: ModelSettings,
     onUpdate: (ModelSettings) -> Unit,
-    onReset: () -> Unit
+    onReset: () -> Unit,
+    onNavigateToLogHistory: () -> Unit
 ) {
     val context = LocalContext.current
     Column(
@@ -825,6 +870,15 @@ fun ModelSettingsScreen(
     ) {
         Button(onClick = onReset, modifier = Modifier.fillMaxWidth()) {
             Text("Reset Model Defaults")
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Button(
+            onClick = onNavigateToLogHistory,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+        ) {
+            Text("Empirical Alertness Logs")
         }
         Spacer(modifier = Modifier.height(16.dp))
 

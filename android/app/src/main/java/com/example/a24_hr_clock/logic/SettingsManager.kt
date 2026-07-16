@@ -73,7 +73,8 @@ class SettingsManager(private val context: Context) {
             userAge = 31,
             restingHR = 55.0,
             hrvPeakPotential = 71.0,
-            hrvMedicatedBase = 30.0
+            hrvMedicatedBase = 30.0,
+            googleDriveUrl = ""
         )
 
         private val DEFAULT_CALENDAR_SETTINGS = CalendarSettings()
@@ -200,6 +201,7 @@ data class ModelSettings(
     val userAge: Int = 31,
     val restingHR: Double = 55.0,
     val hrvPeakPotential: Double = 71.0,
-    val hrvMedicatedBase: Double = 30.0
+    val hrvMedicatedBase: Double = 30.0,
+    val googleDriveUrl: String = ""
 )
 
