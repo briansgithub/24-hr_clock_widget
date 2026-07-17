@@ -1,0 +1,12 @@
+- [x] Update `AndroidManifest.xml` with permissions and components
+- [x] Implement `BedtimeNotificationManager.kt`
+- [x] Implement `BedtimeReminderReceiver.kt`
+- [x] Implement `BedtimeCountdownService.kt`
+- [x] Update `MainActivity.kt` for permissions and initialization
+- [x] Update `SyncWorker.kt` to trigger notification updates
+- [x] Tweak persistent notification UI
+- [x] Fix countdown timer formatting and color
+- [x] Refine overdue logic and 6h window
+    - [x] Update `BedtimeNotificationManager.kt` to always return future target
+    - [x] Update `BedtimeCountdownService.kt` for 6h "GO TO BED!" window
+- [x] Verify implementation

@@ -81,6 +81,9 @@ dependencies {
     // DataStore for settings and tokens
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
+    // Document management
+    implementation("androidx.documentfile:documentfile:1.1.0")
+
     // Browser for OAuth
     implementation("androidx.browser:browser:1.8.0")
 

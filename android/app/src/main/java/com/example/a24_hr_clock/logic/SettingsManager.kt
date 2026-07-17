@@ -36,7 +36,8 @@ class SettingsManager(private val context: Context) {
             showManualWake = true,
             showBathyphase = true,
             showAcrophase = true,
-            showWakeSunriseInfo = false
+            showWakeSunriseInfo = false,
+            showGrogginess = true
         )
 
         private val DEFAULT_LOCK_SETTINGS = ClockSettings(
@@ -54,7 +55,8 @@ class SettingsManager(private val context: Context) {
             showManualWake = true,
             showBathyphase = true,
             showAcrophase = true,
-            showWakeSunriseInfo = true
+            showWakeSunriseInfo = true,
+            showGrogginess = false
         )
 
         private val DEFAULT_MODEL_SETTINGS = ModelSettings(
@@ -73,7 +75,10 @@ class SettingsManager(private val context: Context) {
             userAge = 31,
             restingHR = 55.0,
             hrvPeakPotential = 71.0,
-            hrvMedicatedBase = 30.0
+            hrvMedicatedBase = 30.0,
+            googleDriveUrl = "",
+            localBackupUri = "",
+            lastEmpiricalSync = 0L
         )
 
         private val DEFAULT_CALENDAR_SETTINGS = CalendarSettings()
@@ -174,7 +179,8 @@ data class ClockSettings(
     val showManualWake: Boolean = true,
     val showBathyphase: Boolean = true,
     val showAcrophase: Boolean = true,
-    val showWakeSunriseInfo: Boolean = false
+    val showWakeSunriseInfo: Boolean = false,
+    val showGrogginess: Boolean = false
 )
 
 @Serializable
@@ -200,6 +206,9 @@ data class ModelSettings(
     val userAge: Int = 31,
     val restingHR: Double = 55.0,
     val hrvPeakPotential: Double = 71.0,
-    val hrvMedicatedBase: Double = 30.0
+    val hrvMedicatedBase: Double = 30.0,
+    val googleDriveUrl: String = "",
+    val localBackupUri: String = "",
+    val lastEmpiricalSync: Long = 0L
 )
 

@@ -45,6 +45,7 @@ import androidx.compose.foundation.Canvas
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.example.a24_hr_clock.logic.*
+import com.example.a24_hr_clock.ui.*
 import com.example.a24_hr_clock.wallpaper.ClockRenderer
 import com.example.a24_hr_clock.wallpaper.ClockWallpaperService
 import com.example.a24_hr_clock.ui.theme._24_hr_clockTheme
@@ -69,12 +70,15 @@ enum class Screen {
     DISPLAY,
     ENERGY,
     SLEEP,
-    EXERCISE
+    EXERCISE,
+    LOG_HISTORY,
+    LOG_INPUT
 }
 
 class MainActivity : ComponentActivity() {
     private lateinit var fitbitManager: FitbitManager
     private lateinit var settingsManager: SettingsManager
+    private var initialAction by mutableStateOf<String?>(null)
 
     val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -98,6 +102,12 @@ class MainActivity : ComponentActivity() {
         
         checkPermissions()
         
+        // Initialize Bedtime Notifications
+        lifecycleScope.launch {
+            val bedtimeManager = BedtimeNotificationManager(this@MainActivity)
+            bedtimeManager.updateNotifications()
+        }
+
         enableEdgeToEdge()
         setContent {
             _24_hr_clockTheme {
@@ -105,6 +115,8 @@ class MainActivity : ComponentActivity() {
                     MainScreen(
                         fitbitManager = fitbitManager,
                         settingsManager = settingsManager,
+                        initialAction = initialAction,
+                        onClearAction = { initialAction = null },
                         modifier = Modifier.padding(innerPadding),
                         onLoginClick = { 
                             val intent = CustomTabsIntent.Builder().build()
@@ -121,6 +133,11 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        val syncManager = SyncManager(this)
+        syncManager.schedulePeriodicSync()
+        syncManager.scheduleEmpiricalEnergyWorker()
+        syncManager.scheduleMissedDataCheckWorker()
+
         handleIntent(intent)
     }
 
@@ -129,6 +146,12 @@ class MainActivity : ComponentActivity() {
         
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED) {
             permissionsToRequest.add(Manifest.permission.READ_CALENDAR)
+        }
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
         }
 
         if (permissionsToRequest.isNotEmpty()) {
@@ -164,6 +187,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
+        val actionExtra = intent?.getStringExtra("action")
+        if (actionExtra != null) {
+            initialAction = actionExtra
+        }
         val data = intent?.data
         if (data != null && data.toString().startsWith("fitbit24h://callback")) {
             val code = data.getQueryParameter("code")
@@ -187,6 +214,8 @@ class MainActivity : ComponentActivity() {
 fun MainScreen(
     fitbitManager: FitbitManager,
     settingsManager: SettingsManager,
+    initialAction: String? = null,
+    onClearAction: () -> Unit = {},
     modifier: Modifier = Modifier,
     onLoginClick: () -> Unit,
     onLogoutClick: () -> Unit
@@ -242,7 +271,7 @@ fun MainScreen(
     // --- Data for Preview ---
     val locationManager = remember { LocationManager(context) }
     var sunTimes by remember { mutableStateOf(Pair(6.0, 18.0)) }
-    var celestialPositions by remember { mutableStateOf(Triple(0.0, 0.0, 0.0)) }
+    var celestialPositions by remember { mutableStateOf(CelestialManager.SunMoonPosition(0.0, 0.0, 0.0, 0.0)) }
     var solarIrradiance by remember { mutableIntStateOf(255) }
     var calendarEvents by remember { mutableStateOf(emptyList<CalendarEvent>()) }
     val calendarManager = remember { CalendarManager(context) }
@@ -282,6 +311,16 @@ fun MainScreen(
 
     var currentScreen by remember { mutableStateOf(Screen.PREVIEW) }
     var previewIsLockScreen by remember { mutableStateOf(true) }
+
+    LaunchedEffect(initialAction) {
+        if (initialAction != null) {
+            when (initialAction) {
+                "log_energy" -> currentScreen = Screen.LOG_INPUT
+                "log_history" -> currentScreen = Screen.LOG_HISTORY
+            }
+            onClearAction()
+        }
+    }
 
     Scaffold(
         bottomBar = {
@@ -374,7 +413,27 @@ fun MainScreen(
                 Screen.ENERGY -> ModelSettingsScreen(
                     modelSettings = modelSettings,
                     onUpdate = { scope.launch { settingsManager.updateModelSettings(it) } },
-                    onReset = { scope.launch { settingsManager.resetModelSettings() } }
+                    onReset = { scope.launch { settingsManager.resetModelSettings() } },
+                    onNavigateToLogHistory = { currentScreen = Screen.LOG_HISTORY }
+                )
+                Screen.LOG_HISTORY -> EmpiricalLogHistoryScreen(
+                    manager = remember { EmpiricalEnergyManager(context) },
+                    modelSettings = modelSettings,
+                    onUpdateGoogleDriveUrl = { url ->
+                        scope.launch { settingsManager.updateModelSettings(modelSettings.copy(googleDriveUrl = url)) }
+                    },
+                    onUpdateLocalBackupUri = { uri ->
+                        scope.launch { settingsManager.updateModelSettings(modelSettings.copy(localBackupUri = uri)) }
+                    },
+                    onBack = { currentScreen = Screen.ENERGY }
+                )
+                Screen.LOG_INPUT -> EnergyLogInputScreen(
+                    onSave = { value ->
+                        val manager = EmpiricalEnergyManager(context)
+                        manager.logEnergy(System.currentTimeMillis(), value)
+                        currentScreen = Screen.LOG_HISTORY
+                    },
+                    onCancel = { currentScreen = Screen.PREVIEW }
                 )
                 Screen.SLEEP -> SleepLogScreen(
                     sleepLogs = sleepLogs,
@@ -388,6 +447,7 @@ fun MainScreen(
                             Toast.makeText(context, "Refreshing Fitbit data...", Toast.LENGTH_SHORT).show()
                             context.sendBroadcast(Intent("com.example.a24_hr_clock.REFRESH_DATA"))
                             fitbitManager.refreshMetrics()
+                            BedtimeNotificationManager(context).updateNotifications()
                         }
                     },
                     onUpdateModel = { scope.launch { settingsManager.updateModelSettings(it) } }
@@ -410,7 +470,7 @@ fun ClockPreviewScreen(
     sleepLogs: List<SleepLogEntry>,
     metrics: Triple<Double?, Double, Double>,
     sunTimes: Pair<Double, Double>,
-    celestialPositions: Triple<Double, Double, Double>,
+    celestialPositions: CelestialManager.SunMoonPosition,
     solarIrradiance: Int,
     calendarEvents: List<CalendarEvent>,
     sleepDebt: Double,
@@ -450,9 +510,10 @@ fun ClockPreviewScreen(
                     sunTimes.first,
                     sunTimes.second,
                     sleepLogs,
-                    celestialPositions.first,
-                    celestialPositions.second,
-                    celestialPositions.third,
+                    celestialPositions.sunRad,
+                    celestialPositions.moonRad,
+                    celestialPositions.moonPhase,
+                    celestialPositions.sunElevation,
                     solarIrradiance,
                     sleepDebt,
                     metrics.first,
@@ -481,6 +542,7 @@ fun ClockPreviewScreen(
                     showManualWake = settings.showManualWake,
                     manualWakeTime = modelSettings.manualWakeTime,
                     showWakeSunriseInfo = settings.showWakeSunriseInfo,
+                    showGrogginess = settings.showGrogginess,
                     isPreview = true,
                     previewIsLockScreen = title.contains("Lock Screen")
                 )
@@ -656,7 +718,7 @@ fun DisplaySettingsScreen(
     sleepLogs: List<SleepLogEntry>,
     metrics: Triple<Double?, Double, Double>,
     sunTimes: Pair<Double, Double>,
-    celestialPositions: Triple<Double, Double, Double>,
+    celestialPositions: CelestialManager.SunMoonPosition,
     solarIrradiance: Int,
     calendarEvents: List<CalendarEvent>,
     sleepDebt: Double,
@@ -794,6 +856,9 @@ fun DisplaySettingsScreen(
         SettingToggle("Acrophase indicator", currentSettings.showAcrophase) {
             updateFunc(currentSettings.copy(showAcrophase = it))
         }
+        SettingToggle("Grogginess Wedge", currentSettings.showGrogginess) {
+            updateFunc(currentSettings.copy(showGrogginess = it))
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
         Text(text = "ENERGY", style = MaterialTheme.typography.labelLarge)
@@ -814,7 +879,8 @@ fun DisplaySettingsScreen(
 fun ModelSettingsScreen(
     modelSettings: ModelSettings,
     onUpdate: (ModelSettings) -> Unit,
-    onReset: () -> Unit
+    onReset: () -> Unit,
+    onNavigateToLogHistory: () -> Unit
 ) {
     val context = LocalContext.current
     Column(
@@ -825,6 +891,15 @@ fun ModelSettingsScreen(
     ) {
         Button(onClick = onReset, modifier = Modifier.fillMaxWidth()) {
             Text("Reset Model Defaults")
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Button(
+            onClick = onNavigateToLogHistory,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+        ) {
+            Text("Empirical Alertness Logs")
         }
         Spacer(modifier = Modifier.height(16.dp))
 
