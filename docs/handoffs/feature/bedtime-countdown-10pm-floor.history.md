@@ -8,5 +8,6 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Validation/decision: Scope recorded in the active handoff.
 
 ### 2026-07-17 — Implemented 22:00 floor
+- Commit/base: `f7763b1`
 - Change: After subtracting 90 minutes and rounding to 5 minutes, clamp time-of-day to 22:00 when earlier.
-- Validation/decision: Owner confirmed keep 90-minute advance; commit requested.
+- Validation/decision: Owner confirmed keep 90-minute advance; committed on request.

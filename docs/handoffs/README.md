@@ -9,7 +9,7 @@ Last verified: 2026-07-17
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
 | `main` | in sync with `origin/main` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
-| `feature/bedtime-countdown-10pm-floor` | bedtime 10pm floor committed | Feature: bedtime countdown earliest 22:00 | [handoff](feature/bedtime-countdown-10pm-floor.md) | [history](feature/bedtime-countdown-10pm-floor.history.md) |
+| `feature/bedtime-countdown-10pm-floor` | `f7763b1` 10pm floor | Feature: bedtime countdown earliest 22:00 | [handoff](feature/bedtime-countdown-10pm-floor.md) | [history](feature/bedtime-countdown-10pm-floor.history.md) |
 
 ## Current merge order
 

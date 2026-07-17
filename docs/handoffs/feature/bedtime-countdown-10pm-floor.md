@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: bedtime 10pm floor in `BedtimeNotificationManager` (this branch tip)
+- Tip: `f7763b1` — Clamp bedtime countdown so targets never fall before 10:00 PM.
 - Parent/base: `main` at `b0187f4`
 - Upstream: none
 - Role: feature
