@@ -21,3 +21,21 @@ Disposition phrases: `merged into main`, `superseded` (commits landed via descen
 ## Entries
 
 <!-- Append below this line. Do not edit entries above a new append except to fix factual errors in HISTORY only when correcting a mistaken prior append; prefer a correcting follow-up entry if unsure. -->
+
+### 2026-07-17 — `feature/dynamic-sun-color` → merged into `main`
+- Final tip: `34b2b64`
+- Merge / PR: `4e8d4f2`
+- Summary: Checkpoint merge for dynamic sun, bedtime refinements, grogginess sync, and empirical logging foundations.
+- Archive: `archive/feature/dynamic-sun-color.md`
+
+### 2026-07-17 — `feature/empirical-energy-logging` → superseded
+- Final tip: `2983057`
+- Merge / PR: reachable via `4e8d4f2` / `339c651` (no standalone PR)
+- Summary: Intermediate empirical logging branch closed after descendant merges landed its commits.
+- Archive: `archive/feature/empirical-energy-logging.md`
+
+### 2026-07-17 — `feature/empirical-public-priority` → merged into `main`
+- Final tip: `1bca4ad`
+- Merge / PR: `339c651`
+- Summary: Public CSV priority, Sync conflict UI, night-sun visibility, and permanent handoff documentation.
+- Archive: `archive/feature/empirical-public-priority.md`

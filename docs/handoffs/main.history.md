@@ -7,3 +7,8 @@ Append-only milestones for `main`. Current state and next actions belong in [mai
 - Change: Adjusted Python bathyphase/acrophase indicator sizing and z-order.
 - Validation/decision: Pushed to `origin/main`; designated the shared base for upcoming feature PRs.
 
+### 2026-07-17 — Merged stacked feature work
+- Commit/base: `4e8d4f2`, then `339c651`
+- Change: Merged dynamic-sun checkpoint and public-priority follow-on, including permanent handoffs.
+- Validation/decision: Owner requested commit/merge/push and post-merge archive cleanup for a clean development baseline.
+
