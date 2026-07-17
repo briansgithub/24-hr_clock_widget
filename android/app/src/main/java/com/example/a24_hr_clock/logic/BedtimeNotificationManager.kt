@@ -9,6 +9,7 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
@@ -86,6 +87,12 @@ class BedtimeNotificationManager(private val context: Context) {
             val minutes = bedtime.minute
             val roundedMinutes = ((minutes + 2) / 5) * 5
             bedtime = bedtime.withMinute(0).plusMinutes(roundedMinutes.toLong()).withSecond(0).withNano(0)
+
+            // Never schedule bedtime earlier than 10:00 PM
+            val earliestBedtime = LocalTime.of(22, 0)
+            if (bedtime.toLocalTime().isBefore(earliestBedtime)) {
+                bedtime = bedtime.withHour(22).withMinute(0).withSecond(0).withNano(0)
+            }
 
             // We want this time TODAY or TOMORROW (whenever the next occurrence is)
             val now = LocalDateTime.now()
