@@ -2,34 +2,34 @@
 
 ## Identity
 
-- Tip: `8bfeb0a` — Sync main handoff after feature archive cleanup
-- Upstream: `origin/main` (in sync)
+- Tip: `origin/main` after portable-handoff-kit merge and archive cleanup
+- Upstream: `origin/main`
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
 - Last verified: 2026-07-17
 
 ## Goal and scope
 
-Maintain the stable integration branch for future feature work.
+Maintain the stable integration branch for future feature work, with permanent handoff infrastructure in place.
 
 ## Changes since previous published tip
 
-- `4e8d4f2`: merged `feature/dynamic-sun-color` checkpoint.
-- `339c651`: merged `feature/empirical-public-priority`.
-- `90e2b49`: archived closed feature handoffs; active index is `main` only.
+- `bc0fad3`: merged `chore/portable-handoff-kit` (templates, AGENTS.md, validator, CI).
+- Archive cleanup: closed chore handoff moved under `archive/chore/`.
 
 ## Current status
 
-- `main` is clean and in sync; active development is on `chore/portable-handoff-kit`.
-- Feature git branches deleted locally and remotely.
+- Only living branch is `main`.
+- Portable handoff kit installed and validated.
 - Ready for new `feature/` / `fix/` / `chore/` branches from `origin/main`.
 
 ## Next actions
 
-1. Review and merge `chore/portable-handoff-kit` after approved checks.
-2. Continue starting new work from updated `origin/main`.
+1. Start new work from updated `origin/main`.
+2. Copy templates into mirrored handoff + `.history.md` for each new branch.
+3. Before each PR, propose automated/manual checks for owner approval.
 
 ## Merge and cleanup
 
-- Readiness: current and published.
+- Readiness: current and published after push.
 - `main.md` is never archived while `main` exists.

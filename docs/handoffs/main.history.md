@@ -17,3 +17,8 @@ Append-only milestones for `main`. Current state and next actions belong in [mai
 - Change: Moved closed branch docs to `archive/`, appended global HISTORY, deleted merged feature branches.
 - Validation/decision: Repo left on clean `main` synced with `origin/main`.
 
+### 2026-07-17 — Merged portable handoff kit
+- Commit/base: tip `3c30ffe`; merge `bc0fad3`
+- Change: Merged templates, agent entry points, repository policy, validator, and CI; archived the chore branch.
+- Validation/decision: Owner requested commit/merge/push for a clean development baseline.
+

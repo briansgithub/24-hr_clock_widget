@@ -39,3 +39,9 @@ Disposition phrases: `merged into main`, `superseded` (commits landed via descen
 - Merge / PR: `339c651`
 - Summary: Public CSV priority, Sync conflict UI, night-sun visibility, and permanent handoff documentation.
 - Archive: `archive/feature/empirical-public-priority.md`
+
+### 2026-07-17 — `chore/portable-handoff-kit` → merged into `main`
+- Final tip: `3c30ffe`
+- Merge / PR: `bc0fad3`
+- Summary: Portable templates, agent entry points, repository policy, handoff validator, and CI.
+- Archive: `archive/chore/portable-handoff-kit.md`

@@ -1,6 +1,6 @@
 # History: `chore/portable-handoff-kit`
 
-Append-only milestones for this branch. Current state and next actions belong in [portable-handoff-kit.md](portable-handoff-kit.md).
+Append-only milestones (archived). Operating handoff: [portable-handoff-kit.md](portable-handoff-kit.md).
 
 ### 2026-07-17 — Branch created
 - Commit/base: `main` at `8bfeb0a`
@@ -16,6 +16,6 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Validation/decision: Repository and portable validators passed; both validator scripts passed Python syntax compilation.
 
 ### 2026-07-17 — Owner directed merge to main
-- Change: Commit portable handoff infrastructure and merge into `main` for a clean development baseline.
-- Validation/decision: Owner requested commit and merge without a separate PR checklist.
-
+- Commit/base: tip `3c30ffe`; merge `bc0fad3`
+- Change: Committed portable handoff infrastructure and merged into `main`.
+- Validation/decision: Owner requested commit and merge for a clean development baseline.
