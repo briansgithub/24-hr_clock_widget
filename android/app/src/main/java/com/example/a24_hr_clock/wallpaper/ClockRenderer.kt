@@ -955,13 +955,13 @@ class ClockRenderer {
             
             return Color.rgb(r, g, b) to 255
         } else {
-            // Twilight/Night: Alpha scales up to 255 as it approaches the horizon
+            // Twilight/Night: Keep alpha fully visible (255) so the sun is clearly yellow and visible.
             val ratio = ((elevation - darkestElev) / (0.0 - darkestElev)).coerceIn(0.0, 1.0)
-            val alpha = (60 + (195 * ratio)).toInt() // Alpha 60 at night, 255 at horizon
+            val alpha = 255 // Opaque yellow/gold sun at night
             
-            // Faint yellow/gold transition
-            val r = (139 * (1 - ratio) + 255 * ratio).toInt()
-            val g = (128 * (1 - ratio) + 69 * ratio).toInt()
+            // Transition from Deep Orange (#FF4500) at horizon to Gold/Yellow (#FFD700) at night
+            val r = 255
+            val g = (215 * (1 - ratio) + 69 * ratio).toInt()
             val b = 0
             
             return Color.rgb(r, g, b) to alpha
@@ -980,9 +980,10 @@ class ClockRenderer {
         } else {
             // At night, the outline matches the fill to prevent the "ring" look
             val ratio = ((elevation - darkestElev) / (0.0 - darkestElev)).coerceIn(0.0, 1.0)
-            val r = (139 * (1 - ratio) + 255 * ratio).toInt()
-            val g = (128 * (1 - ratio) + 69 * ratio).toInt()
-            return Color.rgb(r, g, 0)
+            val r = 255
+            val g = (215 * (1 - ratio) + 40 * ratio).toInt()
+            val b = 0
+            return Color.rgb(r, g, b)
         }
     }
 }

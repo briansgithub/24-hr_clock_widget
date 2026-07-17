@@ -1,0 +1,16 @@
+---
+description: Keep permanent branch handoffs current after every agent change
+alwaysApply: true
+---
+
+# Handoff Maintenance
+
+- Before repository work, read `docs/handoffs/MASTER_HANDOFF.md`, `docs/handoffs/README.md`, and the current branch handoff.
+- Verify handoff claims against git before relying on them.
+- After every agent change to code, configuration, tests, git/branch/stash state, scope, or next actions, update the affected handoff and index before finishing.
+- Replace stale subsection contents with current data; do not accumulate session logs or completed checklists.
+- Keep every handoff Markdown file strictly below 42,000 characters.
+- Keep handoffs tracked and include relevant updates with the commit/PR they describe.
+- Before every PR, propose automated/manual checks and ask the owner to approve or revise them.
+- Follow the merge, stash, and branch-cleanup rules in the master handoff.
+
