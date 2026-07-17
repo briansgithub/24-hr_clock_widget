@@ -12,3 +12,8 @@ Append-only milestones for `main`. Current state and next actions belong in [mai
 - Change: Merged dynamic-sun checkpoint and public-priority follow-on, including permanent handoffs.
 - Validation/decision: Owner requested commit/merge/push and post-merge archive cleanup for a clean development baseline.
 
+### 2026-07-17 — Archived closed feature handoffs
+- Commit/base: `90e2b49`
+- Change: Moved closed branch docs to `archive/`, appended global HISTORY, deleted merged feature branches.
+- Validation/decision: Repo left on clean `main` synced with `origin/main`.
+

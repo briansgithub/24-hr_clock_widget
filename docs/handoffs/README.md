@@ -8,10 +8,10 @@ Last verified: 2026-07-17
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | `339c651`; sync pending push to `origin/main` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `main` | in sync with `origin/main` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
 
 ## Current merge order
 
-No open feature PRs. Start new work from updated `origin/main` after this tip is pushed.
+No open feature branches. Start new work from `origin/main`.
 
 Recently archived: `feature/dynamic-sun-color`, `feature/empirical-public-priority` (merged); `feature/empirical-energy-logging` (superseded).
