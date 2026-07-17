@@ -210,7 +210,7 @@ class ClockRenderer {
         }
 
         // 3.5 Draw Grogginess Arc
-        if (showSleep && activeLogs.isNotEmpty()) {
+        if (showGrogginess && activeLogs.isNotEmpty()) {
             drawGrogginessArc(canvas, centerX, centerY, radius, activeLogs)
         }
 
@@ -812,8 +812,9 @@ class ClockRenderer {
             val endDt = java.time.LocalDateTime.parse(mainSleep.endTime.replace("Z", ""))
             val wakeHour = endDt.hour + endDt.minute / 60.0 + endDt.second / 3600.0
             
-            val startAngle = (wakeHour - 18.0) * 15.0
-            val sweepAngle = 1.5 * 15.0
+            val originalStartAngle = (wakeHour - 18.0) * 15.0
+            val startAngle = originalStartAngle - 0.5
+            val sweepAngle = 1.5 * 15.0 + 0.5
             
             val margin = radius * 0.15f
             val rect = RectF(cx - (radius - margin), cy - (radius - margin), cx + (radius - margin), cy + (radius - margin))
@@ -822,15 +823,17 @@ class ClockRenderer {
             val darkGray = Color.parseColor("#FF555555")
             val lightGray = Color.parseColor("#FFEEEEEE")
             
+            // Wrap the gradient color array with darkGray at the end (1.0f)
+            // This prevents the SweepGradient wrapping filter from blending lightGray into the start (0.0f) position.
             val shader = SweepGradient(
                 cx, cy,
-                intArrayOf(darkGray, lightGray, lightGray),
+                intArrayOf(darkGray, lightGray, darkGray),
                 floatArrayOf(0f, (sweepAngle / 360f).toFloat(), 1f)
             )
             
-            // Rotate the shader so its start (0 position) aligns with the wake-up time
+            // Rotate the shader so its 0 position aligns with the original wake-up start angle
             val matrix = Matrix()
-            matrix.postRotate(startAngle.toFloat(), cx, cy)
+            matrix.postRotate(originalStartAngle.toFloat(), cx, cy)
             shader.setLocalMatrix(matrix)
             
             grogginessArcPaint.shader = shader
@@ -952,13 +955,13 @@ class ClockRenderer {
             
             return Color.rgb(r, g, b) to 255
         } else {
-            // Twilight/Night: Alpha scales up to 255 as it approaches the horizon
+            // Twilight/Night: Keep alpha fully visible (255) so the sun is clearly yellow and visible.
             val ratio = ((elevation - darkestElev) / (0.0 - darkestElev)).coerceIn(0.0, 1.0)
-            val alpha = (60 + (195 * ratio)).toInt() // Alpha 60 at night, 255 at horizon
+            val alpha = 255 // Opaque yellow/gold sun at night
             
-            // Faint yellow/gold transition
-            val r = (139 * (1 - ratio) + 255 * ratio).toInt()
-            val g = (128 * (1 - ratio) + 69 * ratio).toInt()
+            // Transition from Deep Orange (#FF4500) at horizon to Gold/Yellow (#FFD700) at night
+            val r = 255
+            val g = (215 * (1 - ratio) + 69 * ratio).toInt()
             val b = 0
             
             return Color.rgb(r, g, b) to alpha
@@ -977,9 +980,10 @@ class ClockRenderer {
         } else {
             // At night, the outline matches the fill to prevent the "ring" look
             val ratio = ((elevation - darkestElev) / (0.0 - darkestElev)).coerceIn(0.0, 1.0)
-            val r = (139 * (1 - ratio) + 255 * ratio).toInt()
-            val g = (128 * (1 - ratio) + 69 * ratio).toInt()
-            return Color.rgb(r, g, 0)
+            val r = 255
+            val g = (215 * (1 - ratio) + 40 * ratio).toInt()
+            val b = 0
+            return Color.rgb(r, g, b)
         }
     }
 }

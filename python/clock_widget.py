@@ -2076,17 +2076,20 @@ class ClockWidget:
             outline = f"#{r:02x}{og:02x}{b:02x}"
             return fill, 255, outline
         else:
-            # Night/Twilight: Fade in as it approaches horizon
+            # Night/Twilight: Keep alpha fully visible (255) so the sun is clearly yellow and visible.
             ratio = max(0.0, min(1.0, (elevation - darkest_elev) / (0.0 - darkest_elev)))
-            alpha = int(60 + (195 * ratio))
+            alpha = 255 # Opaque yellow/gold sun at night
             
-            r = int(139 * (1 - ratio) + 255 * ratio)
-            g = int(128 * (1 - ratio) + 69 * ratio)
+            # Transition from Deep Orange (#FF4500) at horizon to Gold/Yellow (#FFD700) at night
+            r = 255
+            g = int(215 * (1 - ratio) + 69 * ratio)
             b = 0
             
             fill = f"#{r:02x}{g:02x}{b:02x}"
-            # Outline matches fill at night to remove the "ring" effect
-            return fill, alpha, fill
+            # Outline matches fill at night to prevent the "ring" look
+            og = int(215 * (1 - ratio) + 40 * ratio)
+            outline = f"#{r:02x}{og:02x}{b:02x}"
+            return fill, alpha, outline
 
     def on_canvas_motion(self, event):
         """Handle tooltip display for calendar events."""
