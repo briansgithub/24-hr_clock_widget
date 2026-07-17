@@ -2,33 +2,33 @@
 
 ## Identity
 
-- Tip: `2eaab30` — Adjust bathyphase and acrophase indicator sizing and z-order
-- Upstream: `origin/main` (in sync)
-- Role: shared feature-PR base
+- Tip: `339c651` — Merge branch 'feature/empirical-public-priority'
+- Upstream: `origin/main` (local ahead until push)
+- Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
 - Last verified: 2026-07-17
 
 ## Goal and scope
 
-Maintain the stable integration branch. Latest published change is Python bathyphase/acrophase indicator sizing and z-order.
+Maintain the stable integration branch for future feature work.
 
-## Changes since previous remote tip
+## Changes since previous published tip
 
-- `2eaab30`: adjusted indicator sizing/z-order in `python/clock_widget.py` and `python/energy_logic.py`; published to `origin/main`.
+- `4e8d4f2`: merged `feature/dynamic-sun-color` checkpoint.
+- `339c651`: merged `feature/empirical-public-priority` (public CSV priority, Sync UI, night-sun, handoffs).
 
 ## Current status
 
-- Local `main` and `origin/main` match at `2eaab30`.
-- Ready as the PR base for feature branches.
+- Feature branches merged and being archived/deleted.
+- Ready for new feature branches after push to `origin/main`.
 
 ## Next actions
 
-1. Accept checkpoint PR from `feature/dynamic-sun-color`.
-2. Then accept PR from `feature/empirical-public-priority` after it refreshes onto this tip.
-3. After each merge: pull `main`, append `main.history.md`, then ensure agents archive closed feature handoffs and their histories before deleting merged git branches.
+1. Push `main` to `origin/main`.
+2. Confirm feature git branches are deleted.
+3. Start new features from updated `origin/main` with paired handoff + `.history.md`.
 
 ## Merge and cleanup
 
-- Readiness: published and current.
-- Feature PRs should target `origin/main`.
-- `main.md` itself is never archived while `main` exists.
+- Readiness: published after push.
+- `main.md` is never archived while `main` exists.
