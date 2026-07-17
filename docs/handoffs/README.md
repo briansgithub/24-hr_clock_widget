@@ -9,7 +9,7 @@ Last verified: 2026-07-17
 | `main` | `2eaab30`; 1 ahead of `origin/main` | Publish first; shared PR base | [main.md](main.md) |
 | `feature/empirical-energy-logging` | `2983057` | Superseded intermediate; no PR | [feature/empirical-energy-logging.md](feature/empirical-energy-logging.md) |
 | `feature/dynamic-sun-color` | `34b2b64` | First feature PR checkpoint | [feature/dynamic-sun-color.md](feature/dynamic-sun-color.md) |
-| `feature/empirical-public-priority` | tip includes night-sun visibility + handoffs | Second feature PR; current HEAD | [feature/empirical-public-priority.md](feature/empirical-public-priority.md) |
+| `feature/empirical-public-priority` | `2a1c25e` | Second feature PR; current HEAD | [feature/empirical-public-priority.md](feature/empirical-public-priority.md) |
 
 ## Current merge order
 
