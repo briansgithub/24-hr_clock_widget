@@ -27,7 +27,7 @@ Extend the checkpoint branch with priority loading from public `Alertness_Master
 
 ## Next actions
 
-1. Complete the dynamic-sun-color checkpoint PR after `main` `2eaab30` is published.
+1. Complete the dynamic-sun-color checkpoint PR (base `origin/main` at `2eaab30` is published).
 2. Refresh this branch onto updated `origin/main`.
 3. Propose PR checks and ask the owner to approve or revise them.
 4. Run and record approved checks, then open the PR.
