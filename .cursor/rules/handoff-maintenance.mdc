@@ -5,12 +5,13 @@ alwaysApply: true
 
 # Handoff Maintenance
 
-- Before repository work, read `docs/handoffs/MASTER_HANDOFF.md`, `docs/handoffs/README.md`, and the current branch handoff.
+- Before repository work, read `docs/handoffs/MASTER_HANDOFF.md`, `docs/handoffs/README.md`, the current branch handoff, and its adjacent `.history.md`.
 - Verify handoff claims against git before relying on them.
 - After every agent change to code, configuration, tests, git/branch/stash state, scope, or next actions, update the affected handoff and index before finishing.
-- Replace stale subsection contents with current data; do not accumulate session logs or completed checklists.
+- Append a concise per-branch history entry for meaningful milestones only; never rewrite older history entries.
+- Replace stale subsection contents with current data; do not accumulate session logs or completed checklists in active handoffs.
 - Keep every handoff Markdown file strictly below 42,000 characters.
 - Keep handoffs tracked and include relevant updates with the commit/PR they describe.
 - Before every PR, propose automated/manual checks and ask the owner to approve or revise them.
-- Follow the merge, stash, and branch-cleanup rules in the master handoff.
-
+- After merge and pull: append the closure milestone, archive both the handoff and its `.history.md`, append global `docs/handoffs/HISTORY.md`, refresh the active index, and delete remote/local git branches — never delete branch documentation.
+- Follow stash and remaining cleanup rules in the master handoff.

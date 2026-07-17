@@ -5,6 +5,7 @@
 - Tip: `2eaab30` — Adjust bathyphase and acrophase indicator sizing and z-order
 - Upstream: `origin/main` (in sync)
 - Role: shared feature-PR base
+- History: [main.history.md](main.history.md)
 - Last verified: 2026-07-17
 
 ## Goal and scope
@@ -24,9 +25,10 @@ Maintain the stable integration branch. Latest published change is Python bathyp
 
 1. Accept checkpoint PR from `feature/dynamic-sun-color`.
 2. Then accept PR from `feature/empirical-public-priority` after it refreshes onto this tip.
-3. Keep local `main` aligned with `origin/main` after each merge.
+3. After each merge: pull `main`, append `main.history.md`, then ensure agents archive closed feature handoffs and their histories before deleting merged git branches.
 
 ## Merge and cleanup
 
 - Readiness: published and current.
 - Feature PRs should target `origin/main`.
+- `main.md` itself is never archived while `main` exists.
