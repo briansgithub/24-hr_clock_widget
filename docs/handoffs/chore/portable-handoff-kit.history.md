@@ -1,0 +1,21 @@
+# History: `chore/portable-handoff-kit`
+
+Append-only milestones for this branch. Current state and next actions belong in [portable-handoff-kit.md](portable-handoff-kit.md).
+
+### 2026-07-17 — Branch created
+- Commit/base: `main` at `8bfeb0a`
+- Change: Created a portable handoff starter kit for reuse across repositories, agents, and IDEs.
+- Validation/decision: Scope includes templates, cross-agent entry points, repository policy, automated validator, CI, and external reusable copy.
+
+### 2026-07-17 — Repository integration implemented
+- Change: Added generic templates, `AGENTS.md`, Gemini/Cursor discovery, repository policy, handoff validator, and GitHub Actions validation.
+- Validation/decision: Awaiting local validation and portable external copy verification.
+
+### 2026-07-17 — Portable kit created and validated
+- Change: Created `H:\Desktop\ai_agent_guides\git-handoff-system` with vendor-neutral, Cursor, and Gemini entry points plus the complete starter structure.
+- Validation/decision: Repository and portable validators passed; both validator scripts passed Python syntax compilation.
+
+### 2026-07-17 — Owner directed merge to main
+- Change: Commit portable handoff infrastructure and merge into `main` for a clean development baseline.
+- Validation/decision: Owner requested commit and merge without a separate PR checklist.
+

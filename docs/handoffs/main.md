@@ -2,8 +2,8 @@
 
 ## Identity
 
-- Tip: `origin/main` after post-merge archive cleanup (`90e2b49` plus this tip-sync commit)
-- Upstream: `origin/main` (in sync after push)
+- Tip: `8bfeb0a` — Sync main handoff after feature archive cleanup
+- Upstream: `origin/main` (in sync)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
 - Last verified: 2026-07-17
@@ -20,15 +20,14 @@ Maintain the stable integration branch for future feature work.
 
 ## Current status
 
-- Working tree clean; only living branch is `main`.
+- `main` is clean and in sync; active development is on `chore/portable-handoff-kit`.
 - Feature git branches deleted locally and remotely.
 - Ready for new `feature/` / `fix/` / `chore/` branches from `origin/main`.
 
 ## Next actions
 
-1. Start new work from updated `origin/main`.
-2. Create paired handoff + `.history.md` for each new branch.
-3. Before each PR, propose automated/manual checks for owner approval.
+1. Review and merge `chore/portable-handoff-kit` after approved checks.
+2. Continue starting new work from updated `origin/main`.
 
 ## Merge and cleanup
 
