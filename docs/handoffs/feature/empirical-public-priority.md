@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: pending commit on this branch; previous tip `4602eea`
+- Tip: `2a1c25e` — Add permanent branch handoffs and keep night sun fully visible
 - Parent: `feature/dynamic-sun-color`; ahead of local `main`
 - Role: second feature PR; current HEAD
 - Last verified: 2026-07-17
