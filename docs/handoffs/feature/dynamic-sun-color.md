@@ -24,18 +24,17 @@ Deliver empirical logging foundations plus dynamic sun color/alpha, bedtime noti
 - Owner designated this a meaningful checkpoint to merge before `feature/empirical-public-priority`.
 - No known regression reported; approved PR checks have not yet been selected or run.
 - No stash remains. Superseded stash `be0a01e` was verified as implemented by descendant commit `00d2edc` and deleted.
+- PR base `origin/main` is published at `2eaab30`.
 
 ## Next actions
 
-1. Ensure `main` commit `2eaab30` is published to `origin/main`.
-2. Propose automated/manual checks and ask the owner to approve or revise them.
-3. Run and record approved checks.
-4. Open checkpoint PR to `origin/main`.
-5. After merge, refresh `feature/empirical-public-priority` onto updated `origin/main`.
+1. Propose automated/manual checks and ask the owner to approve or revise them.
+2. Run and record approved checks.
+3. Open checkpoint PR to `origin/main`.
+4. After merge, refresh `feature/empirical-public-priority` onto updated `origin/main`.
 
 ## Merge and cleanup
 
-- Readiness: blocked on base publication and owner-approved validation.
-- PR base: updated `origin/main`.
+- Readiness: blocked on owner-approved validation.
+- PR base: `origin/main` at `2eaab30`.
 - Keep until checkpoint PR is merged and its commits are reachable from `origin/main`; then delete local/remote branch when permitted.
-
