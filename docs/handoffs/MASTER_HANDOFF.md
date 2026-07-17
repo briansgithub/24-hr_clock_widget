@@ -5,28 +5,51 @@ Permanent handoffs live in `docs/handoffs/` and must be committed with the repos
 ## Non-negotiable rules
 
 1. **Always current:** Any agent that changes code, configuration, git state, branch state, stash state, tests, scope, or next steps must update the affected handoff and `README.md` before finishing.
-2. **Replacement, not accumulation:** Clear stale subsection content and rewrite it with the latest verified state. Do not append session logs, duplicate old summaries, or preserve superseded checklists.
-3. **Strict size limit:** Every handoff Markdown file, including this one and `README.md`, must remain **strictly below 42,000 characters**. Target under 12,000 characters; branch files should normally stay under 6,000.
+2. **Replacement, not accumulation (active only):** Clear stale subsection content and rewrite it with the latest verified state. Do not append session logs, duplicate old summaries, or preserve superseded checklists in *active* branch handoffs.
+3. **Strict size limit:** Every handoff Markdown file, including this one and `README.md`, must remain **strictly below 42,000 characters**. Target under 12,000 characters; active branch files should normally stay under 6,000; archived closed forms under 3,000.
 4. **Git is evidence:** Verify handoffs against git before relying on them. Label unresolved intent rather than guessing.
 5. **Persistent and tracked:** Never move these files to a temporary/ignored directory. Include relevant handoff updates in the same commit or PR as the change they describe.
 6. **Ready at interruption:** Write handoffs so another agent can take over immediately, including while work is uncommitted.
+7. **Never delete handoff docs:** When a branch closes, **archive** its handoff and per-branch history, then append the global `HISTORY.md`. Do not delete either branch document.
 
 Documentation-only edits do not require recursive “handoff of the handoff” updates unless they alter branch status, decisions, or next actions.
 
 ## File layout
 
+### Active (living branches)
+
 Mirror local branch names:
 
 - `main` → `docs/handoffs/main.md`
+- `main` history → `docs/handoffs/main.history.md`
 - `feature/example` → `docs/handoffs/feature/example.md`
+- `feature/example` history → `docs/handoffs/feature/example.history.md`
 
-`README.md` is the current branch index and merge-order authority. Keep one file for every active local branch tip. Remove a branch file after the branch is safely deleted; retain only a compact disposition note in `README.md` when useful.
+`README.md` is the current branch index and merge-order authority. Keep one active handoff and one append-only history for every living local branch tip.
+
+### Permanent archive and history
+
+| Artifact | Role | Mutation rule |
+|---|---|---|
+| Active `docs/handoffs/<branch>.md` | Live agent operating doc | Replace/update while branch is alive |
+| Active `docs/handoffs/<branch>.history.md` | Dated milestones for that branch | Append only; never rewrite older entries |
+| `docs/handoffs/archive/<same-path>.md` | Frozen snapshot at close | Write once at archive time; later edits only to fix factual errors |
+| `docs/handoffs/archive/<same-path>.history.md` | Frozen branch milestone log | Move unchanged at close; later edits only to fix factual errors |
+| `docs/handoffs/HISTORY.md` | Repository-wide closed-branch ledger | Append one close entry only; never rewrite older entries |
+| `docs/handoffs/README.md` | Active branch index | Lists living branches only; optional one-line “recently archived” pointer |
+
+Example after merge:
+
+- `docs/handoffs/feature/foo.md` → `docs/handoffs/archive/feature/foo.md`
+- `docs/handoffs/feature/foo.history.md` → `docs/handoffs/archive/feature/foo.history.md`
+
+The active handoff answers “what is true and what is next?” The per-branch history answers “what meaningful milestones occurred while this branch lived?” The global `HISTORY.md` answers “which branches closed, when, and where are their archives?”
 
 ## Required startup procedure
 
 Before changing the repository:
 
-1. Read this file, `README.md`, and the current branch handoff.
+1. Read this file, `README.md`, the current branch handoff, and its adjacent `.history.md`.
 2. Verify:
    - `git status`;
    - local/remote branch tips and upstream tracking;
@@ -48,7 +71,32 @@ Do not assume visible uncommitted changes belong to the checked-out branch; conf
 
 Use exact commit IDs and an ISO `Last verified` date. Avoid “recent,” “mostly done,” and similar vague status.
 
-## Required branch-file structure
+## Per-branch history protocol
+
+Create `<branch>.history.md` at the same time as every branch handoff. It is append-only and must stay concise.
+
+Append one dated entry for a meaningful branch milestone:
+
+- branch creation and parent tip;
+- meaningful commit or grouped implementation milestone;
+- owner-approved scope or merge-order change;
+- approved PR check list and test results;
+- rebase/merge-base change;
+- PR opened, updated, merged, superseded, or closed;
+- stash creation/disposition when it affects recoverability.
+
+Do not append entries for routine file reads, status checks, wording-only handoff refreshes, or repeated facts. Link commit SHAs; do not paste diffs. Suggested format:
+
+```markdown
+### YYYY-MM-DD — Short milestone
+- Commit/base: `<sha>` (when applicable)
+- Change: <one or two sentences>
+- Validation/decision: <concise result>
+```
+
+Never rewrite or reorder older entries. Correct an error with a new correction entry. If a per-branch history approaches 30,000 characters, freeze it unchanged as `<branch>.history/0001.md`, create a fresh `<branch>.history.md` that links the frozen segment, and continue appending there. Every file must remain strictly below 42,000 characters.
+
+## Required branch-file structure (active)
 
 Keep these compact sections and replace their contents whenever state changes:
 
@@ -95,11 +143,12 @@ After every agent change and before the final response:
 
 1. Re-run enough git inspection to know the resulting state.
 2. Rewrite the affected branch handoff’s tip, current status, tests, risks, and next actions.
-3. Rewrite `README.md` if tips, roles, dependency order, or branch inventory changed.
-4. Remove stale, completed, duplicated, and superseded text.
-5. Check every edited handoff is below 42,000 characters.
-6. Ensure links and branch-mirrored paths are correct.
-7. Include the handoff updates with the implementation change when committing.
+3. Append a concise entry to the branch’s `.history.md` when the change is a meaningful milestone under the per-branch history protocol.
+4. Rewrite `README.md` if tips, roles, dependency order, or branch inventory changed.
+5. Remove stale, completed, duplicated, and superseded text from *active handoffs only*.
+6. Check every edited handoff/history file is below 42,000 characters.
+7. Ensure links and branch-mirrored paths are correct.
+8. Include the handoff/history updates with the implementation change when committing.
 
 If interrupted before implementation completes, record exactly what changed, what remains uncommitted, what was tested, and the first safe next action.
 
@@ -120,29 +169,71 @@ A branch is merge-ready only when:
 
 “No known gaps” is not proof that validation passed.
 
-## Stash and branch cleanup
+## After merge and pull
+
+When a feature PR has been merged into `main` (or a superseded intermediate’s commits are fully on `main`), agents must complete this checklist. Do not skip archival in favor of deleting handoff files.
+
+### Git cleanup
+
+1. `git checkout main`
+2. `git pull origin main`
+3. Confirm the feature tip (or merge commit) is reachable from `origin/main`
+4. Delete the remote feature branch (`git push origin --delete <branch>` or GitHub delete-branch)
+5. Delete the local feature branch (`git branch -d <branch>`; use `-D` only if reachability was verified and `-d` refuses for a known-safe reason)
+6. Do not keep merged feature branches “just in case”; history on `main` is the source of truth
+
+Superseded intermediates follow the same delete path once their commits are on `main`.
+
+### Handoff archival (mandatory)
+
+1. **Do not delete** the handoff or its per-branch history.
+2. Move both to mirrored archive paths:
+   - `docs/handoffs/feature/foo.md` → `docs/handoffs/archive/feature/foo.md`
+   - `docs/handoffs/feature/foo.history.md` → `docs/handoffs/archive/feature/foo.history.md`
+3. Rewrite the archived file to a **frozen closed form** (target under 3,000 characters):
+   - Identity (final tip, merge commit / PR URL if known)
+   - Goal and scope (final)
+   - What landed (short)
+   - Validation recorded
+   - Disposition: `merged` / `superseded` / `closed-without-merge`
+   - Cleanup completed: remote/local branch deleted yes/no
+4. Append the final merge/closure milestone to the branch history before freezing it.
+5. **Append** one close entry to global `docs/handoffs/HISTORY.md` (never rewrite older entries):
+
+```markdown
+### YYYY-MM-DD — `feature/foo` → merged into `main`
+- Final tip: `<sha>`
+- Merge / PR: `<sha or URL>`
+- Summary: <one or two sentences>
+- Archive: `archive/feature/foo.md`
+```
+
+6. Remove the branch from the active table in `docs/handoffs/README.md`.
+7. Update `docs/handoffs/main.md` and append a corresponding milestone to `main.history.md` if `main` moved.
+8. Commit these doc updates (same cleanup commit or immediately after).
+
+`HISTORY.md` is append-only. If it approaches ~30,000 characters, start `HISTORY/YYYY.md` by year and leave a pointer at the top of `HISTORY.md` — do not rewrite old years. Archived files may be edited later only to correct factual errors, not to resume live checklists.
+
+## Stash cleanup
 
 - A stash may be deleted under the owner’s standing instruction only after comparing it with reachable commits and verifying all meaningful contents are fully implemented. Record the conclusion before deletion.
-- Never delete a unique stash or branch containing unique wanted commits.
-- After merge: update `main`, verify commits are reachable from `origin/main`, delete merged local/remote branches when permitted, remove their branch handoff, and refresh `README.md`.
-- Delete fully superseded branches promptly. Archive only genuinely useful unmerged history, with a concise reason.
+- Never delete a unique stash or a branch containing unique wanted commits.
 
 ## New-feature practice
 
 1. Update from `origin/main`.
 2. Create one narrow `feature/`, `fix/`, or `chore/` branch.
-3. Immediately create its mirrored handoff with goal, scope, acceptance criteria, and parent.
+3. Immediately create its mirrored handoff and adjacent `.history.md`; record branch creation and parent tip in the history.
 4. Prefer small purpose-focused commits; exclude secrets, generated output, IDE state, and unrelated formatting.
 5. Avoid stacked branches unless intentional; document dependency and PR order.
 6. Commit or clearly label a stash before switching branches.
 7. Keep handoffs current after each agent change, not only at session end or PR time.
-8. Ask for PR checks, validate, merge promptly, then clean up.
+8. Ask for PR checks, validate, merge promptly, then run **After merge and pull**.
 
 ## Prompt for future implementation agents
 
-> Read `docs/handoffs/MASTER_HANDOFF.md`, `docs/handoffs/README.md`, and the handoff matching the current branch. Verify them against git status, branch tracking, merge-base history, commits, diffs, tests, and relevant stashes. Report contradictions and ask only for intent git cannot establish. Implement the documented immediate next action. Before every PR, propose automated/manual checks and ask me to approve or revise them. Before finishing any repository change, replace stale content in the affected handoff and index with the latest tip, current working state, validation, risks, immediate next action, merge readiness, and cleanup implications. Keep every handoff strictly below 42,000 characters. Do not commit, push, open/merge PRs, or delete branches unless explicitly requested. You may delete a superseded stash only after verifying all meaningful contents are implemented in reachable commits.
+> Read `docs/handoffs/MASTER_HANDOFF.md`, `docs/handoffs/README.md`, the handoff matching the current branch, and its adjacent `.history.md`. Verify them against git status, branch tracking, merge-base history, commits, diffs, tests, and relevant stashes. Report contradictions and ask only for intent git cannot establish. Implement the documented immediate next action. Before every PR, propose automated/manual checks and ask me to approve or revise them. Before finishing any repository change, replace stale content in the affected *active* handoff and index with the latest state, and append a concise per-branch history entry only for a meaningful milestone. After a feature is merged and pulled, append its closure milestone, archive both its handoff and per-branch history under `docs/handoffs/archive/`, append one close entry to global `HISTORY.md`, refresh the active index, and delete the remote/local git branch — never delete branch documentation. Keep every handoff/history file strictly below 42,000 characters. Do not commit, push, open/merge PRs, or delete branches unless explicitly requested. You may delete a superseded stash only after verifying all meaningful contents are implemented in reachable commits.
 
 ## Prompt for handoff audits
 
-> Audit `docs/handoffs/` using `MASTER_HANDOFF.md`. Verify every active local branch tip against git. Replace stale subsection content with current facts, remove accumulated history and completed checklist items, preserve owner-confirmed current decisions, check all files are strictly below 42,000 characters, and ask focused questions only for unresolved intent. Make no code, history, remote, stash, or branch mutations.
-
+> Audit `docs/handoffs/` using `MASTER_HANDOFF.md`. Verify every active local branch tip against git and confirm it has both an active handoff and adjacent `.history.md`. Replace stale subsection content in active handoffs with current facts, remove completed checklist items from active handoffs only, preserve owner-confirmed decisions, leave all history files append-only and archived files frozen except for factual corrections, check every file is strictly below 42,000 characters, and ask focused questions only for unresolved intent. Make no code, git-history, remote, stash, or branch mutations unless I explicitly request cleanup.

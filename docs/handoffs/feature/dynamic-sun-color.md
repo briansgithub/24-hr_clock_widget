@@ -5,6 +5,7 @@
 - Tip: `34b2b64` — Synchronize grogginess wedge with sleep arcs and fix bedtime chronometer countdown timebase
 - Parent/base: `main`; 6 commits ahead, including empirical-energy-logging
 - Role: first feature PR checkpoint
+- History: [dynamic-sun-color.history.md](dynamic-sun-color.history.md)
 - Last verified: 2026-07-17
 
 ## Goal and scope
@@ -37,4 +38,4 @@ Deliver empirical logging foundations plus dynamic sun color/alpha, bedtime noti
 
 - Readiness: blocked on owner-approved validation.
 - PR base: `origin/main` at `2eaab30`.
-- Keep until checkpoint PR is merged and its commits are reachable from `origin/main`; then delete local/remote branch when permitted.
+- After merge and pull: append the closure milestone, archive this handoff and `dynamic-sun-color.history.md`, append global `HISTORY.md`, remove from active index, then delete the local/remote git branch.
