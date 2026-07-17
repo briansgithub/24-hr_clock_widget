@@ -1900,7 +1900,7 @@ class ClockWidget:
                 )
 
     def _get_celestial_positions(self, current_hour):
-        """Return (sun_rad, moon_rad, m_phase_val), calculating current elevation every minute but caching extremes for 5 minutes."""
+        """Return (sun_rad, moon_rad, m_phase_val, sun_elev), calculating current elevation every minute but caching extremes for 5 minutes."""
         now = datetime.datetime.now()
         now_utc = datetime.datetime.now(datetime.timezone.utc)
         
@@ -1933,7 +1933,7 @@ class ClockWidget:
                 m_phase_val = 0
                 moon_hour = (current_hour - (m_phase_val / 29.53) * 24) % 24
                 m_rad = math.radians((18 - moon_hour) * 15)
-                return s_rad, m_rad, m_phase_val
+                return s_rad, m_rad, m_phase_val, 0
 
         # 2. Calculate current positions every minute using cached extremes
         cache = self._extremes_cache
@@ -1964,8 +1964,9 @@ class ClockWidget:
         s_rad = math.radians(get_current_mapped_angle('sun'))
         m_rad = math.radians(get_current_mapped_angle('moon'))
         m_phase_val = cache['m_phase']
+        sun_elev = sun_elevation(obs, now_utc)
         
-        return s_rad, m_rad, m_phase_val
+        return s_rad, m_rad, m_phase_val, sun_elev
 
     def _get_solar_irradiance(self):
         """Return solar irradiance brightness 0-255 based on current sun elevation.
@@ -2057,6 +2058,35 @@ class ClockWidget:
             width=1,
             tags="solar_circle"
         )
+
+    def _interpolate_sun_color(self, elevation):
+        """Return (fill_hex, alpha_0_255, outline_hex) based on sun elevation."""
+        darkest_elev = -8.0
+        
+        if elevation >= 0:
+            # Daytime: Fully opaque
+            t = max(0.0, min(1.0, elevation / 20.0))
+            r = 255
+            g = int(69 * (1 - t) + 215 * t)
+            b = 0
+            fill = f"#{r:02x}{g:02x}{b:02x}"
+            
+            # Outline stays a bit more orange than fill
+            og = int(40 * (1 - t) + 165 * t)
+            outline = f"#{r:02x}{og:02x}{b:02x}"
+            return fill, 255, outline
+        else:
+            # Night/Twilight: Fade in as it approaches horizon
+            ratio = max(0.0, min(1.0, (elevation - darkest_elev) / (0.0 - darkest_elev)))
+            alpha = int(60 + (195 * ratio))
+            
+            r = int(139 * (1 - ratio) + 255 * ratio)
+            g = int(128 * (1 - ratio) + 69 * ratio)
+            b = 0
+            
+            fill = f"#{r:02x}{g:02x}{b:02x}"
+            # Outline matches fill at night to remove the "ring" effect
+            return fill, alpha, fill
 
     def on_canvas_motion(self, event):
         """Handle tooltip display for calendar events."""
@@ -2201,6 +2231,37 @@ class ClockWidget:
                     )
                 except (KeyError, ValueError):
                     continue
+
+            # Draw grogginess wedge for the main sleep
+            main_sleep = next((log for log in self.raw_sleep_logs if log.get('dateOfSleep') == self.active_sleep_date and log.get('isMainSleep', False)), None)
+            if main_sleep:
+                try:
+                    end_dt = datetime.datetime.fromisoformat(main_sleep['endTime'].replace('Z', ''))
+                    wake_h = end_dt.hour + end_dt.minute / 60.0 + end_dt.second / 3600.0
+                    
+                    g_start_angle = (18 - wake_h) * 15
+                    g_extent = 1.5 * 15  # 22.5 degrees (1 hr 30 min)
+                    
+                    sleep_margin = radius * 0.15
+                    num_steps = 10
+                    for i in range(num_steps):
+                        t = i / (num_steps - 1)
+                        # Interpolate from #555555 (85,85,85) to #EEEEEE (238,238,238)
+                        val = int(85 + (238 - 85) * t)
+                        slice_color = f"#{val:02x}{val:02x}{val:02x}"
+                        
+                        step_size = g_extent / num_steps
+                        s_angle = g_start_angle - i * step_size
+                        
+                        self.canvas.create_arc(
+                            center_x - (radius - sleep_margin), center_y - (radius - sleep_margin),
+                            center_x + (radius - sleep_margin), center_y + (radius - sleep_margin),
+                            start=s_angle, extent=-step_size,
+                            fill=slice_color, outline=slice_color, style=tk.PIESLICE,
+                            tags="sleep_arc"
+                        )
+                except (KeyError, ValueError):
+                    pass
            
         def draw_energy_curve():
             if self.show_energy.get() and self.wake_hour is not None:
@@ -2393,16 +2454,26 @@ class ClockWidget:
             now = datetime.datetime.now()
             current_hour = now.hour + now.minute / 60.0 + now.second / 3600.0
             if self.show_sun_moon.get():
-                sun_rad, moon_rad, m_phase_val = self._get_celestial_positions(current_hour)
+                sun_rad, moon_rad, m_phase_val, sun_elev = self._get_celestial_positions(current_hour)
                 icon_size = max(12, int(radius / 7))
                 orbit_radius = radius + icon_size + 2
 
                 sx = center_x + orbit_radius * math.cos(sun_rad)
                 sy = center_y - orbit_radius * math.sin(sun_rad)
                 sun_r = icon_size / 1.6
+                
+                # Dynamic sun color and alpha
+                sun_fill, sun_alpha, sun_outline = self._interpolate_sun_color(sun_elev)
+                
+                # TKinter doesn't support alpha in create_oval directly easily, 
+                # but we can use a transparent color if the OS supports it or just use the color.
+                # Since we are using a transparent background, we can simulate alpha by blending with background or just using the hex.
+                # Actually, for the sun icon, let's just use the interpolated color.
+                
                 self.canvas.create_oval(
                     sx - sun_r, sy - sun_r, sx + sun_r, sy + sun_r,
-                    fill="#FFD700", outline="#FFA500", width=2
+                    fill=sun_fill, outline=sun_outline, width=2,
+                    tags="sun_and_moon"
                 )
 
                 mx = center_x + orbit_radius * math.cos(moon_rad)
