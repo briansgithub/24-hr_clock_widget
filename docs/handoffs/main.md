@@ -2,8 +2,8 @@
 
 ## Identity
 
-- Tip: (this commit) — Remove audit-git-stash-state placeholder branch
-- Upstream: `origin/main`
+- Tip: `9e24f2f` — Sync main handoff tip after audit branch close.
+- Upstream: `origin/main` (matches)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
 - Last verified: `2026-07-18`
