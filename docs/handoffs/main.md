@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: `b2de326` — Merge branch 'feature/empirical-log-jul16-cutoff'
+- Tip: `10787ce` — Archive empirical-log-jul16-cutoff handoffs after merge into main.
 - Upstream: `origin/main` (local ahead; push pending owner request)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
@@ -15,12 +15,13 @@ Maintain the stable integration branch for future feature work, with permanent h
 ## Changes since previous published tip
 
 - `b2de326` / `af95262`: Jul 16 2026 empirical log cutoff; today-only 10pm missed alert; Drive URL autofill.
+- `10787ce`: archived feature handoffs after merge.
 - Earlier: timezone map, settings UI polish, wind-down gradient, bedtime countdown.
 
 ## Current status
 
 - Living: paused feature branches (stashed WIP), audit/chore worktrees.
-- Working tree: post-merge archive cleanup in progress.
+- Working tree: clean after archive cleanup.
 - Local `main` ahead of `origin/main`; not pushed yet.
 
 ## Next actions
