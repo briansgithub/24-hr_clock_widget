@@ -8,7 +8,7 @@ Last verified: 2026-07-18
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | local tip after merge+archive (push pending) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `main` | `4bb4c8a` (ahead of `origin/main` until push) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
 
 ## Current merge order
 

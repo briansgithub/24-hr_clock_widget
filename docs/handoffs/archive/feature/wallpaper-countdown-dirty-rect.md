@@ -26,6 +26,6 @@ Battery-safe 1 Hz dirty-rect wallpaper bedtime countdown; remove duplicate notif
 
 ## Cleanup
 
-- Local branch deleted: pending at archive commit (completed in cleanup)
+- Local branch deleted: yes (cleanup after archive)
 - Remote branch deleted: not applicable (never published)
-- Cleanup completed: yes after branch deletion
+- Cleanup completed: yes
