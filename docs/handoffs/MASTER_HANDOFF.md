@@ -1,6 +1,6 @@
 # Master Branch Handoff Protocol
 
-Permanent handoffs live in `docs/handoffs/` and must be committed with the repository. Read this file first, then `REPOSITORY.md`, `README.md`, and the files matching the current branch.
+Permanent handoffs live in `docs/handoffs/` and must be committed with the repository. Read this file first, then `REPOSITORY.md`, `README.md`, and the files matching the current branch. For parallel agents, also read `MULTI_AGENT.md`.
 
 ## Non-negotiable rules
 
@@ -38,6 +38,7 @@ Mirror local branch names:
 | `docs/handoffs/HISTORY.md` | Repository-wide closed-branch ledger | Append one close entry only; never rewrite older entries |
 | `docs/handoffs/README.md` | Active branch index | Lists living branches only; optional one-line “recently archived” pointer |
 | `docs/handoffs/REPOSITORY.md` | Repo-specific git, permission, and validation policy | Replace when repository policy changes |
+| `docs/handoffs/MULTI_AGENT.md` | Parallel agents via Git worktrees | Follow whenever two+ agents share one repo |
 | `docs/handoffs/templates/` | Starter files for new/archived branches | Keep generic and synchronized with this protocol |
 
 Example after merge:
@@ -51,7 +52,7 @@ The active handoff answers “what is true and what is next?” The per-branch h
 
 Before changing the repository:
 
-1. Read this file, `REPOSITORY.md`, `README.md`, the current branch handoff, and its adjacent `.history.md`.
+1. Read this file, `REPOSITORY.md`, `README.md`, the current branch handoff, and its adjacent `.history.md`. If another agent may run in parallel, read `MULTI_AGENT.md` and confirm this checkout is a dedicated worktree for this branch.
 2. Verify:
    - `git status`;
    - local/remote branch tips and upstream tracking;
@@ -225,30 +226,37 @@ Superseded intermediates follow the same delete path once their commits are on `
 ## New-feature practice
 
 1. Update from `origin/main`.
-2. Create one narrow `feature/`, `fix/`, or `chore/` branch.
+2. Create one narrow `feature/`, `fix/`, or `chore/` branch — **in its own Git worktree** when any other agent is (or may be) working in this repo; see `MULTI_AGENT.md`.
 3. Copy `templates/BRANCH_HANDOFF.md` and `templates/BRANCH_HISTORY.md` to the mirrored branch paths; record branch creation and parent tip.
 4. Prefer small purpose-focused commits; exclude secrets, generated output, IDE state, and unrelated formatting.
 5. Avoid stacked branches unless intentional; document dependency and PR order.
-6. Commit or clearly label a stash before switching branches.
+6. Commit or clearly label a stash before switching branches; prefer a new worktree over stashing to unblock another agent.
 7. Keep handoffs current after each agent change, not only at session end or PR time.
 8. Ask for PR checks, validate, merge promptly, then run **After merge and pull**.
+
+## Parallel agents (mandatory isolation)
+
+Never run two agents against the same working tree. Use Git worktrees so each agent has its own folder and branch checkout. Full procedure: [MULTI_AGENT.md](MULTI_AGENT.md).
 
 ## Automated validation
 
 Run `python scripts/validate_handoffs.py` locally and in CI. It verifies:
 
-- every indexed/local active branch has a mirrored handoff and adjacent history;
+- every branch listed in this checkout’s active index has a mirrored handoff and adjacent history;
+- the currently checked-out branch has a mirrored handoff and history and appears in the active index;
 - every handoff/history Markdown file is strictly below 42,000 characters;
 - relative Markdown links resolve;
 - active index handoff/history paths exist;
 - archived handoffs and histories are paired;
 - append-only history files retain their previous content when a base ref is available.
 
+Sibling local branches checked out only in other worktrees are noted, not treated as hard failures, when their handoff files are absent from this checkout.
+
 CI configuration lives at `.github/workflows/handoff-validation.yml`. Validation complements git inspection; it does not prove that narrative claims are correct.
 
 ## Prompt for future implementation agents
 
-> Read `docs/handoffs/MASTER_HANDOFF.md`, `docs/handoffs/REPOSITORY.md`, `docs/handoffs/README.md`, the handoff matching the current branch, and its adjacent `.history.md`. Verify them against git status, branch tracking, merge-base history, commits, diffs, tests, and relevant stashes. Report contradictions and ask only for intent git cannot establish. Implement the documented immediate next action. Before every PR, propose automated/manual checks and ask me to approve or revise them. Before finishing any repository change, replace stale content in the affected *active* handoff and index with the latest state, append a concise per-branch history entry only for a meaningful milestone, and run `python scripts/validate_handoffs.py`. After a feature is merged and pulled, append its closure milestone, archive both its handoff and per-branch history under `docs/handoffs/archive/`, append one close entry to global `HISTORY.md`, refresh the active index, and delete the remote/local git branch — never delete branch documentation. Keep every handoff/history file strictly below 42,000 characters. Do not commit, push, open/merge PRs, or delete branches unless explicitly requested. You may delete a superseded stash only after verifying all meaningful contents are implemented in reachable commits.
+> Read `docs/handoffs/MASTER_HANDOFF.md`, `docs/handoffs/REPOSITORY.md`, `docs/handoffs/MULTI_AGENT.md` when working in parallel, `docs/handoffs/README.md`, the handoff matching the current branch, and its adjacent `.history.md`. Verify them against git status, branch tracking, merge-base history, commits, diffs, tests, and relevant stashes. Report contradictions and ask only for intent git cannot establish. Implement the documented immediate next action. Before every PR, propose automated/manual checks and ask me to approve or revise them. Before finishing any repository change, replace stale content in the affected *active* handoff and index with the latest state, append a concise per-branch history entry only for a meaningful milestone, and run `python scripts/validate_handoffs.py`. After a feature is merged and pulled, append its closure milestone, archive both its handoff and per-branch history under `docs/handoffs/archive/`, append one close entry to global `HISTORY.md`, refresh the active index, and delete the remote/local git branch — never delete branch documentation. Keep every handoff/history file strictly below 42,000 characters. Do not commit, push, open/merge PRs, or delete branches unless explicitly requested. You may delete a superseded stash only after verifying all meaningful contents are implemented in reachable commits. Never share one working tree across parallel agents; use a dedicated Git worktree per agent.
 
 ## Prompt for handoff audits
 
