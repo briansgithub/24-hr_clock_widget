@@ -8,6 +8,6 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Validation/decision: Scope and acceptance criteria recorded in the active handoff.
 
 ### 2026-07-18 — Removed Preview reset control
-- Commit/base: this commit on `chore/remove-preview-reset-button`
+- Commit/base: `a356b06`
 - Change: `ClockPreviewScreen` no longer accepts or shows `onReset`; Preview call site no longer resets home/lock settings from that screen.
 - Validation/decision: Grep confirms Display "Reset to Defaults" and Energy "Reset Model Defaults" remain; handoff validation passed.

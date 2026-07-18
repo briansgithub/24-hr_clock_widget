@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: pending commit — remove Preview "Reset to defaults"
+- Tip: `a356b06` — Remove Preview tab Reset to defaults button
 - Parent/base: `origin/main` at `9dd5780`
 - Upstream: none yet
 - Role: chore
@@ -18,12 +18,12 @@
 
 ## Changes since branch creation
 
-- This commit: Dropped Preview reset button, `onReset` parameter, and call-site reset of home/lock settings.
+- This commit (`a356b06`): Dropped Preview reset button, `onReset` parameter, and call-site reset of home/lock settings.
 
 ## Current status
 
-- Working tree: clean after this commit (code + handoffs).
-- Base relationship: branched from `origin/main` `9dd5780`; ahead by this commit once pushed.
+- Working tree: clean; tip `a356b06` not pushed.
+- Base relationship: branched from `origin/main` `9dd5780`; ahead 1.
 - Validation: `python scripts/validate_handoffs.py` passed; Android compile not run in this environment.
 - Risks/blockers: none known.
 - Stashes: none.

@@ -9,7 +9,7 @@ Last verified: 2026-07-18
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
 | `main` | local may differ; `origin/main` = `9dd5780` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
-| `chore/remove-preview-reset-button` | ahead of `origin/main` `9dd5780` | Remove Preview "Reset to defaults" button | [handoff](chore/remove-preview-reset-button.md) | [history](chore/remove-preview-reset-button.history.md) |
+| `chore/remove-preview-reset-button` | `a356b06` ahead of `origin/main` `9dd5780` | Remove Preview "Reset to defaults" button | [handoff](chore/remove-preview-reset-button.md) | [history](chore/remove-preview-reset-button.history.md) |
 | `feature/wallpaper-countdown-dirty-rect` | living sibling (may be absent in this worktree) | Dirty-rect 1 Hz wallpaper countdown + notification header cleanup | [handoff](feature/wallpaper-countdown-dirty-rect.md) | [history](feature/wallpaper-countdown-dirty-rect.history.md) |
 
 ## Current merge order
