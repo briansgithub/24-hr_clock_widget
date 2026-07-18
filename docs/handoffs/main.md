@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: `f0ee7c5` — Merge branch 'feature/timezone-mercator-map' (archive cleanup commit follows).
+- Tip: `66486ed` — Archive timezone-mercator-map handoffs after merge.
 - Upstream: `origin/main` (local ahead; push pending owner request)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
