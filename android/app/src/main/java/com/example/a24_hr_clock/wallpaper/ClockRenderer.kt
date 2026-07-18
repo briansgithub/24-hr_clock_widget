@@ -458,10 +458,11 @@ class ClockRenderer {
             drawEnergyPct(canvas, centerX, centerY, radius, exactHour, handRad, wakeHour, sleepDebt, totalAsleep, bathyphaseHour, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset, useBathyphase, maxEPerfection)
         }
 
-        // 11.5 Timezone equirectangular map (just below sun/moon orbit; under wake-info text)
+        // 11.5 Timezone equirectangular map — fixed lock-screen (large centered) anchor
+        // so home/lock and smallTopRight on/off share the same map position.
         if (wakeHour != null && showTimezoneMap) {
             drawTimezoneMap(
-                canvas, width, height, centerY, radius, wakeHour, sunriseHour,
+                canvas, width, height, wakeHour, sunriseHour,
                 userLatitude, userLongitude
             )
         }
@@ -511,14 +512,18 @@ class ClockRenderer {
         canvas: Canvas,
         width: Int,
         height: Int,
-        clockCenterY: Float,
-        clockRadius: Float,
         wakeHour: Double,
         sunriseHour: Double,
         userLatitude: Double?,
         userLongitude: Double?
     ) {
         val bitmap = timezoneMapBitmap ?: return
+
+        // Anchor to the large centered clock layout (lock default), not the active dial.
+        val clockRadius = min(width, height) / 2f - 150f
+        if (clockRadius < 20f) return
+        val moonDiameter = max(12f, clockRadius / 7f)
+        val clockCenterY = height / 2f - (1.75f * moonDiameter)
 
         val sidePad = 40f
         val maxMapHeight = height * 0.28f
