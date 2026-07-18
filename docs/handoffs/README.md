@@ -9,7 +9,7 @@ Last verified: 2026-07-18
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
 | `main` | `eeb27c4` = `origin/main` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
-| `feature/display-tab-home-lock-ux` | merge commits onto `eeb27c4` (visual check pending) | Feature: Display Home/Lock tab UX | [handoff](feature/display-tab-home-lock-ux.md) | [history](feature/display-tab-home-lock-ux.history.md) |
+| `feature/display-tab-home-lock-ux` | `b3b9bfd` — merged onto current main; visual check pending | Feature: Display Home/Lock tab UX | [handoff](feature/display-tab-home-lock-ux.md) | [history](feature/display-tab-home-lock-ux.history.md) |
 | `feature/exercise-metric-help` | based on older main + uncommitted metric-help restore | Feature: Exercise HRSS/TRIMP/HRV help | [handoff](feature/exercise-metric-help.md) | [history](feature/exercise-metric-help.history.md) |
 | `audit-git-stash-state` | tip `ead09d4`; cleanup candidate (do not merge) | Audit/worktree | [handoff](audit-git-stash-state.md) | [history](audit-git-stash-state.history.md) |
 

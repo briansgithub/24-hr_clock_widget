@@ -2,8 +2,8 @@
 
 ## Identity
 
-- Tip: merge commits onto `origin/main` `eeb27c4` (product tip `9740fd8` + merges)
-- Parent/base: `main` at `eeb27c4`
+- Tip: `b3b9bfd` — Merge origin/main (energy archive) into display-tab-home-lock-ux (product `9740fd8`)
+- Parent/base: `main` at `eeb27c4` (0 behind)
 - Upstream: `origin/feature/display-tab-home-lock-ux` (local ahead; push pending owner auth)
 - Role: feature
 - History: [display-tab-home-lock-ux.history.md](display-tab-home-lock-ux.history.md)
@@ -19,12 +19,12 @@
 ## Changes since branch creation
 
 - Committed (`9740fd8`): `DisplaySettingsScreen` drops inline preview dialog; single tab-scoped “Reset to Defaults” button; Material Home/Lock icons on tabs; unused preview-only params removed from call site.
-- Merged `main` through `da84193`, then caught up through energy archive on `eeb27c4` (handoff conflicts only).
+- Merged `main` through `da84193` (`d04120a`), then caught up through energy archive on `eeb27c4` (`b3b9bfd`).
 
 ## Current status
 
-- Working tree: catch-up merge of current `origin/main` staged (handoff conflicts resolved).
-- Base relationship: includes current `main` (energy already on main).
+- Working tree: clean after merge commits.
+- Base relationship: 0 behind `origin/main`; includes energy already on main.
 - Validation: Android compile not run; **owner visual check still required**.
 - Risks/blockers: none known for product.
 - Stashes: none owned by this branch.
