@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: `f019eb5` — docs: sync display-tab-lock-first tip after babysit
+- Tip: `42154f3` — docs: align handoff tip with pushed babysit commit
 - Feature tip: `d1f3e29` — feat: default Display tab to Lock Screen first
 - Parent/base: `main` / `origin/main` at `3b5bb18`
 - Upstream: `origin/feature/display-tab-lock-first` (matches)
