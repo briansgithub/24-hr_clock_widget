@@ -2,9 +2,9 @@
 
 ## Identity
 
-- Tip: `9740fd8` product commit + uncommitted merge of `origin/main` (`da84193`) into this branch
-- Parent/base: merging onto `main` at `da84193` (was 7 behind; product was 1 ahead)
-- Upstream: `origin/feature/display-tab-home-lock-ux` (local ahead 1 before merge; merge commit pending owner auth)
+- Tip: merge commits onto `origin/main` `eeb27c4` (product tip `9740fd8` + merges)
+- Parent/base: `main` at `eeb27c4`
+- Upstream: `origin/feature/display-tab-home-lock-ux` (local ahead; push pending owner auth)
 - Role: feature
 - History: [display-tab-home-lock-ux.history.md](display-tab-home-lock-ux.history.md)
 - Last verified: `2026-07-18`
@@ -19,25 +19,24 @@
 ## Changes since branch creation
 
 - Committed (`9740fd8`): `DisplaySettingsScreen` drops inline preview dialog; single tab-scoped “Reset to Defaults” button; Material Home/Lock icons on tabs; unused preview-only params removed from call site.
-- This session: merged `origin/main` (`da84193`) with `--no-commit`; resolved handoff-doc conflicts only (product auto-merged).
+- Merged `main` through `da84193`, then caught up through energy archive on `eeb27c4` (handoff conflicts only).
 
 ## Current status
 
-- Working tree: merge in progress (conflicts resolved in handoffs; awaiting owner-authorized commit).
-- Base relationship: product commit rebased/merged onto current `main`; no product invent beyond conflict resolution.
-- Validation: Android compile not run; owner visual check still required.
-- Risks/blockers: none known for product; merge commit not yet created (owner must authorize).
-- Stashes: none owned by this branch (prior false “WIP in stash” claims cleared).
+- Working tree: catch-up merge of current `origin/main` staged (handoff conflicts resolved).
+- Base relationship: includes current `main` (energy already on main).
+- Validation: Android compile not run; **owner visual check still required**.
+- Risks/blockers: none known for product.
+- Stashes: none owned by this branch.
 
 ## Next actions
 
-1. Owner: authorize merge commit on this branch (suggested message below in walkthrough).
-2. Owner visual check on Display Home/Lock tabs.
-3. Owner: authorize push + PR into `main`.
+1. Owner visual check on Display Home/Lock tabs.
+2. Owner: authorize push + PR into `main`.
 
 ## Merge and cleanup
 
 - PR base: `main`
-- Readiness: in progress (merge staged; visual check + commit/push pending)
-- Required predecessor: none
+- Readiness: ready after owner visual check + push/PR
+- Required predecessor: none (energy already merged)
 - After merge to main: append closure history, archive this file and its history, update global HISTORY/index, then delete local/remote branch after reachability verification.

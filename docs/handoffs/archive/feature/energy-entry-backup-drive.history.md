@@ -24,3 +24,8 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Commit/base: tip `55ff716` (1 ahead / 0 behind `origin/main`; clean merge-tree)
 - Change: Cleared stale stash/WIP handoff claims; recorded smoke pass and FF-safe push readiness.
 - Validation/decision: Owner-confirmed smoke PASSED. Next: owner-authorized push, then PR (not opened this session).
+
+### 2026-07-18 — Merged into main via PR #1
+- Commit/base: final tip `ff1c762`; merge `c4de4b2`; PR https://github.com/briansgithub/24-hr_clock_widget/pull/1
+- Change: Handoff refresh committed and pushed; PR opened and merged into `main`.
+- Validation/decision: Smoke already PASSED; branch archived and scheduled for local/remote deletion.

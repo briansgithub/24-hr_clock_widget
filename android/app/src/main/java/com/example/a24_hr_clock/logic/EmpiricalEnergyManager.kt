@@ -4,7 +4,9 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
@@ -139,18 +141,32 @@ class EmpiricalEnergyManager(private val context: Context) {
     }
 
     // Save logs to JSON file (always strips entries before 2026-07-16)
-    fun saveLogs(logs: List<EnergyLog>, syncPublic: Boolean = true) {
+    fun saveLogs(logs: List<EnergyLog>, syncPublic: Boolean = true, uploadDrive: Boolean = false) {
         try {
             val pruned = pruneLogsBeforeCutoff(logs).sortedBy { it.timestamp }
             val content = json.encodeToString(pruned)
             file.writeText(content)
 
+            val settings = SettingsManager(context)
+            val modelSettings = runBlocking { settings.modelSettingsFlow.first() }
+
             if (syncPublic) {
-                val settings = SettingsManager(context)
-                val modelSettings = runBlocking { settings.modelSettingsFlow.first() }
                 val uriString = modelSettings.localBackupUri
                 if (uriString.isNotEmpty()) {
                     syncToPublicStorage(uriString)
+                }
+            }
+
+            // After local backup, push the updated CSV to Google Drive when requested
+            if (uploadDrive && modelSettings.googleDriveUrl.isNotEmpty()) {
+                val driveUrl = modelSettings.googleDriveUrl
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val (success, msg) = uploadToGoogleDrive(driveUrl)
+                        Log.d("EmpiricalEnergyManager", "Post-entry Drive backup: $success, $msg")
+                    } catch (e: Exception) {
+                        Log.e("EmpiricalEnergyManager", "Post-entry Drive backup failed", e)
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -158,8 +174,10 @@ class EmpiricalEnergyManager(private val context: Context) {
         }
     }
 
-    // Log or update a specific 30-min interval
-    fun logEnergy(timestamp: Long, level: Int?) {
+    // Log or update a specific 30-min interval.
+    // uploadDrive: after local Documents sync, also upload to Google Drive.
+    // Worker-seeded MISSED placeholders pass false to avoid Drive spam every ~30 min.
+    fun logEnergy(timestamp: Long, level: Int?, uploadDrive: Boolean = true) {
         val alignedTs = alignTo30MinInterval(timestamp)
         if (alignedTs < EARLIEST_ALLOWED_TIMESTAMP_MS) {
             Log.w("EmpiricalEnergyManager", "Ignoring energy log before 2026-07-16 cutoff")
@@ -177,7 +195,7 @@ class EmpiricalEnergyManager(private val context: Context) {
             logs.add(newLog)
         }
         logs.sortBy { it.timestamp }
-        saveLogs(logs)
+        saveLogs(logs, syncPublic = true, uploadDrive = uploadDrive)
     }
 
     // Correlate existing logs against Fitbit sleep logs

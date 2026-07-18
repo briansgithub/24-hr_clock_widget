@@ -51,3 +51,13 @@ Append-only milestones for `main`. Current state and next actions belong in [mai
 - Commit/base: tip/merge `520511e` (fast-forward)
 - Change: Multi-agent worktree protocol, lean anti-loss/stash ownership, validator parallel-state ledger; archived chore handoff.
 - Validation/decision: Owner directed lean anti-loss plan implement/merge; stashes renamed to compliant messages.
+
+### 2026-07-18 — Merged energy Drive backup (PR #1)
+- Commit/base: tip `ff1c762`; merge `c4de4b2`; PR https://github.com/briansgithub/24-hr_clock_widget/pull/1
+- Change: Real-time Drive upload after user energy entry; prompt datetime label; archived feature handoff.
+- Validation/decision: Owner smoke PASSED; post-merge archive and branch deletion authorized.
+
+### 2026-07-18 — Synced tip after energy archive
+- Commit/base: `7239aa0`
+- Change: Archived energy handoffs; deleted local/remote feature branch; refreshed active index.
+- Validation/decision: `python scripts/validate_handoffs.py` passed.
