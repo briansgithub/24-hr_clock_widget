@@ -2,8 +2,8 @@
 
 ## Identity
 
-- Tip: `b135a9d` — docs: finalize main tip SHA after archive sync
-- Upstream: `origin/main` (matches)
+- Tip: pending archive commit after merges `2db20b3` / `3c2f7ca` onto `9dd5780`
+- Upstream: `origin/main` (local ahead; push pending)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
 - Last verified: `2026-07-18`
@@ -14,18 +14,20 @@ Maintain the stable integration branch for future feature work, with permanent h
 
 ## Changes since previous published tip
 
-- `7a08775`: Archived `feature/display-tab-lock-first` after PRs #4/#5.
-- `1f3764e` / `0c07664`: Merged display Lock-first + light-gray Reset.
-- Earlier: audit close; exercise/display/energy PRs #3–#1 archived.
+- Merged `feature/wallpaper-countdown-dirty-rect` (FF on `origin/main` at `9dd5780`).
+- Merged `feature/timezone-map-lock-position` (`2db20b3`).
+- Merged `chore/remove-preview-reset-button` (`3c2f7ca`).
+- Archived all three branch handoffs/histories.
 
 ## Current status
 
-- Clean `main` only: no living feature branches; no stashes.
-- Primary worktree only.
+- Clean `main` only after cleanup: no living feature/chore branches; no stashes.
+- Primary worktree only after chore worktree removal.
 
 ## Next actions
 
-1. Start the next feature from updated `origin/main` in a dedicated worktree when needed.
+1. Push `main` to `origin` when owner authorizes (merge cleanup already authorized).
+2. Start the next feature from updated `origin/main` in a dedicated worktree when needed.
 
 ## Merge and cleanup
 

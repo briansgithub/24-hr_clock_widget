@@ -11,3 +11,8 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Commit/base: `75f5d9b`
 - Change: Wallpaper keeps 10 s full redraws; when Bedtime Countdown is on and visible, a 1 Hz lockCanvas(dirty) path clears/redraws only the countdown stack (skips if bounds hit the dial). Notification builder no longer uses system chronometer/showWhen so the header no longer duplicates the large body timer.
 - Validation/decision: validate_handoffs.py passed; awaiting owner device check.
+
+### 2026-07-18 - Merged into main
+- Commit/base: tip `9dd5780` (feature `75f5d9b`); landed via fast-forward on `origin/main`
+- Change: Dirty-rect 1 Hz wallpaper countdown and notification header chronometer cleanup are on `main`.
+- Validation/decision: Owner authorized merge-all open branches; handoff archived.

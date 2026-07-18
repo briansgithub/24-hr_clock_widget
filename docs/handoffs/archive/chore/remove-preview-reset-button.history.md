@@ -11,3 +11,8 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Commit/base: `a356b06`
 - Change: `ClockPreviewScreen` no longer accepts or shows `onReset`; Preview call site no longer resets home/lock settings from that screen.
 - Validation/decision: Grep confirms Display "Reset to Defaults" and Energy "Reset Model Defaults" remain; handoff validation passed.
+
+### 2026-07-18 — Merged into main
+- Commit/base: tip `441f50f`; merge `3c2f7ca`
+- Change: Preview-tab Reset to defaults removal landed on `main`.
+- Validation/decision: Owner authorized merge-all open branches; handoff archived.
