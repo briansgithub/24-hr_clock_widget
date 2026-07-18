@@ -8,16 +8,15 @@ Last verified: 2026-07-18
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | `cd755b3` = `origin/main` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
-| `feature/exercise-metric-help` | `e0a08f1` — [PR #3](https://github.com/briansgithub/24-hr_clock_widget/pull/3) open | Feature: Exercise HRSS/TRIMP/HRV help | [handoff](feature/exercise-metric-help.md) | [history](feature/exercise-metric-help.history.md) |
+| `main` | `ed22464` + exercise archive cleanup | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
 | `audit-git-stash-state` | tip `ead09d4`; cleanup candidate (do not merge) | Audit/worktree | [handoff](audit-git-stash-state.md) | [history](audit-git-stash-state.history.md) |
 
 ## Current merge order
 
-1. `feature/exercise-metric-help` → `main` ([PR #3](https://github.com/briansgithub/24-hr_clock_widget/pull/3) open).
+_(no living feature branches)_
 
 Parallel agents must use separate Git worktrees — see [MULTI_AGENT.md](MULTI_AGENT.md).
 
-Recently archived: `feature/display-tab-home-lock-ux` (merged via [PR #2](https://github.com/briansgithub/24-hr_clock_widget/pull/2)), `feature/energy-entry-backup-drive` (merged via [PR #1](https://github.com/briansgithub/24-hr_clock_widget/pull/1)). Earlier: `chore/multi-agent-worktree-docs`, `feature/empirical-log-jul16-cutoff`, `feature/timezone-mercator-map`, `feature/android-settings-ui-polish`, `feature/bedtime-countdown-10pm-floor`, `chore/portable-handoff-kit`, `feature/dynamic-sun-color`, `feature/empirical-public-priority` (merged); `feature/empirical-energy-logging` (superseded).
+Recently archived: `feature/exercise-metric-help` (merged via [PR #3](https://github.com/briansgithub/24-hr_clock_widget/pull/3)), `feature/display-tab-home-lock-ux` (merged via [PR #2](https://github.com/briansgithub/24-hr_clock_widget/pull/2)), `feature/energy-entry-backup-drive` (merged via [PR #1](https://github.com/briansgithub/24-hr_clock_widget/pull/1)). Earlier: `chore/multi-agent-worktree-docs`, `feature/empirical-log-jul16-cutoff`, `feature/timezone-mercator-map`, `feature/android-settings-ui-polish`, `feature/bedtime-countdown-10pm-floor`, `chore/portable-handoff-kit`, `feature/dynamic-sun-color`, `feature/empirical-public-priority` (merged); `feature/empirical-energy-logging` (superseded).
 
 New branches use [templates/](templates/). Validate with `python scripts/validate_handoffs.py`.

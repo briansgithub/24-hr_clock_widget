@@ -2,8 +2,8 @@
 
 ## Identity
 
-- Tip: `cd755b3` — Sync main handoff tip after display archive.
-- Upstream: `origin/main` (matches)
+- Tip: `ed22464` — Merge pull request #3 from briansgithub/feature/exercise-metric-help
+- Upstream: `origin/main` (local matches after pull; archive cleanup may be ahead until push)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
 - Last verified: `2026-07-18`
@@ -14,21 +14,21 @@ Maintain the stable integration branch for future feature work, with permanent h
 
 ## Changes since previous published tip
 
-- `cd4f97d` / `354a8db` / `9740fd8`: Display Home/Lock UX — remove Preview button; tab-scoped Reset; Home/Lock icons.
-- `eeb27c4` / `7239aa0` / energy PR #1: Drive backup on energy entry; handoff archive.
-- Earlier: multi-agent docs, Jul 16 empirical cutoff, timezone map, settings UI polish, wind-down gradient, bedtime countdown.
+- `ed22464` / `d1fac1a` / `c24547e`: Exercise metric help (HRSS/TRIMP/HRV) via chart legend; three-level dialog.
+- `cd4f97d` / display PR #2: Display Home/Lock UX.
+- `c4de4b2` / energy PR #1: Drive backup on energy entry.
 
 ## Current status
 
-- Display and energy features merged and archived.
-- Living feature: `feature/exercise-metric-help` at `e041101` (visual check passed; push/PR in progress).
-- `audit-git-stash-state`: tip `ead09d4`; do not merge; optional owner cleanup.
-- Stashes: superseded main inventory stash; exercise stash until owner drops after merge.
+- Energy, display, and exercise features merged and archived (PRs #1–#3).
+- Living non-feature: `audit-git-stash-state` (do not merge; optional delete).
+- Stashes remaining: `wip main: android studio worktree docs…` (parked for this cleanup); `wip main: pre-energy-archive inventory handoffs` (superseded).
+- Exercise WIP stash: dropped.
 
 ## Next actions
 
-1. Finish exercise push/PR/merge cleanup.
-2. Owner: decide whether to delete `audit-git-stash-state` and drop superseded stashes.
+1. Owner: decide whether to restore/commit Android Studio worktree docs stash, or drop it.
+2. Owner: decide whether to delete `audit-git-stash-state` and drop the superseded energy-archive inventory stash.
 
 ## Merge and cleanup
 
