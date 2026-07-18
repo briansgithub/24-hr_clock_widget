@@ -2,9 +2,9 @@
 
 ## Identity
 
-- Tip: `e041101` — merge of `origin/main` onto feature (product `c24547e`)
+- Tip: `e0a08f1` — docs: mark exercise metric help ready for PR (product `c24547e`)
 - Parent/base: `main` at `cd755b3` (0 behind)
-- Upstream: `origin/feature/exercise-metric-help` (push pending)
+- Upstream: `origin/feature/exercise-metric-help` (in sync after push)
 - Role: feature
 - History: [exercise-metric-help.history.md](exercise-metric-help.history.md)
 - Last verified: `2026-07-18`
@@ -20,22 +20,24 @@
 
 - `c24547e`: `MetricHelpContent.kt`, `ExerciseMetricHelp.kt`, `MainActivity` ExerciseMetricsScreen wiring.
 - `e041101`: merged current `main` (energy + display already on main).
+- `e0a08f1`: handoff refresh for PR.
 
 ## Current status
 
-- Working tree: clean product; handoff refresh in this commit.
+- Working tree: clean; pushed.
+- PR: https://github.com/briansgithub/24-hr_clock_widget/pull/3
 - Owner visual check: PASSED (authorized commit/push/PR).
-- Stashes: `stash@{1}` still holds original exercise WIP (product restored); drop when owner confirms. `stash@{0}` is unrelated main inventory stash.
+- Stashes: exercise WIP stash still present until owner authorizes drop after merge.
 
 ## Next actions
 
-1. Push + open PR into `main`.
-2. After merge: archive handoff/history, update HISTORY/index, delete local/remote branch.
-3. Owner: authorize `git stash drop` for exercise stash when satisfied.
+1. Owner: merge PR #3 when satisfied.
+2. After merge: archive handoff/history, update HISTORY/index, delete local/remote branch/worktree.
+3. Owner: authorize drop of exercise stash when satisfied.
 
 ## Merge and cleanup
 
 - PR base: `main`
-- Readiness: ready for push/PR
+- Readiness: PR open
 - Required predecessor: none
 - After merge to main: append closure history, archive this file and its history, update global HISTORY/index, then delete local/remote branch after reachability verification.
