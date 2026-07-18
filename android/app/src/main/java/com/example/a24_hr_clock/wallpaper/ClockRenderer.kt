@@ -1009,13 +1009,13 @@ class ClockRenderer {
             val margin = radius * 0.15f
             val rect = RectF(cx - (radius - margin), cy - (radius - margin), cx + (radius - margin), cy + (radius - margin))
 
-            // Light → dark (inverse of grogginess dark → light)
-            val darkGray = Color.parseColor("#FF555555")
-            val lightGray = Color.parseColor("#FFEEEEEE")
+            // Light → dark (#5C5C5C → #111111)
+            val startGray = Color.parseColor("#FF5C5C5C")
+            val endGray = Color.parseColor("#FF111111")
 
             val shader = SweepGradient(
                 cx, cy,
-                intArrayOf(lightGray, darkGray, lightGray),
+                intArrayOf(startGray, endGray, startGray),
                 floatArrayOf(0f, (sweepAngle / 360f).toFloat(), 1f)
             )
 
