@@ -28,6 +28,6 @@ Append-only milestones for `main`. Current state and next actions belong in [mai
 - Validation/decision: Owner requested commit and merge; push not requested.
 
 ### 2026-07-18 — Wind-down wedge darker gradient
-- Commit/base: fix/wind-down-gradient → main (owner commit+merge)
+- Commit/base: 64df715; merge dea5ea7
 - Change: Wind-down SweepGradient from #5C5C5C to #111111 (was light/dark gray, then #444444).
-- Validation/decision: Owner requested color tweaks, then commit and merge.
+- Validation/decision: Owner requested color tweaks, then commit and merge; push not requested.
