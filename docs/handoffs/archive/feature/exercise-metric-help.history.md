@@ -34,3 +34,8 @@ Append-only milestones for this branch. Current state and next actions belong in
 ### 2026-07-18 — Help entry points reduced to chart legend
 - Change: Removed duplicate `ExerciseMetricsGlossary` above the chart; HRSS/HRV/TRIMP help only via legend below the graph.
 - Validation/decision: Owner requested combine help texts to below-graph only.
+
+### 2026-07-18 — Merged into main via PR #3
+- Commit/base: final tip `d1fac1a`; merge `ed22464`; PR https://github.com/briansgithub/24-hr_clock_widget/pull/3
+- Change: PR merged; handoff archived; local/remote branch and worktree removed; exercise WIP stash dropped.
+- Validation/decision: Owner authorized post-merge cleanup and stash drop.

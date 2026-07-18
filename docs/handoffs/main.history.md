@@ -66,3 +66,8 @@ Append-only milestones for `main`. Current state and next actions belong in [mai
 - Commit/base: tip `354a8db`; merge `cd4f97d`; PR https://github.com/briansgithub/24-hr_clock_widget/pull/2
 - Change: Display Preview removed; tab-scoped Reset; Home/Lock icons; archived feature handoff.
 - Validation/decision: Owner visual check PASSED; post-merge archive and branch/worktree deletion authorized.
+
+### 2026-07-18 — Merged exercise metric help (PR #3)
+- Commit/base: tip `d1fac1a`; merge `ed22464`; PR https://github.com/briansgithub/24-hr_clock_widget/pull/3
+- Change: Three-level HRSS/TRIMP/HRV help via chart legend; archived feature handoff; exercise stash dropped.
+- Validation/decision: Owner authorized merge, post-merge cleanup, and stash drop.
