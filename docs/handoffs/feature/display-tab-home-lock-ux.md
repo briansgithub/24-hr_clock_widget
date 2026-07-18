@@ -2,9 +2,9 @@
 
 ## Identity
 
-- Tip: `b3b9bfd` — Merge origin/main (energy archive) into display-tab-home-lock-ux (product `9740fd8`)
+- Tip: `b05b886` — docs: record display branch tip after main catch-up merge (product `9740fd8`)
 - Parent/base: `main` at `eeb27c4` (0 behind)
-- Upstream: `origin/feature/display-tab-home-lock-ux` (local ahead; push pending owner auth)
+- Upstream: `origin/feature/display-tab-home-lock-ux` (in sync after push)
 - Role: feature
 - History: [display-tab-home-lock-ux.history.md](display-tab-home-lock-ux.history.md)
 - Last verified: `2026-07-18`
@@ -19,24 +19,25 @@
 ## Changes since branch creation
 
 - Committed (`9740fd8`): `DisplaySettingsScreen` drops inline preview dialog; single tab-scoped “Reset to Defaults” button; Material Home/Lock icons on tabs; unused preview-only params removed from call site.
-- Merged `main` through `da84193` (`d04120a`), then caught up through energy archive on `eeb27c4` (`b3b9bfd`).
+- Merged onto current `main` (`b3b9bfd` / `d04120a`); tip docs `b05b886`.
 
 ## Current status
 
-- Working tree: clean after merge commits.
-- Base relationship: 0 behind `origin/main`; includes energy already on main.
-- Validation: Android compile not run; **owner visual check still required**.
+- Working tree: clean; pushed to origin.
+- PR: https://github.com/briansgithub/24-hr_clock_widget/pull/2
+- Base relationship: 0 behind `origin/main`.
+- Validation: owner authorized push/PR; device visual check items listed on the PR.
 - Risks/blockers: none known for product.
 - Stashes: none owned by this branch.
 
 ## Next actions
 
-1. Owner visual check on Display Home/Lock tabs.
-2. Owner: authorize push + PR into `main`.
+1. Owner: complete PR #2 test plan / merge when satisfied.
+2. After merge: archive handoff/history, update HISTORY/index, delete local/remote branch.
 
 ## Merge and cleanup
 
 - PR base: `main`
-- Readiness: ready after owner visual check + push/PR
+- Readiness: PR open — ready after owner checks
 - Required predecessor: none (energy already merged)
 - After merge to main: append closure history, archive this file and its history, update global HISTORY/index, then delete local/remote branch after reachability verification.

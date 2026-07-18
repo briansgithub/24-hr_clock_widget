@@ -25,3 +25,8 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Commit/base: `d04120a` (merge `da84193`); then catch-up merge of `origin/main` `eeb27c4`
 - Change: Completed authorized merge; resolved energy-archive handoff conflicts (active energy docs removed; archive kept).
 - Validation/decision: Owner visual check still required before push/PR.
+
+### 2026-07-18 — PR #2 opened
+- Commit/base: tip `b05b886`; PR https://github.com/briansgithub/24-hr_clock_widget/pull/2
+- Change: Pushed branch and opened PR into `main`.
+- Validation/decision: Owner authorized push/PR; test plan on PR.
