@@ -57,3 +57,9 @@ Disposition phrases: `merged into main`, `superseded` (commits landed via descen
 - Merge / PR: c13f36a
 - Summary: Switch-based settings toggles and Canvas Display element glyphs.
 - Archive: rchive/feature/android-settings-ui-polish.md
+
+### 2026-07-18 — eature/timezone-mercator-map → merged into main
+- Final tip: 7908253
+- Merge / PR: 0ee7c5
+- Summary: Equirectangular timezone world map with correlated meridian and phone location dot (lock on / home off by default).
+- Archive: rchive/feature/timezone-mercator-map.md
