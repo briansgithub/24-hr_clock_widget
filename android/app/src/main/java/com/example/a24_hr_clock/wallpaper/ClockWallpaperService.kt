@@ -219,6 +219,7 @@ class ClockWallpaperService : WallpaperService() {
                     bathyphaseHour = snapshot.bathy
                     if (isVisible) {
                         drawFrame()
+                        startRendering()
                     }
                 }
             }
@@ -239,7 +240,9 @@ class ClockWallpaperService : WallpaperService() {
             renderJob = scope.launch {
                 while (isActive) {
                     drawFrame()
-                    delay(10000) // Update every 10 seconds for efficiency (hand movement)
+                    // Full canvas redraw; keep the normal 10s cadence even with countdown
+                    // (a 1s loop would be costly). Seconds update when the frame refreshes.
+                    delay(10000)
                 }
             }
         }
@@ -399,6 +402,8 @@ class ClockWallpaperService : WallpaperService() {
                     showBathyphase = currentSettings.showBathyphase,
                     showAcrophase = currentSettings.showAcrophase,
                     showGrogginess = currentSettings.showGrogginess,
+                    showWindDown = currentSettings.showWindDown,
+                    showBedtimeCountdown = currentSettings.showBedtimeCountdown,
                     isPreview = isPreview,
                     previewIsLockScreen = previewLockScreen
                 )
