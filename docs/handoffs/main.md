@@ -2,8 +2,8 @@
 
 ## Identity
 
-- Tip: `7239aa0` — Archive energy-entry-backup-drive handoffs after PR #1 merge.
-- Upstream: `origin/main` (local ahead by archive cleanup until push)
+- Tip: `85f3e13` — Sync main handoff tip after energy archive.
+- Upstream: `origin/main` (local matches after push)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
 - Last verified: `2026-07-18`
@@ -14,7 +14,7 @@ Maintain the stable integration branch for future feature work, with permanent h
 
 ## Changes since previous published tip
 
-- `7239aa0`: archived energy handoffs; deleted local/remote `feature/energy-entry-backup-drive`.
+- `85f3e13` / `7239aa0`: archived energy handoffs; deleted local/remote `feature/energy-entry-backup-drive`.
 - `c4de4b2` / `ff1c762` / `55ff716`: energy entry → Documents CSV → Google Drive upload; prompt datetime label; MISSED seeds skip Drive.
 - Earlier: multi-agent docs, Jul 16 empirical cutoff, timezone map, settings UI polish, wind-down gradient, bedtime countdown.
 
