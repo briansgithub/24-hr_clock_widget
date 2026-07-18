@@ -53,6 +53,12 @@ class ClockRenderer {
         isAntiAlias = true
     }
 
+    private val windDownArcPaint = Paint().apply {
+        color = Color.parseColor("#60BBBBBB")
+        style = Paint.Style.FILL
+        isAntiAlias = true
+    }
+
     private val handPaint = Paint().apply {
         color = Color.parseColor("#FF9F1C")
         style = Paint.Style.STROKE
@@ -159,6 +165,8 @@ class ClockRenderer {
         showBathyphase: Boolean = false,
         showAcrophase: Boolean = false,
         showGrogginess: Boolean = false,
+        showWindDown: Boolean = false,
+        showBedtimeCountdown: Boolean = false,
         isPreview: Boolean = false,
         previewIsLockScreen: Boolean = false
     ) {
@@ -174,8 +182,8 @@ class ClockRenderer {
         val radius: Float
 
         if (smallTopRight) {
-            // Small clock in top right
-            radius = min(width, height) / 6f
+            // Small clock in top right (~10% smaller than original /6 sizing)
+            radius = min(width, height) / 6f * 0.9f
             centerX = width - radius - 80f
             centerY = radius + 150f // Leave some space for status bar
         } else {
@@ -209,7 +217,12 @@ class ClockRenderer {
             drawSleepArcs(canvas, centerX, centerY, radius, activeLogs, includeNaps, showTotalBedtime)
         }
 
-        // 3.5 Draw Grogginess Arc
+        // 3.5 Draw Wind-down Arc (90 min before asleep)
+        if (showWindDown && activeLogs.isNotEmpty()) {
+            drawWindDownArc(canvas, centerX, centerY, radius, activeLogs, showTotalBedtime)
+        }
+
+        // 3.6 Draw Grogginess Arc
         if (showGrogginess && activeLogs.isNotEmpty()) {
             drawGrogginessArc(canvas, centerX, centerY, radius, activeLogs)
         }
@@ -412,6 +425,17 @@ class ClockRenderer {
             drawWakeSunriseInfo(canvas, height, wakeHour, sunriseHour, sunsetHour, smallTopRight)
         }
 
+        // 11.6 Draw Bedtime Countdown (home: right-justified left of small clock; lock: top-right)
+        if (showBedtimeCountdown) {
+            val bedtimeMillis = com.example.a24_hr_clock.logic.BedtimeNotificationManager.resolveBedtimeMillis(sleepLogs)
+            if (bedtimeMillis != null) {
+                drawBedtimeCountdown(
+                    canvas, width, height, bedtimeMillis, smallTopRight,
+                    clockCenterX = centerX, clockCenterY = centerY, clockRadius = radius
+                )
+            }
+        }
+
         // 12. Draw Preview Overlay
         if (isPreview) {
             val text = if (previewIsLockScreen) "Previewing: Lock Screen (Tap to toggle)" else "Previewing: Home Screen (Tap to toggle)"
@@ -586,6 +610,120 @@ class ClockRenderer {
         val g = (210 * (1 - v) + 75 * v).toInt()
         val b = (255 * (1 - v) + 43 * v).toInt()
         return Color.rgb(r, g, b)
+    }
+
+    private fun drawBedtimeCountdown(
+        canvas: Canvas,
+        width: Int,
+        height: Int,
+        bedtimeMillis: Long,
+        smallTopRight: Boolean,
+        clockCenterX: Float,
+        clockCenterY: Float,
+        clockRadius: Float
+    ) {
+        val now = System.currentTimeMillis()
+        var targetMillis = bedtimeMillis
+        // Keep target in the future if it just passed during rendering.
+        if (now >= targetMillis) {
+            targetMillis += 24L * 60L * 60L * 1000L
+        }
+
+        val lastBedtimeMillis = targetMillis - (24L * 60L * 60L * 1000L)
+        val isOverdue = now >= lastBedtimeMillis && now < lastBedtimeMillis + (6L * 60L * 60L * 1000L)
+        val minutesRemaining = (targetMillis - now) / 60000.0
+
+        val color = when {
+            isOverdue -> Color.parseColor("#888888")
+            minutesRemaining > 90 -> Color.WHITE
+            else -> {
+                val progress = ((90 - minutesRemaining) / 90.0).coerceIn(0.0, 1.0).toFloat()
+                val channel = (255 - (255 - 136) * progress).toInt()
+                Color.rgb(channel, channel, channel)
+            }
+        }
+
+        val bedtime = java.time.LocalDateTime.ofInstant(
+            java.time.Instant.ofEpochMilli(targetMillis),
+            java.time.ZoneId.systemDefault()
+        )
+        val targetStr = bedtime.format(java.time.format.DateTimeFormatter.ofPattern("h:mm a", Locale.US))
+
+        val countdownStr = if (isOverdue) {
+            "GO TO BED!"
+        } else {
+            val totalSeconds = ((targetMillis - now) / 1000L).coerceAtLeast(0L)
+            val hours = totalSeconds / 3600
+            val minutes = (totalSeconds % 3600) / 60
+            val seconds = totalSeconds % 60
+            String.format(Locale.US, "%d:%02d:%02d", hours, minutes, seconds)
+        }
+
+        // Home (small clock top-right): right-justified clear of sun/moon orbit;
+        // countdown glyph bottoms flush with the dial's outer circumference.
+        // Lock (large centered clock): top-right, opposite the system clock.
+        val paddingX = 48f
+        val alignRight: Boolean
+        val x: Float
+        if (smallTopRight) {
+            // Match drawSunAndMoon orbit so text stays left of sun/moon at any angle.
+            val iconSize = max(12f, clockRadius / 7f)
+            val orbitRadius = clockRadius + iconSize + 20f
+            val celestialRadius = iconSize / 1.6f
+            val leftmostCelestial = clockCenterX - orbitRadius - celestialRadius
+            alignRight = true
+            x = leftmostCelestial - 20f
+        } else {
+            alignRight = true
+            x = width - paddingX
+        }
+
+        val labelPaint = TextPaint().apply {
+            this.color = color
+            textSize = 36f
+            textAlign = if (alignRight) Paint.Align.RIGHT else Paint.Align.LEFT
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            isAntiAlias = true
+            alpha = 200
+        }
+        val countdownPaint = TextPaint().apply {
+            this.color = color
+            textSize = 64f
+            textAlign = if (alignRight) Paint.Align.RIGHT else Paint.Align.LEFT
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            isAntiAlias = true
+        }
+        val targetPaint = TextPaint().apply {
+            this.color = color
+            textSize = 40f
+            textAlign = if (alignRight) Paint.Align.RIGHT else Paint.Align.LEFT
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            isAntiAlias = true
+            alpha = 220
+        }
+
+        val countdownBaseline: Float
+        val labelBaseline: Float
+        if (smallTopRight) {
+            // Outer edge of the stroked circumference, then bottom-align via this string's bounds.
+            val clockBottom = clockCenterY + clockRadius + faceOutlinePaint.strokeWidth / 2f
+            val glyphBounds = Rect()
+            countdownPaint.getTextBounds(countdownStr, 0, countdownStr.length, glyphBounds)
+            countdownBaseline = clockBottom - glyphBounds.bottom
+            val labelGap = 8f
+            labelBaseline = countdownBaseline + countdownPaint.ascent() - labelGap - labelPaint.descent()
+        } else {
+            val topY = (height * 0.20f).coerceIn(260f, height * 0.40f)
+            labelBaseline = topY
+            countdownBaseline = topY + countdownPaint.textSize + 8f
+        }
+
+        canvas.drawText("Bedtime", x, labelBaseline, labelPaint)
+        canvas.drawText(countdownStr, x, countdownBaseline, countdownPaint)
+        if (!isOverdue) {
+            val targetBaseline = countdownBaseline + targetPaint.textSize + 10f
+            canvas.drawText(targetStr, x, targetBaseline, targetPaint)
+        }
     }
 
     private fun drawWakeSunriseInfo(
@@ -839,6 +977,55 @@ class ClockRenderer {
             grogginessArcPaint.shader = shader
             grogginessArcPaint.alpha = 255
             canvas.drawArc(rect, startAngle.toFloat(), sweepAngle.toFloat(), true, grogginessArcPaint)
+        } catch (e: Exception) {}
+    }
+
+    private fun drawWindDownArc(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        radius: Float,
+        targetLogs: List<com.example.a24_hr_clock.logic.SleepLogEntry>,
+        showTotalBedtime: Boolean
+    ) {
+        val mainSleep = targetLogs.filter { it.isMainSleep }.maxByOrNull { it.dateOfSleep } ?: return
+
+        try {
+            val startDt = java.time.LocalDateTime.parse(mainSleep.startTime.replace("Z", ""))
+            val endDt = java.time.LocalDateTime.parse(mainSleep.endTime.replace("Z", ""))
+
+            var asleepHour = startDt.hour + startDt.minute / 60.0 + startDt.second / 3600.0
+            if (!showTotalBedtime) {
+                val eH = endDt.hour + endDt.minute / 60.0 + endDt.second / 3600.0
+                asleepHour = (eH - mainSleep.minutesAsleep / 60.0).mod(24.0)
+            }
+
+            // 90 minutes before the purple sleep wedge; slight overlap into sleep for seamless blend
+            val asleepAngle = (asleepHour - 18.0) * 15.0
+            val originalStartAngle = asleepAngle - 1.5 * 15.0
+            val startAngle = originalStartAngle
+            val sweepAngle = 1.5 * 15.0 + 0.5
+
+            val margin = radius * 0.15f
+            val rect = RectF(cx - (radius - margin), cy - (radius - margin), cx + (radius - margin), cy + (radius - margin))
+
+            // Light → dark (inverse of grogginess dark → light)
+            val darkGray = Color.parseColor("#FF555555")
+            val lightGray = Color.parseColor("#FFEEEEEE")
+
+            val shader = SweepGradient(
+                cx, cy,
+                intArrayOf(lightGray, darkGray, lightGray),
+                floatArrayOf(0f, (sweepAngle / 360f).toFloat(), 1f)
+            )
+
+            val matrix = Matrix()
+            matrix.postRotate(originalStartAngle.toFloat(), cx, cy)
+            shader.setLocalMatrix(matrix)
+
+            windDownArcPaint.shader = shader
+            windDownArcPaint.alpha = 255
+            canvas.drawArc(rect, startAngle.toFloat(), sweepAngle.toFloat(), true, windDownArcPaint)
         } catch (e: Exception) {}
     }
 
