@@ -16,3 +16,7 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Commit/base: stashed as `wip exercise-metric-help before empirical-log-cutoff`
 - Change: Parked uncommitted Exercise metric-help implementation so `feature/empirical-log-jul16-cutoff` could proceed from `main`.
 - Validation/decision: Restore stash onto this branch before resume; do not pop onto other feature branches.
+
+### 2026-07-18 — Stash message made ownership-compliant
+- Change: Renamed stash message to `wip feature/exercise-metric-help: pause before empirical-log-cutoff`.
+- Validation/decision: Matches MULTI_AGENT stash ownership rules; pop only on this branch when handoff lists it.

@@ -1,6 +1,6 @@
 # History: `chore/multi-agent-worktree-docs`
 
-Append-only milestones for this branch. Current state and next actions belong in [multi-agent-worktree-docs.md](multi-agent-worktree-docs.md).
+Append-only milestones for this branch. Archived with the closed handoff.
 
 ### 2026-07-18 — Branch created in dedicated worktree
 - Commit/base: `main` at `ead09d4`
@@ -18,3 +18,8 @@ Append-only milestones for this branch. Current state and next actions belong in
 ### 2026-07-18 — Lean anti-loss and stash ownership
 - Change: Added short anti-loss/stash ownership bullets; validator prints worktrees, unpushed branches, and stash↔branch hints.
 - Validation/decision: No INVENTORY.md; git + validator remain the ledger.
+
+### 2026-07-18 — Merged into main and closed
+- Commit/base: `520511e` (fast-forward)
+- Change: Merged multi-agent worktree protocol and lean anti-loss rules into `main`; archived handoff/history.
+- Validation/decision: Owner directed cleanup; stashes renamed to compliant ownership messages.

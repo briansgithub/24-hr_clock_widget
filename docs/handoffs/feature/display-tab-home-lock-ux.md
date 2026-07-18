@@ -22,11 +22,11 @@
 
 ## Current status
 
-- Working tree: Android WIP is in stash (`wip display-tab-home-lock-ux before exercise-metric-help`); restore with `git checkout feature/display-tab-home-lock-ux` then `git stash pop` when resuming.
+- Working tree: Android WIP is in stash; restore in a worktree/checkout of this branch only when resuming.
 - Base relationship: branched from `main` `ead09d4`
 - Validation: not run (Android toolchain may be unavailable)
 - Risks/blockers: none known
-- Stashes: display-tab code paused while `feature/exercise-metric-help` is active
+- Stashes: `wip feature/display-tab-home-lock-ux: pause before exercise-metric-help`
 
 ## Next actions
 

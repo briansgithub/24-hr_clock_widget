@@ -22,11 +22,11 @@
 
 ## Current status
 
-- Working tree: code WIP is in `stash@{0}` ("WIP energy-entry-backup-drive before bedtime overlay"); restore with `git checkout feature/energy-entry-backup-drive` then `git stash pop` when resuming.
+- Working tree: code WIP is in stash; restore in a worktree/checkout of this branch only when resuming.
 - Base relationship: branched from `origin/main` @ `b0187f4`; no feature commits yet.
 - Validation: not run this session (Android compile deferred).
 - Risks/blockers: Drive upload is async after save (UI does not wait); requires configured `googleDriveUrl` and `localBackupUri` for full path.
-- Stashes: `stash@{0}` holds the uncommitted Android implementation for this branch.
+- Stashes: `wip feature/energy-entry-backup-drive: pause before bedtime overlay`
 
 ## Next actions
 
