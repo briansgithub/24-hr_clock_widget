@@ -8,9 +8,9 @@ Last verified: 2026-07-18
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | ahead of `origin/main` after settings UI merge `c13f36a` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `main` | ahead of `origin/main` after settings UI merge `2a3614f` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
 | `feature/energy-entry-backup-drive` | WIP in stash | Feature: Drive backup on energy entry (paused) | [handoff](feature/energy-entry-backup-drive.md) | [history](feature/energy-entry-backup-drive.history.md) |
-| `feature/timezone-mercator-map` | tip at `c13f36a`; WIP | Feature: timezone / Mercator map | [handoff](feature/timezone-mercator-map.md) | [history](feature/timezone-mercator-map.history.md) |
+| `feature/timezone-mercator-map` | uncommitted equirectangular map WIP on `2a3614f` | Feature: timezone world map display | [handoff](feature/timezone-mercator-map.md) | [history](feature/timezone-mercator-map.history.md) |
 
 ## Current merge order
 
