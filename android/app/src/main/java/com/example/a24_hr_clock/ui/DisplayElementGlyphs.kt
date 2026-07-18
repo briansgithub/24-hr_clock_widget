@@ -1,6 +1,9 @@
 package com.example.a24_hr_clock.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -13,7 +16,11 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.example.a24_hr_clock.R
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.min
@@ -30,8 +37,31 @@ private val SunGold = Color(0xFFFFD700)
 private val SunOrange = Color(0xFFFFA500)
 private val MoonLit = Color(0xFFE0E0E0)
 private val MoonShadow = Color(0xFF444444)
+/** Energy curve endpoints from ClockRenderer.interpolateEnergyColor (v=0 / v=1). */
+private val EnergyMin = Color(0xFF00D2FF)
+private val EnergyMax = Color(0xFFFF4B2B)
 
 private fun hourToCanvasDegrees(hour: Double): Float = ((hour - 18.0) * 15.0).toFloat()
+
+/**
+ * Inward phase marker matching ClockRenderer: height = triangleSize,
+ * base = triangleSize * 0.8, tip toward center (drawn tip-up here).
+ */
+private fun DrawScope.drawPhaseTriangle(color: Color) {
+    // Slightly smaller than other 40.dp glyphs so the tip reads clearly in the row.
+    val height = min(size.width, size.height) * 0.48f
+    val base = height * 0.8f
+    val halfBase = base / 2f
+    val tip = Offset(size.width / 2f, (size.height - height) / 2f)
+    val baseY = tip.y + height
+    val path = Path().apply {
+        moveTo(tip.x, tip.y)
+        lineTo(tip.x + halfBase, baseY)
+        lineTo(tip.x - halfBase, baseY)
+        close()
+    }
+    drawPath(path, color)
+}
 
 private fun DrawScope.clockPoint(cx: Float, cy: Float, radius: Float, hour: Double, fraction: Float = 1f): Offset {
     val rad = Math.toRadians(hourToCanvasDegrees(hour).toDouble())
@@ -44,32 +74,61 @@ private fun DrawScope.clockPoint(cx: Float, cy: Float, radius: Float, hour: Doub
 @Composable
 fun GlyphNumbers(modifier: Modifier = Modifier) {
     Canvas(modifier.size(40.dp)) {
+        // Every 3h in 0–23 (24h integers); roomier than even-hour 12h labels
+        val c = Offset(size.width / 2f, size.height / 2f)
+        val textRadius = min(size.width, size.height) * 0.38f
         val paint = android.graphics.Paint().apply {
-            color = android.graphics.Color.BLACK
+            color = android.graphics.Color.WHITE
             textAlign = android.graphics.Paint.Align.CENTER
-            textSize = size.height * 0.34f
+            textSize = size.minDimension * 0.16f
             isAntiAlias = true
             isFakeBoldText = true
         }
         val nc = drawContext.canvas.nativeCanvas
-        nc.drawText("12", size.width * 0.5f, size.height * 0.32f, paint)
-        nc.drawText("6", size.width * 0.82f, size.height * 0.58f, paint)
-        nc.drawText("12", size.width * 0.5f, size.height * 0.92f, paint)
-        nc.drawText("6", size.width * 0.18f, size.height * 0.58f, paint)
+        for (h in 0 until 24 step 3) {
+            val p = clockPoint(c.x, c.y, textRadius, h.toDouble())
+            nc.drawText(
+                h.toString(),
+                p.x,
+                p.y + paint.textSize / 3f,
+                paint
+            )
+        }
     }
 }
 
 @Composable
 fun GlyphSunMoon(modifier: Modifier = Modifier) {
     Canvas(modifier.size(40.dp)) {
-        val sunR = size.minDimension * 0.22f
-        val moonR = sunR
-        val sun = Offset(size.width * 0.32f, size.height * 0.5f)
-        val moon = Offset(size.width * 0.7f, size.height * 0.5f)
-        drawCircle(SunGold, sunR, sun)
-        drawCircle(SunOrange, sunR, sun, style = Stroke(1.5f))
-        drawCircle(MoonLit, moonR, moon)
-        drawCircle(MoonShadow, moonR * 0.85f, Offset(moon.x + moonR * 0.35f, moon.y))
+        val r = size.minDimension * 0.18f
+        // Keep clear gap between sun and moon disks
+        val sun = Offset(size.width * 0.26f, size.height * 0.5f)
+        val moon = Offset(size.width * 0.74f, size.height * 0.5f)
+
+        drawCircle(SunGold, r, sun)
+        drawCircle(SunOrange, r, sun, style = Stroke(1.5f))
+
+        // Match ClockRenderer.drawSunAndMoon waxing crescent (~day 4.5 / synodic month).
+        drawCircle(MoonShadow, r, moon)
+        val topLeft = Offset(moon.x - r, moon.y - r)
+        val disc = Size(r * 2, r * 2)
+        drawArc(
+            color = MoonLit,
+            startAngle = -90f,
+            sweepAngle = 180f,
+            useCenter = true,
+            topLeft = topLeft,
+            size = disc
+        )
+        val p = 0.15
+        val midP = (p * 4) - 1
+        val eWidth = abs(midP).toFloat() * r
+        val ePaint = if (midP < 0) MoonShadow else MoonLit
+        drawOval(
+            color = ePaint,
+            topLeft = Offset(moon.x - eWidth, moon.y - r),
+            size = Size(eWidth * 2, r * 2)
+        )
     }
 }
 
@@ -137,6 +196,38 @@ fun GlyphWakeSunriseInfo(modifier: Modifier = Modifier) {
 }
 
 @Composable
+fun GlyphTimezoneMap(modifier: Modifier = Modifier) {
+    Box(modifier.size(40.dp)) {
+        // Subtle dark plate so the light-gray continents read on any settings background
+        Canvas(Modifier.fillMaxSize()) {
+            drawRect(Color(0xFF1A1F24))
+        }
+        Image(
+            painter = painterResource(R.drawable.world_map_equirectangular),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Fit
+        )
+        Canvas(modifier.fillMaxSize()) {
+            // Amber meridian ~EST band; tiny white location mark
+            val meridianX = size.width * 0.29f
+            drawLine(
+                HandAmber,
+                Offset(meridianX, size.height * 0.08f),
+                Offset(meridianX, size.height * 0.92f),
+                strokeWidth = 1.5f,
+                cap = StrokeCap.Round
+            )
+            drawCircle(
+                Color(0xFFFFFFFF),
+                radius = 1.4f,
+                center = Offset(size.width * 0.29f, size.height * 0.38f)
+            )
+        }
+    }
+}
+
+@Composable
 fun GlyphSleepArc(modifier: Modifier = Modifier, showTotalBedtime: Boolean = true) {
     Canvas(modifier.size(40.dp)) {
         val r = min(size.width, size.height) / 2f - 1f
@@ -148,6 +239,36 @@ fun GlyphSleepArc(modifier: Modifier = Modifier, showTotalBedtime: Boolean = tru
             useCenter = true,
             topLeft = Offset(c.x - r, c.y - r),
             size = Size(r * 2, r * 2)
+        )
+    }
+}
+
+/** Purple sleep wedge with a red “awake” slice over the first ~15% of the sleep period. */
+@Composable
+fun GlyphSubtractAwake(modifier: Modifier = Modifier) {
+    Canvas(modifier.size(40.dp)) {
+        val r = min(size.width, size.height) / 2f - 1f
+        val c = Offset(size.width / 2f, size.height / 2f)
+        val start = hourToCanvasDegrees(23.0)
+        val sleepSweep = 8f * 15f
+        val awakeSweep = sleepSweep * 0.15f
+        val topLeft = Offset(c.x - r, c.y - r)
+        val arcSize = Size(r * 2, r * 2)
+        drawArc(
+            color = SleepPurple,
+            startAngle = start,
+            sweepAngle = sleepSweep,
+            useCenter = true,
+            topLeft = topLeft,
+            size = arcSize
+        )
+        drawArc(
+            color = Color(0xFFFF6B6B),
+            startAngle = start,
+            sweepAngle = awakeSweep,
+            useCenter = true,
+            topLeft = topLeft,
+            size = arcSize
         )
     }
 }
@@ -209,34 +330,14 @@ fun GlyphWakeIndicator(modifier: Modifier = Modifier) {
 @Composable
 fun GlyphBathyphase(modifier: Modifier = Modifier) {
     Canvas(modifier.size(40.dp)) {
-        val c = Offset(size.width / 2f, size.height / 2f)
-        val tip = Offset(c.x, size.height * 0.12f)
-        val half = size.width * 0.22f
-        val baseY = size.height * 0.72f
-        val path = Path().apply {
-            moveTo(tip.x, tip.y)
-            lineTo(c.x + half, baseY)
-            lineTo(c.x - half, baseY)
-            close()
-        }
-        drawPath(path, Color(0xFF5B8DEF))
+        drawPhaseTriangle(EnergyMin)
     }
 }
 
 @Composable
 fun GlyphAcrophase(modifier: Modifier = Modifier) {
     Canvas(modifier.size(40.dp)) {
-        val c = Offset(size.width / 2f, size.height / 2f)
-        val tip = Offset(c.x, size.height * 0.12f)
-        val half = size.width * 0.22f
-        val baseY = size.height * 0.72f
-        val path = Path().apply {
-            moveTo(tip.x, tip.y)
-            lineTo(c.x + half, baseY)
-            lineTo(c.x - half, baseY)
-            close()
-        }
-        drawPath(path, Color(0xFFFF8C42))
+        drawPhaseTriangle(EnergyMax)
     }
 }
 

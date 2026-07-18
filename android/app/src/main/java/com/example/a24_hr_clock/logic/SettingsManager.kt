@@ -37,6 +37,7 @@ class SettingsManager(private val context: Context) {
             showBathyphase = true,
             showAcrophase = true,
             showWakeSunriseInfo = false,
+            showTimezoneMap = false,
             showGrogginess = true,
             showWindDown = true,
             showBedtimeCountdown = false
@@ -58,6 +59,7 @@ class SettingsManager(private val context: Context) {
             showBathyphase = true,
             showAcrophase = true,
             showWakeSunriseInfo = true,
+            showTimezoneMap = true,
             showGrogginess = false,
             showWindDown = false,
             showBedtimeCountdown = false
@@ -184,6 +186,7 @@ data class ClockSettings(
     val showBathyphase: Boolean = true,
     val showAcrophase: Boolean = true,
     val showWakeSunriseInfo: Boolean = false,
+    val showTimezoneMap: Boolean = false,
     val showGrogginess: Boolean = false,
     val showWindDown: Boolean = false,
     val showBedtimeCountdown: Boolean = false

@@ -138,4 +138,26 @@ object TimeZoneUtils {
         val minutes = (abs(offsetSeconds) % 3600) / 60
         return String.format("UTC%+03d:%02d", hours, minutes)
     }
+
+    /**
+     * Correlated timezone offset (hours) where sunrise coincides with [wakeHour],
+     * matching the Wake-up Offset & Timezone Info calculation.
+     */
+    fun correlatedTimezoneOffsetHours(wakeHour: Double, sunriseHour: Double): Double {
+        val offset = wakeHour - sunriseHour
+        val currentOffsetSeconds = ZoneId.systemDefault().rules.getOffset(java.time.Instant.now()).totalSeconds
+        val currentOffsetHours = currentOffsetSeconds / 3600.0
+        var normalizedOffset = (currentOffsetHours - offset).roundToInt().toDouble()
+        while (normalizedOffset < -12.0) normalizedOffset += 24.0
+        while (normalizedOffset > 14.0) normalizedOffset -= 24.0
+        return normalizedOffset
+    }
+
+    /** Approximate central meridian longitude for a UTC offset (15° per hour), in [-180, 180]. */
+    fun longitudeForUtcOffsetHours(offsetHours: Double): Double {
+        var lon = offsetHours * 15.0
+        while (lon > 180.0) lon -= 360.0
+        while (lon < -180.0) lon += 360.0
+        return lon
+    }
 }

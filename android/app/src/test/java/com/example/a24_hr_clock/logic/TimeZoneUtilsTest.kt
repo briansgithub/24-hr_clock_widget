@@ -47,4 +47,13 @@ class TimeZoneUtilsTest {
         assertEquals("UTC+00:00", TimeZoneUtils.getUtcTimeZoneString(ZoneId.of("UTC")))
         assertEquals("UTC+08:00", TimeZoneUtils.getUtcTimeZoneString(ZoneId.of("Asia/Shanghai")))
     }
+
+    @Test
+    fun testLongitudeForUtcOffsetHours() {
+        assertEquals(-75.0, TimeZoneUtils.longitudeForUtcOffsetHours(-5.0), 0.001)
+        assertEquals(0.0, TimeZoneUtils.longitudeForUtcOffsetHours(0.0), 0.001)
+        assertEquals(135.0, TimeZoneUtils.longitudeForUtcOffsetHours(9.0), 0.001)
+        assertEquals(180.0, TimeZoneUtils.longitudeForUtcOffsetHours(12.0), 0.001)
+        assertEquals(-180.0, TimeZoneUtils.longitudeForUtcOffsetHours(-12.0), 0.001)
+    }
 }

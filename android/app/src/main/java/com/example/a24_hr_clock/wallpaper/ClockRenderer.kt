@@ -1,17 +1,47 @@
 package com.example.a24_hr_clock.wallpaper
 
+import android.content.res.Resources
 import android.graphics.*
 import android.text.TextPaint
+import com.example.a24_hr_clock.R
 import com.example.a24_hr_clock.logic.EnergyCalculator
+import com.example.a24_hr_clock.logic.TimeZoneUtils
 import java.util.*
 import kotlin.math.*
 
 class ClockRenderer {
 
+    private var timezoneMapBitmap: Bitmap? = null
+
+    private val mapPaint = Paint().apply {
+        isAntiAlias = true
+        isFilterBitmap = true
+        alpha = 160
+    }
+
+    private val meridianPaint = Paint().apply {
+        color = Color.parseColor("#FF9F1C")
+        style = Paint.Style.STROKE
+        strokeWidth = 4f
+        isAntiAlias = true
+    }
+
+    private val locationDotPaint = Paint().apply {
+        color = Color.argb(255, 255, 255, 255)
+        style = Paint.Style.FILL
+        isAntiAlias = true
+        alpha = 255
+    }
+
     private val backgroundPaint = Paint().apply {
         color = Color.WHITE
         style = Paint.Style.FILL
         isAntiAlias = true
+    }
+
+    fun ensureMapBitmap(resources: Resources) {
+        if (timezoneMapBitmap != null) return
+        timezoneMapBitmap = BitmapFactory.decodeResource(resources, R.drawable.world_map_equirectangular)
     }
 
     private val faceOutlinePaint = Paint().apply {
@@ -162,6 +192,9 @@ class ClockRenderer {
         showManualWake: Boolean = false,
         manualWakeTime: String = "09:00",
         showWakeSunriseInfo: Boolean = true,
+        showTimezoneMap: Boolean = false,
+        userLatitude: Double? = null,
+        userLongitude: Double? = null,
         showBathyphase: Boolean = false,
         showAcrophase: Boolean = false,
         showGrogginess: Boolean = false,
@@ -420,12 +453,20 @@ class ClockRenderer {
             drawEnergyPct(canvas, centerX, centerY, radius, exactHour, handRad, wakeHour, sleepDebt, totalAsleep, bathyphaseHour, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset, useBathyphase, maxEPerfection)
         }
 
-        // 11.5 Draw Wake-Sunrise Info
+        // 11.5 Timezone equirectangular map (just below sun/moon orbit; under wake-info text)
+        if (wakeHour != null && showTimezoneMap) {
+            drawTimezoneMap(
+                canvas, width, height, centerY, radius, wakeHour, sunriseHour,
+                userLatitude, userLongitude
+            )
+        }
+
+        // 11.6 Draw Wake-Sunrise Info
         if (wakeHour != null && showWakeSunriseInfo) {
             drawWakeSunriseInfo(canvas, height, wakeHour, sunriseHour, sunsetHour, smallTopRight)
         }
 
-        // 11.6 Draw Bedtime Countdown (home: right-justified left of small clock; lock: top-right)
+        // 11.7 Draw Bedtime Countdown (home: right-justified left of small clock; lock: top-right)
         if (showBedtimeCountdown) {
             val bedtimeMillis = com.example.a24_hr_clock.logic.BedtimeNotificationManager.resolveBedtimeMillis(sleepLogs)
             if (bedtimeMillis != null) {
@@ -459,6 +500,76 @@ class ClockRenderer {
             val textY = 150f - (textPaint.descent() + textPaint.ascent()) / 2f
             canvas.drawText(text, centerX, textY, textPaint)
         }
+    }
+
+    private fun drawTimezoneMap(
+        canvas: Canvas,
+        width: Int,
+        height: Int,
+        clockCenterY: Float,
+        clockRadius: Float,
+        wakeHour: Double,
+        sunriseHour: Double,
+        userLatitude: Double?,
+        userLongitude: Double?
+    ) {
+        val bitmap = timezoneMapBitmap ?: return
+
+        val sidePad = 40f
+        val maxMapHeight = height * 0.28f
+        // Clear the sun/moon orbit (radius + icon + padding) so icons sit above the map.
+        val iconSize = max(12f, clockRadius / 7f)
+        val orbitOuter = clockRadius + iconSize + 20f + iconSize / 1.6f
+        val mapTop = clockCenterY + orbitOuter + 16f
+        val availBottom = height - 36f
+        if (mapTop >= availBottom - 40f) return
+
+        val availHeight = (availBottom - mapTop).coerceAtMost(maxMapHeight).coerceAtLeast(40f)
+        val availWidth = (width - sidePad * 2).coerceAtLeast(80f)
+
+        val bmpW = bitmap.width.toFloat()
+        val bmpH = bitmap.height.toFloat()
+        val scale = min(availWidth / bmpW, availHeight / bmpH)
+        val drawW = bmpW * scale
+        val drawH = bmpH * scale
+        val left = (width - drawW) / 2f
+        val top = mapTop
+
+        val dst = RectF(left, top, left + drawW, top + drawH)
+        canvas.drawBitmap(bitmap, null, dst, mapPaint)
+
+        val offsetHours = TimeZoneUtils.correlatedTimezoneOffsetHours(wakeHour, sunriseHour)
+        val lon = TimeZoneUtils.longitudeForUtcOffsetHours(offsetHours)
+        val meridianX = left + ((lon + 180.0) / 360.0).toFloat() * drawW
+        meridianPaint.strokeWidth = max(3f, drawW * 0.004f)
+        canvas.drawLine(meridianX, top, meridianX, top + drawH, meridianPaint)
+
+        if (userLatitude != null && userLongitude != null) {
+            val (dotX, dotY) = latLonToMapPoint(userLatitude, userLongitude, left, top, drawW, drawH)
+            // Midpoint between original (1.5 / 0.25%) and previous bump (3.5 / 0.6%).
+            val dotR = max(2.5f, min(drawW, drawH) * 0.00425f)
+            locationDotPaint.color = Color.argb(255, 255, 255, 255)
+            locationDotPaint.alpha = 255
+            canvas.drawCircle(dotX, dotY, dotR, locationDotPaint)
+        }
+    }
+
+    /** Map lon/lat onto the drawn equirectangular bitmap (lon −180…180, lat −90…90). */
+    private fun latLonToMapPoint(
+        lat: Double,
+        lon: Double,
+        left: Float,
+        top: Float,
+        drawW: Float,
+        drawH: Float
+    ): Pair<Float, Float> {
+        var wrappedLon = lon
+        while (wrappedLon > 180.0) wrappedLon -= 360.0
+        while (wrappedLon < -180.0) wrappedLon += 360.0
+        val clampedLat = lat.coerceIn(-90.0, 90.0)
+        val x = left + ((wrappedLon + 180.0) / 360.0).toFloat() * drawW
+        val y = top + ((90.0 - clampedLat) / 180.0).toFloat() * drawH
+        return x to y
     }
 
     private fun drawEnergyPct(
@@ -737,28 +848,15 @@ class ClockRenderer {
         val offset = wakeHour - sunriseHour
         val prefix = if (offset > 0) "-" else "+"
         val offsetVal = String.format(Locale.US, "%s%.1f hrs", prefix, abs(offset))
-        
-        val currentZoneId = java.time.ZoneId.systemDefault()
-        val currentOffsetSeconds = currentZoneId.rules.getOffset(java.time.Instant.now()).totalSeconds
-        val currentOffsetHours = currentOffsetSeconds / 3600.0
-        
-        val rawTargetOffset = currentOffsetHours - offset
-        val targetOffsetHours = rawTargetOffset.roundToInt().toDouble()
-        
-        // Wrap around to keep within -12 to +14 range properly if it exceeds
-        // Using standard modulo arithmetic for timezones
-        var normalizedOffset = targetOffsetHours
-        while (normalizedOffset < -12.0) normalizedOffset += 24.0
-        while (normalizedOffset > 14.0) normalizedOffset -= 24.0
-        
-        val clampedOffset = normalizedOffset
-        
-        val utcZone = com.example.a24_hr_clock.logic.TimeZoneUtils.getUtcTimeZoneStringForOffset(clampedOffset)
-        val tzName = com.example.a24_hr_clock.logic.TimeZoneUtils.getTimeZoneNameForOffset(clampedOffset)
+
+        val clampedOffset = TimeZoneUtils.correlatedTimezoneOffsetHours(wakeHour, sunriseHour)
+
+        val utcZone = TimeZoneUtils.getUtcTimeZoneStringForOffset(clampedOffset)
+        val tzName = TimeZoneUtils.getTimeZoneNameForOffset(clampedOffset)
         val tzVal = "$utcZone, '$tzName'"
-        
+
         val timeFormatter = java.time.format.DateTimeFormatter.ofPattern("h:mm a", Locale.US)
-        
+
         val sunriseH = sunriseHour.toInt()
         val sunriseM = ((sunriseHour - sunriseH) * 60).toInt()
         val sunriseTime = java.time.LocalTime.of(sunriseH % 24, sunriseM)
@@ -768,8 +866,8 @@ class ClockRenderer {
         val sunsetM = ((sunsetHour - sunsetH) * 60).toInt()
         val sunsetTime = java.time.LocalTime.of(sunsetH % 24, sunsetM)
         val sunsetVal = sunsetTime.format(timeFormatter).lowercase()
-        
-        val location = com.example.a24_hr_clock.logic.TimeZoneUtils.getMostPopulousLocationForOffset(clampedOffset)
+
+        val location = TimeZoneUtils.getMostPopulousLocationForOffset(clampedOffset)
 
         val infoPaint = TextPaint().apply {
             color = Color.WHITE
