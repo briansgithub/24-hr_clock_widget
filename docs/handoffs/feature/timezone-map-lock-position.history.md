@@ -8,6 +8,6 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Validation/decision: Scope and acceptance criteria recorded in the active handoff.
 
 ### 2026-07-18 — Fixed map layout anchor
-- Commit/base: (this commit)
+- Commit/base: `7e510e0`
 - Change: `ClockRenderer.drawTimezoneMap` no longer takes active dial `centerY`/`radius`; it derives the large-centered layout from canvas width/height so small-top-right home no longer pulls the map upward.
 - Validation/decision: Owner confirmed map position looks good on device.
