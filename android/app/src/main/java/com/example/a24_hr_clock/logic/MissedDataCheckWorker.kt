@@ -27,10 +27,10 @@ class MissedDataCheckWorker(
                 Log.e("MissedDataCheckWorker", "Failed to update sleep filters", e)
             }
 
-            // 2. Count missed logs outside of sleep hours
+            // 2. Count missed logs for today only (outside sleep hours)
             val missedCount = manager.getMissedDataPointsCount()
             if (missedCount > 0) {
-                Log.d("MissedDataCheckWorker", "Found $missedCount missed data points outside sleep. Notifying user.")
+                Log.d("MissedDataCheckWorker", "Found $missedCount missed data points today (outside sleep). Notifying user.")
                 helper.showMissedDataNotification(missedCount)
             } else {
                 Log.d("MissedDataCheckWorker", "No missed data points outside sleep detected today.")
