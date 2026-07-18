@@ -30,3 +30,7 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Commit/base: tip `e0a08f1`; PR https://github.com/briansgithub/24-hr_clock_widget/pull/3
 - Change: Pushed branch and opened PR into `main`.
 - Validation/decision: Owner authorized push/PR.
+
+### 2026-07-18 — Help entry points reduced to chart legend
+- Change: Removed duplicate `ExerciseMetricsGlossary` above the chart; HRSS/HRV/TRIMP help only via legend below the graph.
+- Validation/decision: Owner requested combine help texts to below-graph only.
