@@ -273,6 +273,8 @@ fun MainScreen(
     val locationManager = remember { LocationManager(context) }
     var sunTimes by remember { mutableStateOf(Pair(6.0, 18.0)) }
     var celestialPositions by remember { mutableStateOf(CelestialManager.SunMoonPosition(0.0, 0.0, 0.0, 0.0)) }
+    var deviceLatitude by remember { mutableStateOf<Double?>(null) }
+    var deviceLongitude by remember { mutableStateOf<Double?>(null) }
     var solarIrradiance by remember { mutableIntStateOf(255) }
     var calendarEvents by remember { mutableStateOf(emptyList<CalendarEvent>()) }
     val calendarManager = remember { CalendarManager(context) }
@@ -293,6 +295,8 @@ fun MainScreen(
         while (true) {
             val loc = locationManager.getLastKnownLocation() ?: locationManager.getCurrentLocation()
             if (loc != null) {
+                deviceLatitude = loc.first
+                deviceLongitude = loc.second
                 val cm = CelestialManager(loc.first, loc.second)
                 sunTimes = cm.getSunTimes()
                 celestialPositions = cm.getCelestialPositions()
@@ -377,6 +381,8 @@ fun MainScreen(
                     solarIrradiance = solarIrradiance,
                     calendarEvents = calendarEvents,
                     sleepDebt = sleepDebt,
+                    userLatitude = deviceLatitude,
+                    userLongitude = deviceLongitude,
                     title = if (previewIsLockScreen) "Lock Screen (Tap to toggle)" else "Home Screen (Tap to toggle)",
                     showSetWallpaper = true,
                     onReset = {
@@ -406,6 +412,8 @@ fun MainScreen(
                     solarIrradiance = solarIrradiance,
                     calendarEvents = calendarEvents,
                     sleepDebt = sleepDebt,
+                    userLatitude = deviceLatitude,
+                    userLongitude = deviceLongitude,
                     onUpdateHome = { scope.launch { settingsManager.updateHomeSettings(it) } },
                     onUpdateLock = { scope.launch { settingsManager.updateLockSettings(it) } },
                     onResetHome = { scope.launch { settingsManager.resetHomeSettings() } },
@@ -475,6 +483,8 @@ fun ClockPreviewScreen(
     solarIrradiance: Int,
     calendarEvents: List<CalendarEvent>,
     sleepDebt: Double,
+    userLatitude: Double? = null,
+    userLongitude: Double? = null,
     title: String = "Home Screen Preview",
     showSetWallpaper: Boolean = true,
     onReset: (() -> Unit)? = null,
@@ -483,8 +493,9 @@ fun ClockPreviewScreen(
     val context = LocalContext.current
     val renderer = remember { ClockRenderer() }
     var tick by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    
+
     LaunchedEffect(Unit) {
+        renderer.ensureMapBitmap(context.resources)
         while(true) {
             delay(10000) // Match wallpaper cadence; countdown does not force 1s redraws
             tick = System.currentTimeMillis()
@@ -543,6 +554,9 @@ fun ClockPreviewScreen(
                     showManualWake = settings.showManualWake,
                     manualWakeTime = modelSettings.manualWakeTime,
                     showWakeSunriseInfo = settings.showWakeSunriseInfo,
+                    showTimezoneMap = settings.showTimezoneMap,
+                    userLatitude = userLatitude,
+                    userLongitude = userLongitude,
                     showGrogginess = settings.showGrogginess,
                     showWindDown = settings.showWindDown,
                     showBedtimeCountdown = settings.showBedtimeCountdown,
@@ -725,6 +739,8 @@ fun DisplaySettingsScreen(
     solarIrradiance: Int,
     calendarEvents: List<CalendarEvent>,
     sleepDebt: Double,
+    userLatitude: Double? = null,
+    userLongitude: Double? = null,
     onUpdateHome: (ClockSettings) -> Unit,
     onUpdateLock: (ClockSettings) -> Unit,
     onResetHome: () -> Unit,
@@ -751,6 +767,8 @@ fun DisplaySettingsScreen(
                     solarIrradiance = solarIrradiance,
                     calendarEvents = calendarEvents,
                     sleepDebt = sleepDebt,
+                    userLatitude = userLatitude,
+                    userLongitude = userLongitude,
                     title = if (selectedTab == 0) "Home Screen Preview" else "Lock Screen Preview",
                     onReset = if (selectedTab == 0) onResetHome else onResetLock
                 )
@@ -822,7 +840,7 @@ fun DisplaySettingsScreen(
         Spacer(modifier = Modifier.height(16.dp))
         Text(text = "ELEMENTS", style = MaterialTheme.typography.labelLarge)
 
-        SettingToggle("Numbers", currentSettings.showNumbers, { GlyphNumbers() }) {
+        SettingToggle("Clock Face Numbers", currentSettings.showNumbers, { GlyphNumbers() }) {
             updateFunc(currentSettings.copy(showNumbers = it))
         }
         SettingToggle("Sun & Moon Icons", currentSettings.showSunMoon, { GlyphSunMoon() }) {
@@ -837,6 +855,9 @@ fun DisplaySettingsScreen(
         SettingToggle("Wake-up Offset & Timezone Info", currentSettings.showWakeSunriseInfo, { GlyphWakeSunriseInfo() }) {
             updateFunc(currentSettings.copy(showWakeSunriseInfo = it))
         }
+        SettingToggle("Timezone World Map", currentSettings.showTimezoneMap, { GlyphTimezoneMap() }) {
+            updateFunc(currentSettings.copy(showTimezoneMap = it))
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
         Text(text = "SLEEP", style = MaterialTheme.typography.labelLarge)
@@ -848,19 +869,19 @@ fun DisplaySettingsScreen(
             updateFunc(currentSettings.copy(showSleepDebtText = it))
         }
         SettingToggle(
-            "Show Time in Bed (On) vs Only Asleep (Off)",
-            currentSettings.showTotalBedtime,
-            { GlyphSleepArc(showTotalBedtime = currentSettings.showTotalBedtime) }
+            "Subtract Awake",
+            !currentSettings.showTotalBedtime,
+            { GlyphSubtractAwake() }
         ) {
-            updateFunc(currentSettings.copy(showTotalBedtime = it))
+            updateFunc(currentSettings.copy(showTotalBedtime = !it))
         }
         SettingToggle("Show Wake-up Indicator", currentSettings.showManualWake, { GlyphWakeIndicator() }) {
             updateFunc(currentSettings.copy(showManualWake = it))
         }
-        SettingToggle("Bathyphase indicator", currentSettings.showBathyphase, { GlyphBathyphase() }) {
+        SettingToggle("Bathyphase Indicator", currentSettings.showBathyphase, { GlyphBathyphase() }) {
             updateFunc(currentSettings.copy(showBathyphase = it))
         }
-        SettingToggle("Acrophase indicator", currentSettings.showAcrophase, { GlyphAcrophase() }) {
+        SettingToggle("Acrophase Indicator", currentSettings.showAcrophase, { GlyphAcrophase() }) {
             updateFunc(currentSettings.copy(showAcrophase = it))
         }
         SettingToggle("Grogginess Wedge", currentSettings.showGrogginess, { GlyphGrogginess() }) {

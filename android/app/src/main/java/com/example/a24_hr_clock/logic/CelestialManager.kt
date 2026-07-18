@@ -8,7 +8,7 @@ import java.time.ZonedDateTime
 import java.util.*
 import kotlin.math.*
 
-class CelestialManager(private val latitude: Double, private val longitude: Double) {
+class CelestialManager(val latitude: Double, val longitude: Double) {
 
     private var sunMaxElev = 0.0
     private var sunMinElev = 0.0
