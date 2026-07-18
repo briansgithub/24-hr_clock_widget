@@ -63,3 +63,9 @@ Disposition phrases: `merged into main`, `superseded` (commits landed via descen
 - Merge / PR: 0ee7c5
 - Summary: Equirectangular timezone world map with correlated meridian and phone location dot (lock on / home off by default).
 - Archive: rchive/feature/timezone-mercator-map.md
+
+### 2026-07-18 — `feature/empirical-log-jul16-cutoff` → merged into `main`
+- Final tip: `af95262`
+- Merge / PR: `b2de326`
+- Summary: Jul 16 2026 empirical log cutoff, today-only 10pm missed alert, and Drive web app URL autofill.
+- Archive: `archive/feature/empirical-log-jul16-cutoff.md`
