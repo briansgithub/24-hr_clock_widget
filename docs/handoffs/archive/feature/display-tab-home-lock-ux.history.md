@@ -30,3 +30,8 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Commit/base: tip `b05b886`; PR https://github.com/briansgithub/24-hr_clock_widget/pull/2
 - Change: Pushed branch and opened PR into `main`.
 - Validation/decision: Owner authorized push/PR; test plan on PR.
+
+### 2026-07-18 — Merged into main via PR #2
+- Commit/base: final tip `354a8db`; merge `cd4f97d`; PR https://github.com/briansgithub/24-hr_clock_widget/pull/2
+- Change: Owner visual check PASSED; PR merged; handoff archived; local/remote branch and worktree removed.
+- Validation/decision: Post-merge cleanup authorized by owner.
