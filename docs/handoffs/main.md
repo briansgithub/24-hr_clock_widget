@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: `7a08775` — docs: archive display-tab-lock-first after PRs #4 and #5
+- Tip: `ef9d3a0` — docs: sync main tip after display archive
 - Upstream: `origin/main` (matches)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)

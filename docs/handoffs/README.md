@@ -8,7 +8,7 @@ Last verified: 2026-07-18
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | `7a08775` = `origin/main` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `main` | `ef9d3a0` = `origin/main` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
 
 ## Current merge order
 
