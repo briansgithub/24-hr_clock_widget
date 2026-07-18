@@ -51,3 +51,9 @@ Disposition phrases: `merged into main`, `superseded` (commits landed via descen
 - Merge / PR: 52444d9
 - Summary: 10pm bedtime floor plus optional home/lock wallpaper countdown with Display Sleep toggle.
 - Archive: rchive/feature/bedtime-countdown-10pm-floor.md
+
+### 2026-07-18 — eature/android-settings-ui-polish → merged into main
+- Final tip: 412e961
+- Merge / PR: c13f36a
+- Summary: Switch-based settings toggles and Canvas Display element glyphs.
+- Archive: rchive/feature/android-settings-ui-polish.md
