@@ -475,12 +475,10 @@ class ClockRenderer {
         // 11.7 Draw Bedtime Countdown (home: right-justified left of small clock; lock: top-right)
         if (showBedtimeCountdown) {
             val bedtimeMillis = com.example.a24_hr_clock.logic.BedtimeNotificationManager.resolveBedtimeMillis(sleepLogs)
-            if (bedtimeMillis != null) {
-                lastCountdownDrawResult = drawBedtimeCountdown(
-                    canvas, width, height, bedtimeMillis, smallTopRight,
-                    clockCenterX = centerX, clockCenterY = centerY, clockRadius = radius
-                )
-            }
+            lastCountdownDrawResult = drawBedtimeCountdown(
+                canvas, width, height, bedtimeMillis, smallTopRight,
+                clockCenterX = centerX, clockCenterY = centerY, clockRadius = radius
+            )
         }
 
         // 12. Draw Preview Overlay

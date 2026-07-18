@@ -19,42 +19,72 @@ class BedtimeNotificationManager(private val context: Context) {
         const val COUNTDOWN_CHANNEL_ID = "bedtime_countdown_channel"
         private const val TAG = "BedtimeNotifManager"
 
-        fun resolveBedtimeMillis(logs: List<SleepLogEntry>): Long? {
-            val mainSleep = logs.filter { it.isMainSleep }.maxByOrNull { it.dateOfSleep } ?: return null
-            return calculateBedtimeMillis(mainSleep.startTime)
+        /** Wind-down / countdown target is this many minutes before fall-asleep. */
+        private const val BEDTIME_LEAD_MINUTES = 90L
+
+        /** Inclusive fall-asleep window where the 10:00 PM clamp applies. */
+        private val CLAMP_WINDOW_START = LocalTime.of(22, 0)
+        private val CLAMP_WINDOW_END = LocalTime.of(23, 30)
+        private val DEFAULT_BEDTIME = LocalTime.of(22, 0)
+
+        /**
+         * Resolves the next bedtime countdown/reminder target.
+         * Uses the latest main sleep fall-asleep − 90 minutes (with scoped 10pm clamp);
+         * falls back to the next 10:00 PM when no main sleep log exists.
+         */
+        fun resolveBedtimeMillis(
+            logs: List<SleepLogEntry>,
+            now: LocalDateTime = LocalDateTime.now()
+        ): Long {
+            val mainSleep = logs.filter { it.isMainSleep }.maxByOrNull { it.dateOfSleep }
+            if (mainSleep != null) {
+                calculateBedtimeMillis(mainSleep.startTime, now)?.let { return it }
+            }
+            return defaultBedtimeMillis(now)
         }
 
-        fun calculateBedtimeMillis(startTimeIso: String): Long? {
+        fun defaultBedtimeMillis(now: LocalDateTime = LocalDateTime.now()): Long {
+            return nextOccurrenceMillis(DEFAULT_BEDTIME, now)
+        }
+
+        fun calculateBedtimeMillis(
+            startTimeIso: String,
+            now: LocalDateTime = LocalDateTime.now()
+        ): Long? {
             return try {
                 val startTime = LocalDateTime.parse(startTimeIso.replace("Z", ""))
 
                 // Subtract 1.5 hours
-                var bedtime = startTime.minusMinutes(90)
+                var bedtime = startTime.minusMinutes(BEDTIME_LEAD_MINUTES)
 
                 // Round to nearest 5 minutes
                 val minutes = bedtime.minute
                 val roundedMinutes = ((minutes + 2) / 5) * 5
                 bedtime = bedtime.withMinute(0).plusMinutes(roundedMinutes.toLong()).withSecond(0).withNano(0)
 
-                // Never schedule bedtime earlier than 10:00 PM
-                val earliestBedtime = LocalTime.of(22, 0)
-                if (bedtime.toLocalTime().isBefore(earliestBedtime)) {
+                // Clamp to 10:00 PM only when fall-asleep is in [22:00, 23:30]
+                val fallAsleepTime = startTime.toLocalTime()
+                if (!fallAsleepTime.isBefore(CLAMP_WINDOW_START) && !fallAsleepTime.isAfter(CLAMP_WINDOW_END)) {
                     bedtime = bedtime.withHour(22).withMinute(0).withSecond(0).withNano(0)
                 }
 
-                val now = LocalDateTime.now()
-                var target = bedtime.withYear(now.year).withMonth(now.monthValue).withDayOfMonth(now.dayOfMonth)
-
-                // Always return the NEXT occurrence (strictly in the future)
-                if (!target.isAfter(now)) {
-                    target = target.plusDays(1)
-                }
-
-                target.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                nextOccurrenceMillis(bedtime.toLocalTime(), now)
             } catch (e: Exception) {
                 Log.e(TAG, "Error calculating bedtime", e)
                 null
             }
+        }
+
+        private fun nextOccurrenceMillis(timeOfDay: LocalTime, now: LocalDateTime): Long {
+            var target = now
+                .withHour(timeOfDay.hour)
+                .withMinute(timeOfDay.minute)
+                .withSecond(0)
+                .withNano(0)
+            if (!target.isAfter(now)) {
+                target = target.plusDays(1)
+            }
+            return target.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         }
     }
 
@@ -92,15 +122,7 @@ class BedtimeNotificationManager(private val context: Context) {
     suspend fun updateNotifications() {
         val fitbitManager = FitbitManager(context)
         val logs = fitbitManager.getLastSleepLogs()
-        if (logs.isEmpty()) {
-            Log.d(TAG, "No sleep logs found, skipping notification update")
-            return
-        }
-
-        val bedtimeMillis = resolveBedtimeMillis(logs) ?: run {
-            Log.d(TAG, "No main sleep found, skipping notification update")
-            return
-        }
+        val bedtimeMillis = resolveBedtimeMillis(logs)
 
         Log.d(TAG, "Calculated bedtime: ${LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(bedtimeMillis), ZoneId.systemDefault())}")
 
