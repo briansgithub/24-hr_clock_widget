@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: pending first feature commit
+- Tip: `d1f3e29` — feat: default Display tab to Lock Screen first
 - Parent/base: `main` / `origin/main` at `3b5bb18`
 - Upstream: pending push
 - Role: feature
@@ -18,12 +18,12 @@
 
 ## Changes since branch creation
 
-- `DisplaySettingsScreen`: Lock Screen tab first (index 0), Home Screen second; default maps to lock settings/update/reset.
+- `d1f3e29`: `DisplaySettingsScreen` — Lock Screen tab first (index 0), Home Screen second; default maps to lock settings/update/reset; handoffs added.
 
 ## Current status
 
-- Working tree: committing for PR.
-- Base relationship: branched from `origin/main` at `3b5bb18`.
+- Working tree: clean after feature commit; pushing for PR.
+- Base relationship: one commit ahead of `origin/main` (`3b5bb18`).
 - Validation: `python scripts/validate_handoffs.py` passed; device visual check pending owner.
 - Risks/blockers: none known.
 - Stashes: none.
