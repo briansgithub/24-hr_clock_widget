@@ -69,3 +69,9 @@ Disposition phrases: `merged into main`, `superseded` (commits landed via descen
 - Merge / PR: `b2de326`
 - Summary: Jul 16 2026 empirical log cutoff, today-only 10pm missed alert, and Drive web app URL autofill.
 - Archive: `archive/feature/empirical-log-jul16-cutoff.md`
+
+### 2026-07-18 — `chore/multi-agent-worktree-docs` → merged into `main`
+- Final tip: `520511e`
+- Merge / PR: `520511e` (fast-forward)
+- Summary: Multi-agent worktree protocol plus lean anti-loss/stash ownership rules; validator parallel-state ledger.
+- Archive: `archive/chore/multi-agent-worktree-docs.md`

@@ -7,4 +7,6 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Change: Created `feature/display-tab-home-lock-ux` to simplify Display Home/Lock UX (remove duplicate Preview, tab-scoped resets, tab icons).
 - Validation/decision: Scope and acceptance criteria recorded in the active handoff.
 
-<!-- Append meaningful milestones below. Never rewrite or reorder older entries. -->
+### 2026-07-18 — Stash message made ownership-compliant
+- Change: Renamed stash message to `wip feature/display-tab-home-lock-ux: pause before exercise-metric-help`.
+- Validation/decision: Matches MULTI_AGENT stash ownership rules; pop only on this branch when handoff lists it.

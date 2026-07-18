@@ -46,3 +46,8 @@ Append-only milestones for `main`. Current state and next actions belong in [mai
 - Commit/base: tip `af95262`; merge `b2de326`
 - Change: Pruned empirical logs before 2026-07-16; 10pm missed alert is today-only; Drive web app URL autofills with external label.
 - Validation/decision: Owner requested commit and merge; push not requested.
+
+### 2026-07-18 — Merged multi-agent worktree docs
+- Commit/base: tip/merge `520511e` (fast-forward)
+- Change: Multi-agent worktree protocol, lean anti-loss/stash ownership, validator parallel-state ledger; archived chore handoff.
+- Validation/decision: Owner directed lean anti-loss plan implement/merge; stashes renamed to compliant messages.

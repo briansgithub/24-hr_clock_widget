@@ -26,7 +26,7 @@
 - Base relationship: branched from `main` `ead09d4`
 - Validation: `python scripts/validate_handoffs.py` passed (2026-07-18) before stash
 - Risks/blockers: none known
-- Stashes: `stash@{0}` — `wip exercise-metric-help before empirical-log-cutoff` (code + related handoff edits); restore onto this branch only
+- Stashes: `wip feature/exercise-metric-help: pause before empirical-log-cutoff` (code + related handoff edits); restore onto this branch only
 
 ## Next actions
 
