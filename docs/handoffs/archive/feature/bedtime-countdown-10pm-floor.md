@@ -29,5 +29,5 @@ esolveBedtimeMillis; 10s wallpaper refresh (not 1Hz)
 
 - Status: merged into main
 - Remote branch deleted: not applicable (never pushed)
-- Local branch deleted: pending cleanup commit
-- Cleanup completed: archival in progress
+- Local branch deleted: yes
+- Cleanup completed: yes (archival committed; push of main pending owner request)
