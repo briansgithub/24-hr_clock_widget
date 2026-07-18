@@ -2,8 +2,8 @@
 
 ## Identity
 
-- Tip: `82b9866` — Archive display-tab-home-lock-ux handoffs after PR #2 merge.
-- Upstream: `origin/main` (local matches after push)
+- Tip: `cd755b3` — Sync main handoff tip after display archive.
+- Upstream: `origin/main` (matches)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
 - Last verified: `2026-07-18`
@@ -20,14 +20,14 @@ Maintain the stable integration branch for future feature work, with permanent h
 
 ## Current status
 
-- Display feature merged via PR #2; handoff archival + branch/worktree deletion in this cleanup.
-- Living feature: `feature/exercise-metric-help` (metric-help restored uncommitted in worktree).
+- Display and energy features merged and archived.
+- Living feature: `feature/exercise-metric-help` at `e041101` (visual check passed; push/PR in progress).
 - `audit-git-stash-state`: tip `ead09d4`; do not merge; optional owner cleanup.
-- Stashes: `wip main: pre-energy-archive inventory handoffs` (superseded); exercise stash still present until exercise lands.
+- Stashes: superseded main inventory stash; exercise stash until owner drops after merge.
 
 ## Next actions
 
-1. Owner: exercise visual check + authorize commit/push/PR.
+1. Finish exercise push/PR/merge cleanup.
 2. Owner: decide whether to delete `audit-git-stash-state` and drop superseded stashes.
 
 ## Merge and cleanup
