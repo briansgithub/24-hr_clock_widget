@@ -726,9 +726,10 @@ fun DisplaySettingsScreen(
     onResetHome: () -> Unit,
     onResetLock: () -> Unit
 ) {
+    // 0 = Lock Screen (default), 1 = Home Screen
     var selectedTab by remember { mutableIntStateOf(0) }
-    val currentSettings = if (selectedTab == 0) homeSettings else lockSettings
-    val updateFunc: (ClockSettings) -> Unit = if (selectedTab == 0) onUpdateHome else onUpdateLock
+    val currentSettings = if (selectedTab == 0) lockSettings else homeSettings
+    val updateFunc: (ClockSettings) -> Unit = if (selectedTab == 0) onUpdateLock else onUpdateHome
 
     Column(
         modifier = Modifier
@@ -743,20 +744,20 @@ fun DisplaySettingsScreen(
             Tab(
                 selected = selectedTab == 0,
                 onClick = { selectedTab = 0 },
-                text = { Text("Home Screen") },
-                icon = { Icon(Icons.Default.Home, contentDescription = null) }
+                text = { Text("Lock Screen") },
+                icon = { Icon(Icons.Default.Lock, contentDescription = null) }
             )
             Tab(
                 selected = selectedTab == 1,
                 onClick = { selectedTab = 1 },
-                text = { Text("Lock Screen") },
-                icon = { Icon(Icons.Default.Lock, contentDescription = null) }
+                text = { Text("Home Screen") },
+                icon = { Icon(Icons.Default.Home, contentDescription = null) }
             )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
         Button(
-            onClick = if (selectedTab == 0) onResetHome else onResetLock,
+            onClick = if (selectedTab == 0) onResetLock else onResetHome,
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)),
             contentPadding = PaddingValues(horizontal = 8.dp)
