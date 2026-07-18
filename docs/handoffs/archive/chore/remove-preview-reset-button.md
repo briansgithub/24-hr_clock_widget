@@ -26,7 +26,7 @@ Remove the Preview-tab "Reset to defaults" control only; leave Display and Energ
 
 ## Cleanup
 
-- Local branch deleted: pending at archive commit (completed in cleanup)
+- Local branch deleted: yes (cleanup after archive)
 - Remote branch deleted: not applicable (never published)
 - Worktree `24-hr_clock_widget-wt-remove-preview-reset` removed at cleanup
-- Cleanup completed: yes after branch/worktree deletion
+- Cleanup completed: yes

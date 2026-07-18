@@ -26,6 +26,6 @@ When Timezone World Map is on, keep the map at the lock-screen (large centered) 
 
 ## Cleanup
 
-- Local branch deleted: pending at archive commit (completed in cleanup)
+- Local branch deleted: yes (cleanup after archive)
 - Remote branch deleted: not applicable (never published)
-- Cleanup completed: yes after branch deletion
+- Cleanup completed: yes
