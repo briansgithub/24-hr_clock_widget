@@ -41,3 +41,8 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Commit/base: uncommitted
 - Change: Added `showWindDown` (Display→Sleep “Wind-down Wedge”; home default on, lock default off). Draws 90 min before main-sleep asleep edge with light→dark gray SweepGradient (inverse of grogginess).
 - Validation/decision: Owner requested mirror of grogginess wedge before purple sleep arc.
+
+### 2026-07-18 — Merged into main
+- Commit/base: final tip 94ed3ce; merge 52444d9
+- Change: Merged 22:00 floor + optional home/lock wallpaper bedtime countdown into main.
+- Validation/decision: Owner requested commit and merge; handoff validator passed; Android compile deferred.

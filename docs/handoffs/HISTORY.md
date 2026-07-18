@@ -45,3 +45,9 @@ Disposition phrases: `merged into main`, `superseded` (commits landed via descen
 - Merge / PR: `bc0fad3`
 - Summary: Portable templates, agent entry points, repository policy, handoff validator, and CI.
 - Archive: `archive/chore/portable-handoff-kit.md`
+
+### 2026-07-18 — eature/bedtime-countdown-10pm-floor → merged into main
+- Final tip: 94ed3ce
+- Merge / PR: 52444d9
+- Summary: 10pm bedtime floor plus optional home/lock wallpaper countdown with Display Sleep toggle.
+- Archive: rchive/feature/bedtime-countdown-10pm-floor.md
