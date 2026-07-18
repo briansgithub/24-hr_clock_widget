@@ -152,10 +152,21 @@ fun EmpiricalLogHistoryScreen(
     var resolvedConflictValues by remember { mutableStateOf<Map<Long, Int>>(emptyMap()) }
     var showConflictDialog by remember { mutableStateOf(false) }
 
-    // Google Drive script config
-    var driveUrlInput by remember { mutableStateOf(modelSettings.googleDriveUrl) }
+    // Google Drive script config — fall back to the known deployment URL when unset
+    val initialDriveUrl = modelSettings.googleDriveUrl.ifEmpty {
+        ModelSettings.DEFAULT_GOOGLE_DRIVE_WEB_APP_URL
+    }
+    var driveUrlInput by remember { mutableStateOf(initialDriveUrl) }
     var exportStatusMessage by remember { mutableStateOf<String?>(null) }
     var isExporting by remember { mutableStateOf(false) }
+
+    LaunchedEffect(modelSettings.googleDriveUrl) {
+        if (modelSettings.googleDriveUrl.isEmpty()) {
+            onUpdateGoogleDriveUrl(ModelSettings.DEFAULT_GOOGLE_DRIVE_WEB_APP_URL)
+        } else if (driveUrlInput != modelSettings.googleDriveUrl) {
+            driveUrlInput = modelSettings.googleDriveUrl
+        }
+    }
 
     // Local Storage Backup
     var localBackupStatusMessage by remember { mutableStateOf<String?>(null) }
@@ -543,13 +554,17 @@ fun EmpiricalLogHistoryScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Web App Deployment URL",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
                         OutlinedTextField(
                             value = driveUrlInput,
                             onValueChange = {
                                 driveUrlInput = it
                                 onUpdateGoogleDriveUrl(it)
                             },
-                            label = { Text("Web App Deployment URL") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
