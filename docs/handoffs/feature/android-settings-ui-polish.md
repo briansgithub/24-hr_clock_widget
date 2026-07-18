@@ -2,8 +2,8 @@
 
 ## Identity
 
-- Tip: uncommitted WIP in `stash@{0}`
-- Parent/base: `main` at `b0187f4`
+- Tip: uncommitted → commit pending (parent `71aee00`)
+- Parent/base: `main` at `71aee00`
 - Upstream: none
 - Role: feature
 - History: [android-settings-ui-polish.history.md](android-settings-ui-polish.history.md)
@@ -11,31 +11,33 @@
 
 ## Goal and scope
 
-- Goal: Polish Android settings UI (theme/components).
-- Included: settings Compose UI / theme work (details in stash).
-- Excluded: bedtime countdown overlay (separate branch).
-- Acceptance criteria: TBD when stash is restored and scoped.
+- Goal: Minimal Settings UI polish — Switch toggles + Display element glyphs.
+- Included: `SettingToggle` Checkbox→Switch; Canvas glyphs for Display Settings rows.
+- Excluded: Theme redesign; section cards; nav changes; layout/IA changes.
+- Acceptance criteria: Switches for boolean settings; Display toggles show element glyphs; rest matches `main`.
 
 ## Changes since branch creation
 
-- Uncommitted (stashed): MainActivity, EmpiricalLogScreens, theme Color/Theme/Type, SettingsComponents.kt, handoff index edits.
+- `SettingToggle` uses Switch; optional leading composable.
+- `DisplayElementGlyphs.kt` miniature previews for Display settings.
+- Glyph refinements per owner (UTC, wake tick, wedge angles/colors, bed+stopwatch, circular harmonic, gaussian).
 
 ## Current status
 
-- Working tree on this branch tip is clean while checked out elsewhere; WIP is `stash@{0}` ("WIP android-settings-ui-polish before bedtime timer position").
-- Base relationship: branched from `main` @ `b0187f4`.
-- Validation: not run.
-- Risks/blockers: restore stash before continuing.
-- Stashes: `stash@{0}` holds this branch’s WIP.
+- Working tree: dirty → committing then merging to `main`.
+- Base relationship: based on `main` @ `71aee00`.
+- Validation: `python scripts/validate_handoffs.py` to run with merge cleanup.
+- Risks/blockers: none for this narrow scope.
+- Stashes: older aesthetic WIP stash remains (unrelated to final scope).
 
 ## Next actions
 
-1. `git checkout feature/android-settings-ui-polish` then `git stash pop stash@{0}` to resume.
-2. Continue UI polish; keep handoff current.
+1. Commit and merge into `main`.
+2. Archive handoff after merge.
 
 ## Merge and cleanup
 
 - PR base: `main`
-- Readiness: blocked (WIP stashed)
+- Readiness: ready (owner requested commit + merge)
 - Required predecessor: none
-- After merge: append closure history, archive this file and its history, update global HISTORY/index, then delete local/remote branch after reachability verification.
+- After merge: append closure history, archive this file and its history, update global HISTORY/index, then delete local branch after reachability verification.

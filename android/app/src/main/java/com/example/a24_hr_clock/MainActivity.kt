@@ -22,6 +22,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -820,64 +821,68 @@ fun DisplaySettingsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
         Text(text = "ELEMENTS", style = MaterialTheme.typography.labelLarge)
-        
-        SettingToggle("Numbers", currentSettings.showNumbers) { 
+
+        SettingToggle("Numbers", currentSettings.showNumbers, { GlyphNumbers() }) {
             updateFunc(currentSettings.copy(showNumbers = it))
         }
-        SettingToggle("Sun & Moon Icons", currentSettings.showSunMoon) {
+        SettingToggle("Sun & Moon Icons", currentSettings.showSunMoon, { GlyphSunMoon() }) {
             updateFunc(currentSettings.copy(showSunMoon = it))
         }
-        SettingToggle("Small Clock in Top-Right", currentSettings.smallTopRight) {
+        SettingToggle("Small Clock in Top-Right", currentSettings.smallTopRight, { GlyphSmallTopRight() }) {
             updateFunc(currentSettings.copy(smallTopRight = it))
         }
-        SettingToggle("Life Calendar Background", currentSettings.showLifeCalendar) {
+        SettingToggle("Life Calendar Background", currentSettings.showLifeCalendar, { GlyphLifeCalendar() }) {
             updateFunc(currentSettings.copy(showLifeCalendar = it))
         }
-        SettingToggle("Wake-up Offset & Timezone Info", currentSettings.showWakeSunriseInfo) {
+        SettingToggle("Wake-up Offset & Timezone Info", currentSettings.showWakeSunriseInfo, { GlyphWakeSunriseInfo() }) {
             updateFunc(currentSettings.copy(showWakeSunriseInfo = it))
         }
 
         Spacer(modifier = Modifier.height(16.dp))
         Text(text = "SLEEP", style = MaterialTheme.typography.labelLarge)
 
-        SettingToggle("Show Sleep on Clock", currentSettings.showSleep) {
+        SettingToggle("Show Sleep on Clock", currentSettings.showSleep, { GlyphSleepArc(showTotalBedtime = true) }) {
             updateFunc(currentSettings.copy(showSleep = it))
         }
-        SettingToggle("Show Sleep Debt Text", currentSettings.showSleepDebtText) {
+        SettingToggle("Show Sleep Debt Text", currentSettings.showSleepDebtText, { GlyphSleepDebtText() }) {
             updateFunc(currentSettings.copy(showSleepDebtText = it))
         }
-        SettingToggle("Show Time in Bed (On) vs Only Asleep (Off)", currentSettings.showTotalBedtime) {
+        SettingToggle(
+            "Show Time in Bed (On) vs Only Asleep (Off)",
+            currentSettings.showTotalBedtime,
+            { GlyphSleepArc(showTotalBedtime = currentSettings.showTotalBedtime) }
+        ) {
             updateFunc(currentSettings.copy(showTotalBedtime = it))
         }
-        SettingToggle("Show Wake-up Indicator", currentSettings.showManualWake) {
+        SettingToggle("Show Wake-up Indicator", currentSettings.showManualWake, { GlyphWakeIndicator() }) {
             updateFunc(currentSettings.copy(showManualWake = it))
         }
-        SettingToggle("Bathyphase indicator", currentSettings.showBathyphase) {
+        SettingToggle("Bathyphase indicator", currentSettings.showBathyphase, { GlyphBathyphase() }) {
             updateFunc(currentSettings.copy(showBathyphase = it))
         }
-        SettingToggle("Acrophase indicator", currentSettings.showAcrophase) {
+        SettingToggle("Acrophase indicator", currentSettings.showAcrophase, { GlyphAcrophase() }) {
             updateFunc(currentSettings.copy(showAcrophase = it))
         }
-        SettingToggle("Grogginess Wedge", currentSettings.showGrogginess) {
+        SettingToggle("Grogginess Wedge", currentSettings.showGrogginess, { GlyphGrogginess() }) {
             updateFunc(currentSettings.copy(showGrogginess = it))
         }
-        SettingToggle("Wind-down Wedge", currentSettings.showWindDown) {
+        SettingToggle("Wind-down Wedge", currentSettings.showWindDown, { GlyphWindDown() }) {
             updateFunc(currentSettings.copy(showWindDown = it))
         }
-        SettingToggle("Bedtime Countdown", currentSettings.showBedtimeCountdown) {
+        SettingToggle("Bedtime Countdown", currentSettings.showBedtimeCountdown, { GlyphBedtimeCountdown() }) {
             updateFunc(currentSettings.copy(showBedtimeCountdown = it))
         }
 
         Spacer(modifier = Modifier.height(16.dp))
         Text(text = "ENERGY", style = MaterialTheme.typography.labelLarge)
 
-        SettingToggle("Show Energy Curve", currentSettings.showEnergy) {
+        SettingToggle("Show Energy Curve", currentSettings.showEnergy, { GlyphEnergyCurve() }) {
             updateFunc(currentSettings.copy(showEnergy = it))
         }
-        SettingToggle("Show Energy %", currentSettings.showEnergyPct) {
+        SettingToggle("Show Energy %", currentSettings.showEnergyPct, { GlyphEnergyPct() }) {
             updateFunc(currentSettings.copy(showEnergyPct = it))
         }
-        SettingToggle("Normalize Energy", currentSettings.normalizeEnergy) {
+        SettingToggle("Normalize Energy", currentSettings.normalizeEnergy, { GlyphNormalizeEnergy() }) {
             updateFunc(currentSettings.copy(normalizeEnergy = it))
         }
     }
@@ -1261,7 +1266,12 @@ fun SleepLogScreen(
 }
 
 @Composable
-fun SettingToggle(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+fun SettingToggle(
+    label: String,
+    checked: Boolean,
+    leading: (@Composable () -> Unit)? = null,
+    onCheckedChange: (Boolean) -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1269,8 +1279,24 @@ fun SettingToggle(label: String, checked: Boolean, onCheckedChange: (Boolean) ->
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(text = label)
-        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        Row(
+            modifier = Modifier.weight(1f).padding(end = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (leading != null) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(MaterialTheme.shapes.small),
+                    contentAlignment = Alignment.Center
+                ) {
+                    leading()
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+            }
+            Text(text = label)
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
