@@ -23,6 +23,6 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Validation/decision: PR merge-ready; remaining optional gate is owner device visual check.
 
 ### 2026-07-18 — Light-gray Reset buttons; merge authorized
-- Commit/base: pending on `687cf93`
+- Commit/base: `fa2582a`
 - Change: Display and preview “Reset to Defaults” buttons use light gray (`#BDBDBD`) with dark content; owner confirmed visual check and authorized commit/push/merge.
 - Validation/decision: Owner: “it’s all good”; merge PR #4 after push.
