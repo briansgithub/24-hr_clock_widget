@@ -2,9 +2,9 @@
 
 ## Identity
 
-- Tip: uncommitted — Exercise tab metric glossary help
-- Parent/base: `main` at `ead09d4`
-- Upstream: none
+- Tip: `e0a08f1` — docs: mark exercise metric help ready for PR (product `c24547e`)
+- Parent/base: `main` at `cd755b3` (0 behind)
+- Upstream: `origin/feature/exercise-metric-help` (in sync after push)
 - Role: feature
 - History: [exercise-metric-help.history.md](exercise-metric-help.history.md)
 - Last verified: `2026-07-18`
@@ -12,30 +12,32 @@
 ## Goal and scope
 
 - Goal: Define HRSS, TRIMP, and HRV on the Exercise tab at elementary, intermediate, and advanced levels so users can understand readiness jargon.
-- Included: App-accurate help copy; glossary chips + 3-level help dialog; chart legend with info taps; fix empty-state tab name (Sleep, not Connect).
-- Excluded: Full Exercise redesign; status-copy rewrite; summary tiles; theme-aware chart; baseline slider help.
-- Acceptance criteria: Each of HRSS/TRIMP/HRV opens help with three selectable levels; chart legend present; empty state points to Sleep tab.
+- Included: App-accurate help copy; chart legend (below graph) with info taps opening 3-level help dialog; fix empty-state tab name (Sleep, not Connect).
+- Excluded: Separate metrics glossary row above the chart; full Exercise redesign; status-copy rewrite; summary tiles; theme-aware chart; baseline slider help.
+- Acceptance criteria: Each of HRSS/TRIMP/HRV is reachable from the legend below the graph with three selectable help levels; empty state points to Sleep tab.
 
 ## Changes since branch creation
 
-- Uncommitted: `MetricHelpContent` with three-level copy; `ExerciseMetricHelp` glossary/dialog/legend; `ExerciseMetricsScreen` wired; empty-state points to Sleep tab.
+- `c24547e`: `MetricHelpContent.kt`, `ExerciseMetricHelp.kt`, `MainActivity` ExerciseMetricsScreen wiring.
+- `e041101`: merged current `main` (energy + display already on main).
+- `e0a08f1`: handoff refresh for PR.
 
 ## Current status
 
-- Working tree: clean on branch tip; implementation WIP is in stash (paused)
-- Base relationship: branched from `main` `ead09d4`
-- Validation: `python scripts/validate_handoffs.py` passed (2026-07-18) before stash
-- Risks/blockers: none known
-- Stashes: `wip feature/exercise-metric-help: pause before empirical-log-cutoff` (code + related handoff edits); restore onto this branch only
+- Working tree: clean; pushed.
+- PR: https://github.com/briansgithub/24-hr_clock_widget/pull/3
+- Owner visual check: PASSED (authorized commit/push/PR).
+- Stashes: exercise WIP stash still present until owner authorizes drop after merge.
 
 ## Next actions
 
-1. Restore stash onto `feature/exercise-metric-help`, then owner visual check.
-2. Commit when requested; then PR into `main`.
+1. Owner: merge PR #3 when satisfied.
+2. After merge: archive handoff/history, update HISTORY/index, delete local/remote branch/worktree.
+3. Owner: authorize drop of exercise stash when satisfied.
 
 ## Merge and cleanup
 
 - PR base: `main`
-- Readiness: in progress
+- Readiness: PR open
 - Required predecessor: none
-- After merge: append closure history, archive this file and its history, update global HISTORY/index, then delete local/remote branch after reachability verification.
+- After merge to main: append closure history, archive this file and its history, update global HISTORY/index, then delete local/remote branch after reachability verification.
