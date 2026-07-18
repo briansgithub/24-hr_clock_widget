@@ -2,12 +2,12 @@
 
 ## Identity
 
-- Tip: uncommitted — Drive backup on energy entry + prompt datetime
-- Parent/base: `main` at `b0187f4`
+- Tip: committed — real-time Google Drive sync and prompt time label
+- Parent/base: `main` at `da84193`
 - Upstream: tracks `origin/main` (no feature remote yet)
 - Role: feature
 - History: [energy-entry-backup-drive.history.md](energy-entry-backup-drive.history.md)
-- Last verified: `2026-07-17`
+- Last verified: `2026-07-18`
 
 ## Goal and scope
 
@@ -18,15 +18,15 @@
 
 ## Changes since branch creation
 
-- Uncommitted: `saveLogs(..., uploadDrive)` fire-and-forget Drive upload after local sync; `logEnergy(..., uploadDrive=true)` default; worker passes `false`; `EnergyLogInputScreen` shows aligned slot datetime.
+- Committed: `saveLogs(..., uploadDrive)` fire-and-forget Drive upload after local sync; `logEnergy(..., uploadDrive=true)` default; worker passes `false`; `EnergyLogInputScreen` shows aligned slot datetime.
 
 ## Current status
 
-- Working tree: code WIP is in stash; restore in a worktree/checkout of this branch only when resuming.
-- Base relationship: branched from `origin/main` @ `b0187f4`; no feature commits yet.
-- Validation: not run this session (Android compile deferred).
+- Working tree: clean (committed/rebased).
+- Base relationship: rebased onto `main` at `da84193`.
+- Validation: compile check pending.
 - Risks/blockers: Drive upload is async after save (UI does not wait); requires configured `googleDriveUrl` and `localBackupUri` for full path.
-- Stashes: `wip feature/energy-entry-backup-drive: pause before bedtime overlay`
+- Stashes: none (committed to branch).
 
 ## Next actions
 
