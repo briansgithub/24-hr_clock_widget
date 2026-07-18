@@ -105,3 +105,21 @@ Disposition phrases: `merged into main`, `superseded` (commits landed via descen
 - Merge / PR: `0c07664` / https://github.com/briansgithub/24-hr_clock_widget/pull/4 ; `1f3764e` / https://github.com/briansgithub/24-hr_clock_widget/pull/5
 - Summary: Lock Screen first/default on Display; light-gray Reset to Defaults buttons (Display + preview).
 - Archive: `archive/feature/display-tab-lock-first.md`
+
+### 2026-07-18 — `feature/wallpaper-countdown-dirty-rect` → merged into `main`
+- Final tip: `9dd5780`
+- Merge / PR: fast-forward onto `origin/main` at `9dd5780`
+- Summary: Battery-safe 1 Hz dirty-rect wallpaper countdown; notification header chronometer cleanup.
+- Archive: `archive/feature/wallpaper-countdown-dirty-rect.md`
+
+### 2026-07-18 — `feature/timezone-map-lock-position` → merged into `main`
+- Final tip: `8073713`
+- Merge / PR: `2db20b3`
+- Summary: Timezone world map stays at lock-screen vertical position on home and lock.
+- Archive: `archive/feature/timezone-map-lock-position.md`
+
+### 2026-07-18 — `chore/remove-preview-reset-button` → merged into `main`
+- Final tip: `441f50f`
+- Merge / PR: `3c2f7ca`
+- Summary: Removed Preview-tab Reset to defaults; Display/Energy resets unchanged.
+- Archive: `archive/chore/remove-preview-reset-button.md`

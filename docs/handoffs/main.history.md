@@ -85,3 +85,8 @@ Append-only milestones for `main`. Current state and next actions belong in [mai
 - Commit/base: tip `a7f45ac`; merges `0c07664` (PR #4), `1f3764e` (PR #5)
 - Change: Lock Screen first/default on Display; light-gray Reset buttons; archived feature handoff.
 - Validation/decision: Owner visual check confirmed; merge and post-merge cleanup authorized.
+
+### 2026-07-18 — Merged three open branches + archived
+- Commit/base: wallpaper tip `9dd5780` (FF); timezone merge `2db20b3`; chore merge `3c2f7ca`; then archive cleanup commit
+- Change: Dirty-rect countdown, timezone map lock position, and Preview reset removal landed; handoffs archived; feature/chore branches deleted.
+- Validation/decision: Owner authorized merge-all open branches and delete completed branches.
