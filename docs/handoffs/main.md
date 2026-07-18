@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: `9e24f2f` — Sync main handoff tip after audit branch close.
+- Tip: `3b5bb18` — Finalize main tip after audit branch close.
 - Upstream: `origin/main` (matches)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
@@ -14,19 +14,19 @@ Maintain the stable integration branch for future feature work, with permanent h
 
 ## Changes since previous published tip
 
+- `3b5bb18`: Finalize main tip after audit branch close.
 - Closed `audit-git-stash-state` without merge; archived its handoff.
-- `ce23ec8` / `1b7bcfc`: Android Studio worktree workflow docs.
 - Earlier: exercise/display/energy PRs #3–#1 archived.
 
 ## Current status
 
-- Clean `main` only: no living feature or audit branches; no stashes.
+- Living feature: `feature/display-tab-lock-first` ([PR #4](https://github.com/briansgithub/24-hr_clock_widget/pull/4) merge-ready).
+- No stashes.
 - Primary worktree only.
-- Android Studio worktree guidance is in `MULTI_AGENT.md`.
 
 ## Next actions
 
-1. Start the next feature from updated `origin/main` in a dedicated worktree when needed.
+1. Finish / review `feature/display-tab-lock-first`, then return `main` to integration-only.
 
 ## Merge and cleanup
 
