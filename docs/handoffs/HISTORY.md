@@ -93,3 +93,9 @@ Disposition phrases: `merged into main`, `superseded` (commits landed via descen
 - Merge / PR: `ed22464` / https://github.com/briansgithub/24-hr_clock_widget/pull/3
 - Summary: Three-level HRSS/TRIMP/HRV help via chart legend below the graph; glossary row removed.
 - Archive: `archive/feature/exercise-metric-help.md`
+
+### 2026-07-18 — `audit-git-stash-state` → closed-without-merge
+- Final tip: `ead09d4`
+- Merge / PR: none (placeholder; tip already on `main` history)
+- Summary: Deleted local/remote audit worktree placeholder after feature cleanup; no unique commits.
+- Archive: `archive/audit-git-stash-state.md`
