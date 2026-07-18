@@ -8,6 +8,6 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Validation/decision: Scope and acceptance criteria recorded in the active handoff.
 
 ### 2026-07-18 — Dirty-rect countdown + notification header fix
-- Commit/base: branch tip (dirty-rect countdown feature commit)
+- Commit/base: `75f5d9b`
 - Change: Wallpaper keeps 10 s full redraws; when Bedtime Countdown is on and visible, a 1 Hz `lockCanvas(dirty)` path clears/redraws only the countdown stack (skips if bounds hit the dial). Notification builder no longer uses system chronometer/`showWhen` so the header no longer duplicates the large body timer.
 - Validation/decision: `validate_handoffs.py` passed; awaiting owner device check.

@@ -9,7 +9,7 @@ Last verified: 2026-07-18
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
 | `main` | `b135a9d` = `origin/main` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
-| `feature/wallpaper-countdown-dirty-rect` | ahead of `b135a9d` | Dirty-rect 1 Hz wallpaper countdown + notification header cleanup | [handoff](feature/wallpaper-countdown-dirty-rect.md) | [history](feature/wallpaper-countdown-dirty-rect.history.md) |
+| `feature/wallpaper-countdown-dirty-rect` | `75f5d9b` ahead of `b135a9d` | Dirty-rect 1 Hz wallpaper countdown + notification header cleanup | [handoff](feature/wallpaper-countdown-dirty-rect.md) | [history](feature/wallpaper-countdown-dirty-rect.history.md) |
 
 ## Current merge order
 
