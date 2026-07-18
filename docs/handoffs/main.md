@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: `e27f695` — Merge branch 'fix/bedtime-countdown-sleep-default'
+- Tip: `fc8c33c` — docs: archive fix/bedtime-countdown-sleep-default after merge
 - Upstream: `origin/main` (local ahead; push not requested)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
@@ -14,12 +14,12 @@ Maintain the stable integration branch for future feature work, with permanent h
 
 ## Changes since previous published tip
 
-- Merged `fix/bedtime-countdown-sleep-default` (`e27f695`); scoped 10pm clamp + no-log fallback.
+- Merged `fix/bedtime-countdown-sleep-default` (`e27f695`); archived handoff (`fc8c33c`).
 
 ## Current status
 
-- Clean `main` after archive cleanup commit.
-- Ahead of `origin/main` (merge + archive not pushed).
+- Clean `main` after archive cleanup.
+- Ahead of `origin/main` (not pushed).
 - No living feature/chore branches.
 
 ## Next actions
