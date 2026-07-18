@@ -1,41 +1,38 @@
-# Branch: `feature/bedtime-countdown-10pm-floor`
+# Branch: eature/bedtime-countdown-10pm-floor
 
 ## Identity
 
-- Tip: `f7763b1` — Clamp bedtime countdown so targets never fall before 10:00 PM.
-- Parent/base: `main` at `b0187f4`
+- Tip: committing wallpaper countdown overlay + 22:00 floor
+- Parent/base: main at 0187f4
 - Upstream: none
 - Role: feature
 - History: [bedtime-countdown-10pm-floor.history.md](bedtime-countdown-10pm-floor.history.md)
-- Last verified: `2026-07-17`
+- Last verified: 2026-07-18
 
 ## Goal and scope
 
-- Goal: Clamp the Android bedtime countdown target so it never falls earlier than 10:00 PM.
-- Included: `calculateBedtimeMillis` floor after the existing 1.5h-before-last-sleep + 5-minute rounding.
-- Excluded: Changing the 90-minute advance; Python widget; reminder copy beyond this clamp.
-- Acceptance criteria: Pre-22:00 computed targets become 22:00; later targets unchanged; today/tomorrow next-occurrence logic preserved.
+- Goal: Bedtime countdown never earlier than 10:00 PM, plus optional wallpaper countdown on home/lock.
+- Included: 22:00 floor; Display Sleep toggle (default off); smallTopRight 90% dial/sun/moon; countdown placement/alignment; 10s wallpaper refresh.
+- Excluded: 90-minute advance change; Python widget; notification redesign.
+- Acceptance criteria: Floor + optional overlay with owner-approved placement.
 
 ## Changes since branch creation
 
-- Clamp: after rounding, if local time is before 22:00, set target to 22:00 before mapping to the next future occurrence.
+- 7763b1 / cdcd88b: 22:00 floor + handoff tip.
+- This commit: wallpaper/home-lock countdown overlay, settings toggle, sizing and alignment polish.
 
 ## Current status
 
-- Working tree: clean after this commit (feature + handoffs).
-- Base relationship: branched from `main` @ `b0187f4`; ahead by this feature commit; no upstream.
-- Validation: handoff validator passed; Android compile not run this session.
-- Risks/blockers: none known for the floor itself. Owner confirmed keep 90-minute advance.
-- Stashes: none for this work.
+- Working tree: committing for merge into main.
+- Validation: python scripts/validate_handoffs.py passed; Android compile not run (deferred).
+- Stashes: unrelated sibling WIP remains in stash list.
 
 ## Next actions
 
-1. When ready for PR: propose automated/manual checks for owner approval.
-2. Push and open PR into `main` after checks approved.
+1. Merge into main (--no-ff), archive handoff, refresh index.
 
 ## Merge and cleanup
 
-- PR base: `main`
-- Readiness: ready after checks
+- PR base: main
+- Readiness: ready (owner requested commit + merge; compile deferred)
 - Required predecessor: none
-- After merge: append closure history, archive this file and its history, update global HISTORY/index, then delete local/remote branch after reachability verification.

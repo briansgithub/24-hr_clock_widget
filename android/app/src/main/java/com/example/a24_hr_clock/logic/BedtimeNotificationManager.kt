@@ -11,8 +11,6 @@ import android.util.Log
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
 
 class BedtimeNotificationManager(private val context: Context) {
 
@@ -20,6 +18,44 @@ class BedtimeNotificationManager(private val context: Context) {
         const val REMINDER_CHANNEL_ID = "bedtime_reminder_channel"
         const val COUNTDOWN_CHANNEL_ID = "bedtime_countdown_channel"
         private const val TAG = "BedtimeNotifManager"
+
+        fun resolveBedtimeMillis(logs: List<SleepLogEntry>): Long? {
+            val mainSleep = logs.filter { it.isMainSleep }.maxByOrNull { it.dateOfSleep } ?: return null
+            return calculateBedtimeMillis(mainSleep.startTime)
+        }
+
+        fun calculateBedtimeMillis(startTimeIso: String): Long? {
+            return try {
+                val startTime = LocalDateTime.parse(startTimeIso.replace("Z", ""))
+
+                // Subtract 1.5 hours
+                var bedtime = startTime.minusMinutes(90)
+
+                // Round to nearest 5 minutes
+                val minutes = bedtime.minute
+                val roundedMinutes = ((minutes + 2) / 5) * 5
+                bedtime = bedtime.withMinute(0).plusMinutes(roundedMinutes.toLong()).withSecond(0).withNano(0)
+
+                // Never schedule bedtime earlier than 10:00 PM
+                val earliestBedtime = LocalTime.of(22, 0)
+                if (bedtime.toLocalTime().isBefore(earliestBedtime)) {
+                    bedtime = bedtime.withHour(22).withMinute(0).withSecond(0).withNano(0)
+                }
+
+                val now = LocalDateTime.now()
+                var target = bedtime.withYear(now.year).withMonth(now.monthValue).withDayOfMonth(now.dayOfMonth)
+
+                // Always return the NEXT occurrence (strictly in the future)
+                if (!target.isAfter(now)) {
+                    target = target.plusDays(1)
+                }
+
+                target.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error calculating bedtime", e)
+                null
+            }
+        }
     }
 
     init {
@@ -61,53 +97,15 @@ class BedtimeNotificationManager(private val context: Context) {
             return
         }
 
-        val mainSleep = logs.filter { it.isMainSleep }.maxByOrNull { it.dateOfSleep }
-        if (mainSleep == null) {
+        val bedtimeMillis = resolveBedtimeMillis(logs) ?: run {
             Log.d(TAG, "No main sleep found, skipping notification update")
             return
         }
 
-        val bedtimeMillis = calculateBedtimeMillis(mainSleep.startTime) ?: return
-        
         Log.d(TAG, "Calculated bedtime: ${LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(bedtimeMillis), ZoneId.systemDefault())}")
 
         scheduleReminder(bedtimeMillis)
         startCountdownService(bedtimeMillis)
-    }
-
-    private fun calculateBedtimeMillis(startTimeIso: String): Long? {
-        return try {
-            // Parse ISO string
-            val startTime = LocalDateTime.parse(startTimeIso.replace("Z", ""))
-            
-            // Subtract 1.5 hours
-            var bedtime = startTime.minusMinutes(90)
-            
-            // Round to nearest 5 minutes
-            val minutes = bedtime.minute
-            val roundedMinutes = ((minutes + 2) / 5) * 5
-            bedtime = bedtime.withMinute(0).plusMinutes(roundedMinutes.toLong()).withSecond(0).withNano(0)
-
-            // Never schedule bedtime earlier than 10:00 PM
-            val earliestBedtime = LocalTime.of(22, 0)
-            if (bedtime.toLocalTime().isBefore(earliestBedtime)) {
-                bedtime = bedtime.withHour(22).withMinute(0).withSecond(0).withNano(0)
-            }
-
-            // We want this time TODAY or TOMORROW (whenever the next occurrence is)
-            val now = LocalDateTime.now()
-            var target = bedtime.withYear(now.year).withMonth(now.monthValue).withDayOfMonth(now.dayOfMonth)
-            
-            // Always return the NEXT occurrence (strictly in the future)
-            if (target.isBefore(now)) {
-                target = target.plusDays(1)
-            }
-
-            target.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error calculating bedtime", e)
-            null
-        }
     }
 
     private fun scheduleReminder(bedtimeMillis: Long) {
