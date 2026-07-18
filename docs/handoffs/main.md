@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: `66486ed` — Archive timezone-mercator-map handoffs after merge.
+- Tip: `b2de326` — Merge branch 'feature/empirical-log-jul16-cutoff'
 - Upstream: `origin/main` (local ahead; push pending owner request)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
@@ -14,21 +14,19 @@ Maintain the stable integration branch for future feature work, with permanent h
 
 ## Changes since previous published tip
 
-- `52444d9`: merged bedtime countdown (22:00 floor + optional wallpaper countdown).
-- `dea5ea7`: wind-down wedge gradient `#5C5C5C` → `#111111`.
-- `c13f36a`: merged settings Switch toggles + Display element glyphs.
-- `f0ee7c5`: merged equirectangular timezone world map + location dot.
+- `b2de326` / `af95262`: Jul 16 2026 empirical log cutoff; today-only 10pm missed alert; Drive URL autofill.
+- Earlier: timezone map, settings UI polish, wind-down gradient, bedtime countdown.
 
 ## Current status
 
-- Living branches: `main`, `feature/energy-entry-backup-drive` (stashed WIP).
-- Working tree: post-merge handoff archive in progress.
+- Living: paused feature branches (stashed WIP), audit/chore worktrees.
+- Working tree: post-merge archive cleanup in progress.
 - Local `main` ahead of `origin/main`; not pushed yet.
 
 ## Next actions
 
 1. Owner may push `main` when ready.
-2. Resume stashed `feature/energy-entry-backup-drive` as needed.
+2. Resume stashed feature branches as needed.
 
 ## Merge and cleanup
 

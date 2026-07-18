@@ -41,3 +41,8 @@ Append-only milestones for `main`. Current state and next actions belong in [mai
 - Commit/base: tip `7908253`; merge `f0ee7c5`
 - Change: Equirectangular timezone map with meridian + location dot; archived feature handoff.
 - Validation/decision: Owner requested commit and merge; push not requested.
+
+### 2026-07-18 — Merged empirical log Jul 16 cutoff
+- Commit/base: tip `af95262`; merge `b2de326`
+- Change: Pruned empirical logs before 2026-07-16; 10pm missed alert is today-only; Drive web app URL autofills with external label.
+- Validation/decision: Owner requested commit and merge; push not requested.
