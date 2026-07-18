@@ -8,14 +8,16 @@ Last verified: 2026-07-18
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | local `b135a9d`; `origin/main` = `9dd5780` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
-| `feature/wallpaper-countdown-dirty-rect` | `9dd5780` = `origin/main` | Dirty-rect 1 Hz wallpaper countdown + notification header cleanup | [handoff](feature/wallpaper-countdown-dirty-rect.md) | [history](feature/wallpaper-countdown-dirty-rect.history.md) |
-| `feature/timezone-map-lock-position` | `7e510e0` ahead of `9dd5780` | Timezone map fixed lock-screen position on home/lock | [handoff](feature/timezone-map-lock-position.md) | [history](feature/timezone-map-lock-position.history.md) |
+| `main` | merging open feature/chore tips onto `9dd5780` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `feature/wallpaper-countdown-dirty-rect` | `9dd5780` on `main` | Dirty-rect 1 Hz wallpaper countdown + notification header cleanup | [handoff](feature/wallpaper-countdown-dirty-rect.md) | [history](feature/wallpaper-countdown-dirty-rect.history.md) |
+| `feature/timezone-map-lock-position` | `8073713` merged | Timezone map fixed lock-screen position on home/lock | [handoff](feature/timezone-map-lock-position.md) | [history](feature/timezone-map-lock-position.history.md) |
+| `chore/remove-preview-reset-button` | `441f50f` merging | Remove Preview "Reset to defaults" button | [handoff](chore/remove-preview-reset-button.md) | [history](chore/remove-preview-reset-button.history.md) |
 
 ## Current merge order
 
-1. `feature/wallpaper-countdown-dirty-rect`
+1. `feature/wallpaper-countdown-dirty-rect` (already on `main`)
 2. `feature/timezone-map-lock-position`
+3. `chore/remove-preview-reset-button`
 
 Parallel agents must use separate Git worktrees — see [MULTI_AGENT.md](MULTI_AGENT.md).
 
