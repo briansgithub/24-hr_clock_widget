@@ -12,3 +12,8 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Change: Documented that Antigravity folder named `audit-git-stash-state` now hosts `feature/energy-entry-backup-drive` @ `55ff716`. Do not merge audit branch.
 - Validation/decision: Owner must confirm before deleting branch/worktree path; relocate energy checkout first if removing folder.
 
+### 2026-07-18 — Closed without merge
+- Commit/base: final tip `ead09d4` (ancestor of `main`)
+- Change: Deleted local/remote `audit-git-stash-state`; archived handoff/history.
+- Validation/decision: Owner authorized deletion after feature cleanup; no unique commits lost.
+
