@@ -2,9 +2,11 @@
 
 ## Identity
 
-- Tip: `d1f3e29` — feat: default Display tab to Lock Screen first
+- Tip: `9e43fcc` — docs: sync display-tab-lock-first handoff tip
+- Feature tip: `d1f3e29` — feat: default Display tab to Lock Screen first
 - Parent/base: `main` / `origin/main` at `3b5bb18`
-- Upstream: pending push
+- Upstream: `origin/feature/display-tab-lock-first` (matches)
+- PR: [#4](https://github.com/briansgithub/24-hr_clock_widget/pull/4)
 - Role: feature
 - History: [display-tab-lock-first.history.md](display-tab-lock-first.history.md)
 - Last verified: `2026-07-18`
@@ -22,20 +24,20 @@
 
 ## Current status
 
-- Working tree: clean after feature commit; pushing for PR.
-- Base relationship: one commit ahead of `origin/main` (`3b5bb18`).
+- Working tree: clean; branch pushed.
+- Base relationship: two commits ahead of `origin/main` (`3b5bb18`).
 - Validation: `python scripts/validate_handoffs.py` passed; device visual check pending owner.
 - Risks/blockers: none known.
 - Stashes: none.
 
 ## Next actions
 
-1. Owner visual check on device (Display → Lock leftmost + default).
+1. Owner visual check on device (Display → Lock leftmost + default); approve/revise PR checks.
 2. After merge: archive handoff/history, update global HISTORY/index, delete branch.
 
 ## Merge and cleanup
 
-- PR base: `main`
+- PR base: `main` — [#4](https://github.com/briansgithub/24-hr_clock_widget/pull/4)
 - Readiness: ready after owner visual check
 - Required predecessor: none
 - Proposed PR checks: `python scripts/validate_handoffs.py`; manual Display-tab visual check on device.
