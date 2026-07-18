@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: dirty-rect 1 Hz wallpaper countdown + notification header cleanup (base `b135a9d`)
+- Tip: `75f5d9b` — Add battery-safe 1 Hz dirty-rect wallpaper countdown
 - Parent/base: `main` at `b135a9d`
 - Upstream: none yet
 - Role: feature
