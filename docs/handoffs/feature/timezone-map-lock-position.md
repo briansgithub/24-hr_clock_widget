@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: pending — timezone map fixed to lock-screen anchor
+- Tip: `7e510e0` — Fix timezone map to stay at lock-screen position on home and lock
 - Parent/base: `origin/main` at `9dd5780`
 - Upstream: none yet
 - Role: feature
@@ -18,12 +18,12 @@
 
 ## Changes since branch creation
 
-- Fixed map layout: `drawTimezoneMap` computes large-centered radius/`centerY` from canvas size instead of the active dial metrics.
+- `7e510e0`: `drawTimezoneMap` computes large-centered radius/`centerY` from canvas size instead of the active dial metrics.
 
 ## Current status
 
-- Working tree: clean after this commit (tip SHA to be recorded).
-- Base relationship: branched from `origin/main` `9dd5780`.
+- Working tree: clean after tip-SHA docs commit.
+- Base relationship: ahead of `origin/main` `9dd5780` by 2 (after tip sync).
 - Validation: `python scripts/validate_handoffs.py` passed; owner confirmed map position looks good on device.
 - Risks/blockers: none known.
 - Stashes: none.
