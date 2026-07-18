@@ -2,12 +2,12 @@
 
 ## Identity
 
-- Tip: uncommitted — Drive backup on energy entry + prompt datetime
-- Parent/base: `main` at `b0187f4`
-- Upstream: tracks `origin/main` (no feature remote yet)
+- Tip: `55ff716` — feat: real-time Google Drive sync on user entry and prompt time label
+- Parent/base: `main` at `da84193` (0 behind; 1 unique commit ahead)
+- Upstream: `origin/feature/energy-entry-backup-drive` (local ahead by 26; fast-forward push safe — remote tip is ancestor)
 - Role: feature
 - History: [energy-entry-backup-drive.history.md](energy-entry-backup-drive.history.md)
-- Last verified: `2026-07-17`
+- Last verified: `2026-07-18`
 
 ## Goal and scope
 
@@ -18,24 +18,26 @@
 
 ## Changes since branch creation
 
-- Uncommitted: `saveLogs(..., uploadDrive)` fire-and-forget Drive upload after local sync; `logEnergy(..., uploadDrive=true)` default; worker passes `false`; `EnergyLogInputScreen` shows aligned slot datetime.
+- Committed (`55ff716`): `saveLogs(..., uploadDrive)` fire-and-forget Drive upload after local sync; `logEnergy(..., uploadDrive=true)` default; worker passes `false`; `EnergyLogInputScreen` shows aligned slot datetime.
+- Rebased onto `main` `da84193`; merge-tree vs `origin/main` is clean.
 
 ## Current status
 
-- Working tree: code WIP is in stash; restore in a worktree/checkout of this branch only when resuming.
-- Base relationship: branched from `origin/main` @ `b0187f4`; no feature commits yet.
-- Validation: not run this session (Android compile deferred).
-- Risks/blockers: Drive upload is async after save (UI does not wait); requires configured `googleDriveUrl` and `localBackupUri` for full path.
-- Stashes: `wip feature/energy-entry-backup-drive: pause before bedtime overlay`
+- Working tree: clean product code at tip; handoff refresh pending commit (this session).
+- Base relationship: 1 ahead / 0 behind `origin/main`; clean merge.
+- Validation: **owner smoke test PASSED** (2026-07-18) — Documents CSV + Drive path exercised.
+- Risks/blockers: Drive upload remains async after save (UI does not wait); still requires configured `googleDriveUrl` and `localBackupUri` for full path.
+- Stashes: none owned by this branch (prior pause stash was committed).
 
 ## Next actions
 
-1. Owner smoke-test: log from notification prompt; confirm Documents CSV updates and Drive receives upload.
-2. When ready for PR: propose automated/manual checks for owner approval.
+1. Owner: authorize push — `git push origin feature/energy-entry-backup-drive` (fast-forward; no force).
+2. Owner: authorize PR into `main` (agent will propose check list before open; do not open until asked).
+3. After merge: archive handoff/history, update HISTORY/index, delete local/remote branch.
 
 ## Merge and cleanup
 
 - PR base: `main`
-- Readiness: in progress
+- Readiness: ready after owner push + PR approval
 - Required predecessor: none
 - After merge: append closure history, archive this file and its history, update global HISTORY/index, then delete local/remote branch after reachability verification.
