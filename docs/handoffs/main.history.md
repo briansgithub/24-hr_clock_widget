@@ -31,3 +31,8 @@ Append-only milestones for `main`. Current state and next actions belong in [mai
 - Commit/base: 64df715; merge dea5ea7
 - Change: Wind-down SweepGradient from #5C5C5C to #111111 (was light/dark gray, then #444444).
 - Validation/decision: Owner requested color tweaks, then commit and merge; push not requested.
+
+### 2026-07-18 — Merged settings UI polish
+- Commit/base: tip `412e961`; merge `c13f36a`
+- Change: Switch toggles for settings; Canvas glyphs on Display Settings rows; archived feature handoff.
+- Validation/decision: Owner requested commit and merge; push not requested.
