@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: `926f072` — docs: note display Lock-first PR #4
+- Tip: `f019eb5` — docs: sync display-tab-lock-first tip after babysit
 - Feature tip: `d1f3e29` — feat: default Display tab to Lock Screen first
 - Parent/base: `main` / `origin/main` at `3b5bb18`
 - Upstream: `origin/feature/display-tab-lock-first` (matches)
