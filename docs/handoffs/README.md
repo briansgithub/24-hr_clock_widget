@@ -8,11 +8,12 @@ Last verified: 2026-07-18
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | `9e24f2f` = `origin/main` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `main` | `3b5bb18` = `origin/main` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `feature/display-tab-lock-first` | committing for PR | Display Lock-first tabs | [handoff](feature/display-tab-lock-first.md) | [history](feature/display-tab-lock-first.history.md) |
 
 ## Current merge order
 
-_(no living feature branches)_
+1. `feature/display-tab-lock-first`
 
 Parallel agents must use separate Git worktrees — see [MULTI_AGENT.md](MULTI_AGENT.md).
 
