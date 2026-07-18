@@ -20,3 +20,8 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Commit/base: merge of `origin/main` `da84193` into branch tip `9740fd8` (`--no-commit`)
 - Change: Brought branch current with main; resolved handoff conflicts in README/main/display handoff+history. No product invent.
 - Validation/decision: Conflicts resolved in working tree; owner must authorize merge commit, then visual check / push / PR.
+
+### 2026-07-18 — Merge commits onto current main
+- Commit/base: `d04120a` (merge `da84193`); then catch-up merge of `origin/main` `eeb27c4`
+- Change: Completed authorized merge; resolved energy-archive handoff conflicts (active energy docs removed; archive kept).
+- Validation/decision: Owner visual check still required before push/PR.
