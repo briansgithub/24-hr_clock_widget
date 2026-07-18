@@ -21,3 +21,8 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Commit/base: tip `4ec05e9` vs `origin/main` `3b5bb18` (0 behind, 3 ahead)
 - Change: Reviewed unresolved PR threads (none), issue comments (Bugbot upsell only), CI (`validate` success), mergeability (`MERGEABLE`/`CLEAN`). No code fixes required.
 - Validation/decision: PR merge-ready; remaining optional gate is owner device visual check.
+
+### 2026-07-18 — Light-gray Reset buttons; merge authorized
+- Commit/base: `fa2582a`
+- Change: Display and preview “Reset to Defaults” buttons use light gray (`#BDBDBD`) with dark content; owner confirmed visual check and authorized commit/push/merge.
+- Validation/decision: Owner: “it’s all good”; merge PR #4 after push.
