@@ -9,13 +9,13 @@ Last verified: 2026-07-18
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
 | `main` | `eeb27c4` = `origin/main` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
-| `feature/display-tab-home-lock-ux` | `b3b9bfd` — merged onto current main; visual check pending | Feature: Display Home/Lock tab UX | [handoff](feature/display-tab-home-lock-ux.md) | [history](feature/display-tab-home-lock-ux.history.md) |
+| `feature/display-tab-home-lock-ux` | `b05b886` — [PR #2](https://github.com/briansgithub/24-hr_clock_widget/pull/2) open | Feature: Display Home/Lock tab UX | [handoff](feature/display-tab-home-lock-ux.md) | [history](feature/display-tab-home-lock-ux.history.md) |
 | `feature/exercise-metric-help` | based on older main + uncommitted metric-help restore | Feature: Exercise HRSS/TRIMP/HRV help | [handoff](feature/exercise-metric-help.md) | [history](feature/exercise-metric-help.history.md) |
 | `audit-git-stash-state` | tip `ead09d4`; cleanup candidate (do not merge) | Audit/worktree | [handoff](audit-git-stash-state.md) | [history](audit-git-stash-state.history.md) |
 
 ## Current merge order
 
-1. `feature/display-tab-home-lock-ux` → `main` (owner visual check; then push/PR).
+1. `feature/display-tab-home-lock-ux` → `main` ([PR #2](https://github.com/briansgithub/24-hr_clock_widget/pull/2) open; owner checks then merge).
 2. `feature/exercise-metric-help` → `main` (owner visual check; commit; then push/PR).
 
 Parallel agents must use separate Git worktrees — see [MULTI_AGENT.md](MULTI_AGENT.md).
