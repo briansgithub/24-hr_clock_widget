@@ -570,7 +570,10 @@ fun ClockPreviewScreen(
             if (onReset != null) {
                 Button(
                     onClick = onReset,
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFBDBDBD),
+                        contentColor = Color(0xFF212121)
+                    )
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
@@ -759,7 +762,10 @@ fun DisplaySettingsScreen(
         Button(
             onClick = if (selectedTab == 0) onResetLock else onResetHome,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFFBDBDBD),
+                contentColor = Color(0xFF212121)
+            ),
             contentPadding = PaddingValues(horizontal = 8.dp)
         ) {
             Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
