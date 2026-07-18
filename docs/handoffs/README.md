@@ -9,7 +9,7 @@ Last verified: 2026-07-18
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
 | `main` | `3b5bb18` = `origin/main` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
-| `feature/display-tab-lock-first` | `926f072` / [PR #4](https://github.com/briansgithub/24-hr_clock_widget/pull/4) merge-ready | Display Lock-first tabs | [handoff](feature/display-tab-lock-first.md) | [history](feature/display-tab-lock-first.history.md) |
+| `feature/display-tab-lock-first` | `f019eb5` / [PR #4](https://github.com/briansgithub/24-hr_clock_widget/pull/4) merge-ready | Display Lock-first tabs | [handoff](feature/display-tab-lock-first.md) | [history](feature/display-tab-lock-first.history.md) |
 
 ## Current merge order
 
