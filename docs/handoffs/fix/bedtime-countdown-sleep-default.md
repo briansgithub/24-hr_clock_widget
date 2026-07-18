@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: pending commit on `112ae45`
+- Tip: `a355eda` — Scope bedtime 10pm clamp to fall-asleep 10:00-11:30 PM.
 - Parent/base: `main` / `origin/main` at `112ae45`
 - Upstream: tracks `origin/main` (no remote feature branch yet)
 - Role: fix
@@ -27,8 +27,8 @@
 
 ## Current status
 
-- Working tree: committing
-- Base relationship: 1 commit ahead of `origin/main` at `112ae45` after this commit
+- Working tree: clean
+- Base relationship: 1 commit ahead of `origin/main` at `112ae45`
 - Validation: `.\gradlew.bat :app:testDebugUnitTest --tests com.example.a24_hr_clock.logic.BedtimeNotificationManagerTest` — BUILD SUCCESSFUL; `python scripts/validate_handoffs.py` passed
 - Risks/blockers: none known
 - Stashes: none

@@ -8,6 +8,6 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Validation/decision: Scope recorded in the active handoff; worktree at `24-hr_clock_widget-bedtime-fix`.
 
 ### 2026-07-18 — Scoped clamp + unit tests
-- Commit/base: this branch tip (parent `112ae45`)
+- Commit/base: `a355eda`
 - Change: Narrowed clamp to fall-asleep in [22:00, 23:30]; `resolveBedtimeMillis` always returns next target (sleep-derived or 22:00); added `BedtimeNotificationManagerTest`.
 - Validation/decision: Gradle unit test for that class BUILD SUCCESSFUL; handoff validator passed.
