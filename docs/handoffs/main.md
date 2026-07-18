@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: `520511e` — Add multi-agent worktree protocol and lean anti-loss stash rules.
+- Tip: `f6d625b` — Archive multi-agent docs chore and note compliant stashes.
 - Upstream: `origin/main` (local ahead; push pending)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
@@ -14,6 +14,7 @@ Maintain the stable integration branch for future feature work, with permanent h
 
 ## Changes since previous published tip
 
+- `f6d625b`: archived chore handoff; compliant stash messages noted on paused features.
 - `520511e`: multi-agent worktree protocol + lean anti-loss/stash ownership; worktree-aware validator ledger.
 - `b2de326` / `af95262` / `10787ce`: Jul 16 empirical log cutoff and archive cleanup.
 - Earlier: timezone map, settings UI polish, wind-down gradient, bedtime countdown.
