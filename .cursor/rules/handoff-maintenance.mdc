@@ -6,6 +6,7 @@ alwaysApply: true
 # Handoff Maintenance
 
 - Before repository work, read `docs/handoffs/MASTER_HANDOFF.md`, `docs/handoffs/REPOSITORY.md`, `docs/handoffs/README.md`, the current branch handoff, and its adjacent `.history.md`.
+- If another agent may run in parallel, read `docs/handoffs/MULTI_AGENT.md` and use a dedicated Git worktree — never share one working directory across concurrent agents.
 - Verify handoff claims against git before relying on them.
 - After every agent change to code, configuration, tests, git/branch/stash state, scope, or next actions, update the affected handoff and index before finishing.
 - Append a concise per-branch history entry for meaningful milestones only; never rewrite older history entries.

@@ -2,35 +2,35 @@
 
 ## Identity
 
-- Tip: `ead09d4` — Sync main handoff tip after timezone map archive.
-- Upstream: `origin/main` (local ahead; push pending owner request)
+- Tip: `da84193` — Sync main handoff tip after multi-agent chore archive.
+- Upstream: `origin/main` (local matches)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
 - Last verified: `2026-07-18`
 
 ## Goal and scope
 
-Maintain the stable integration branch for future feature work, with permanent handoff infrastructure in place.
+Maintain the stable integration branch for future feature work, with permanent handoff infrastructure and multi-agent worktree guidance in place.
 
 ## Changes since previous published tip
 
-- `52444d9`: merged bedtime countdown (22:00 floor + optional wallpaper countdown).
-- `dea5ea7`: wind-down wedge gradient `#5C5C5C` → `#111111`.
-- `c13f36a`: merged settings Switch toggles + Display element glyphs.
-- `f0ee7c5`: merged equirectangular timezone world map + location dot.
-- `ead09d4`: timezone map handoff archive + tip sync.
+- `da84193`: sync main handoff tip after multi-agent chore archive.
+- `f6d625b`: archived chore handoff; compliant stash messages noted on paused features.
+- `520511e`: multi-agent worktree protocol + lean anti-loss/stash ownership; worktree-aware validator ledger.
+- `b2de326` / `af95262` / `10787ce`: Jul 16 empirical log cutoff and archive cleanup.
+- Earlier: timezone map, settings UI polish, wind-down gradient, bedtime countdown.
 
 ## Current status
 
-- Living branches: `main`, `feature/display-tab-home-lock-ux` (active), `feature/energy-entry-backup-drive` (stashed WIP).
-- Working tree: clean on `main` tip; Display UX work is on the feature branch.
-- Local `main` ahead of `origin/main`; not pushed yet.
+- Living features (2026-07-18 walkthrough): energy smoke PASSED at `55ff716`; display merge-of-main resolved uncommitted; exercise metric-help product restored uncommitted.
+- `audit-git-stash-state`: tip still `ead09d4`; **not** checked out — Antigravity folder of that name currently has `feature/energy-entry-backup-drive` checked out.
+- Working tree: primary clone may hold inventory handoff refreshes (uncommitted this session).
 
 ## Next actions
 
-1. Owner may push `main` when ready.
-2. Merge `feature/display-tab-home-lock-ux` when ready.
-3. Resume stashed `feature/energy-entry-backup-drive` as needed.
+1. Owner: push/PR energy first (smoke PASSED).
+2. Owner: authorize display merge commit + visual check; exercise visual check + commit.
+3. Owner: decide whether to delete `audit-git-stash-state` branch / recreate a clean worktree path for energy.
 
 ## Merge and cleanup
 
