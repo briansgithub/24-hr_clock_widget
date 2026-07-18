@@ -8,15 +8,14 @@ Last verified: 2026-07-18
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | `112ae45` = `origin/main` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
-| `fix/bedtime-countdown-sleep-default` | `a355eda` | Scoped 10pm clamp + no-log fallback | [handoff](fix/bedtime-countdown-sleep-default.md) | [history](fix/bedtime-countdown-sleep-default.history.md) |
+| `main` | `e27f695` (ahead of `origin/main`) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
 
 ## Current merge order
 
-1. `fix/bedtime-countdown-sleep-default` → `main`
+_No living feature/chore branches._
 
 Parallel agents must use separate Git worktrees — see [MULTI_AGENT.md](MULTI_AGENT.md).
 
-Recently archived: `feature/wallpaper-countdown-dirty-rect`, `feature/timezone-map-lock-position`, `chore/remove-preview-reset-button` (merged into `main` 2026-07-18), `feature/display-tab-lock-first` (merged via [PR #4](https://github.com/briansgithub/24-hr_clock_widget/pull/4) + [PR #5](https://github.com/briansgithub/24-hr_clock_widget/pull/5)), `audit-git-stash-state` (closed-without-merge), `feature/exercise-metric-help` (merged via [PR #3](https://github.com/briansgithub/24-hr_clock_widget/pull/3)), `feature/display-tab-home-lock-ux` (merged via [PR #2](https://github.com/briansgithub/24-hr_clock_widget/pull/2)), `feature/energy-entry-backup-drive` (merged via [PR #1](https://github.com/briansgithub/24-hr_clock_widget/pull/1)). Earlier: `chore/multi-agent-worktree-docs`, `feature/empirical-log-jul16-cutoff`, `feature/timezone-mercator-map`, `feature/android-settings-ui-polish`, `feature/bedtime-countdown-10pm-floor`, `chore/portable-handoff-kit`, `feature/dynamic-sun-color`, `feature/empirical-public-priority` (merged); `feature/empirical-energy-logging` (superseded).
+Recently archived: `fix/bedtime-countdown-sleep-default` (merged into `main` 2026-07-18), `feature/wallpaper-countdown-dirty-rect`, `feature/timezone-map-lock-position`, `chore/remove-preview-reset-button` (merged into `main` 2026-07-18), `feature/display-tab-lock-first` (merged via [PR #4](https://github.com/briansgithub/24-hr_clock_widget/pull/4) + [PR #5](https://github.com/briansgithub/24-hr_clock_widget/pull/5)), `audit-git-stash-state` (closed-without-merge), `feature/exercise-metric-help` (merged via [PR #3](https://github.com/briansgithub/24-hr_clock_widget/pull/3)), `feature/display-tab-home-lock-ux` (merged via [PR #2](https://github.com/briansgithub/24-hr_clock_widget/pull/2)), `feature/energy-entry-backup-drive` (merged via [PR #1](https://github.com/briansgithub/24-hr_clock_widget/pull/1)). Earlier: `chore/multi-agent-worktree-docs`, `feature/empirical-log-jul16-cutoff`, `feature/timezone-mercator-map`, `feature/android-settings-ui-polish`, `feature/bedtime-countdown-10pm-floor`, `chore/portable-handoff-kit`, `feature/dynamic-sun-color`, `feature/empirical-public-priority` (merged); `feature/empirical-energy-logging` (superseded).
 
 New branches use [templates/](templates/). Validate with `python scripts/validate_handoffs.py`.

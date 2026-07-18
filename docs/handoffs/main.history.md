@@ -90,3 +90,8 @@ Append-only milestones for `main`. Current state and next actions belong in [mai
 - Commit/base: wallpaper tip `9dd5780` (FF); timezone merge `2db20b3`; chore merge `3c2f7ca`; then archive cleanup commit
 - Change: Dirty-rect countdown, timezone map lock position, and Preview reset removal landed; handoffs archived; feature/chore branches deleted.
 - Validation/decision: Owner authorized merge-all open branches and delete completed branches.
+
+### 2026-07-18 — Merged bedtime countdown sleep-default fix
+- Commit/base: tip `afa2b4e`; merge `e27f695`
+- Change: Scoped 10pm clamp to fall-asleep [22:00, 23:30]; no-log 10pm fallback; archived fix handoff.
+- Validation/decision: Owner authorized local merge; unit tests had passed on the fix branch; push not requested.

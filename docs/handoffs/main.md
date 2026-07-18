@@ -2,8 +2,8 @@
 
 ## Identity
 
-- Tip: `112ae45` — docs: set main tip to post-push SHA
-- Upstream: `origin/main` (matches)
+- Tip: `e27f695` — Merge branch 'fix/bedtime-countdown-sleep-default'
+- Upstream: `origin/main` (local ahead; push not requested)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
 - Last verified: `2026-07-18`
@@ -14,16 +14,18 @@ Maintain the stable integration branch for future feature work, with permanent h
 
 ## Changes since previous published tip
 
-- Tip `112ae45` matches `origin/main`.
+- Merged `fix/bedtime-countdown-sleep-default` (`e27f695`); scoped 10pm clamp + no-log fallback.
 
 ## Current status
 
-- Matches `origin/main` at `112ae45`.
-- Living fix branch: `fix/bedtime-countdown-sleep-default` (separate worktree).
+- Clean `main` after archive cleanup commit.
+- Ahead of `origin/main` (merge + archive not pushed).
+- No living feature/chore branches.
 
 ## Next actions
 
-1. Merge `fix/bedtime-countdown-sleep-default` when ready, or start the next feature from updated `origin/main` in a dedicated worktree.
+1. Owner may push `main` when ready; verify bedtime countdown on Pixel 7a from this checkout.
+2. Start the next feature from updated `origin/main` in a dedicated worktree when needed.
 
 ## Merge and cleanup
 

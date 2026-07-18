@@ -123,3 +123,9 @@ Disposition phrases: `merged into main`, `superseded` (commits landed via descen
 - Merge / PR: `3c2f7ca`
 - Summary: Removed Preview-tab Reset to defaults; Display/Energy resets unchanged.
 - Archive: `archive/chore/remove-preview-reset-button.md`
+
+### 2026-07-18 — `fix/bedtime-countdown-sleep-default` → merged into `main`
+- Final tip: `afa2b4e`
+- Merge / PR: `e27f695` (local merge; not pushed)
+- Summary: Scoped 10pm clamp to fall-asleep [22:00, 23:30]; no-log fallback to next 10pm; unit tests.
+- Archive: `archive/fix/bedtime-countdown-sleep-default.md`
