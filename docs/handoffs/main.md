@@ -2,8 +2,8 @@
 
 ## Identity
 
-- Tip: `c4de4b2` — Merge pull request #1 from briansgithub/feature/energy-entry-backup-drive
-- Upstream: `origin/main` (local matches after pull; archive cleanup commit may be ahead until push)
+- Tip: `7239aa0` — Archive energy-entry-backup-drive handoffs after PR #1 merge.
+- Upstream: `origin/main` (local ahead by archive cleanup until push)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
 - Last verified: `2026-07-18`
@@ -14,8 +14,8 @@ Maintain the stable integration branch for future feature work, with permanent h
 
 ## Changes since previous published tip
 
+- `7239aa0`: archived energy handoffs; deleted local/remote `feature/energy-entry-backup-drive`.
 - `c4de4b2` / `ff1c762` / `55ff716`: energy entry → Documents CSV → Google Drive upload; prompt datetime label; MISSED seeds skip Drive.
-- `da84193`: sync main handoff tip after multi-agent chore archive.
 - Earlier: multi-agent docs, Jul 16 empirical cutoff, timezone map, settings UI polish, wind-down gradient, bedtime countdown.
 
 ## Current status
@@ -27,9 +27,8 @@ Maintain the stable integration branch for future feature work, with permanent h
 
 ## Next actions
 
-1. Push this archive/cleanup commit to `origin/main` when authorized.
-2. Owner: display merge commit + visual check; exercise visual check + commit.
-3. Owner: decide whether to delete `audit-git-stash-state` and drop the superseded primary stash.
+1. Owner: display merge commit + visual check; exercise visual check + commit.
+2. Owner: decide whether to delete `audit-git-stash-state` and drop the superseded primary stash.
 
 ## Merge and cleanup
 
