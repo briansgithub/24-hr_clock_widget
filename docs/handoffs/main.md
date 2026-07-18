@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: `4bb4c8a` — docs: archive three branches after merge into main
+- Tip: `1727095` — docs: sync main tip after three-branch archive
 - Upstream: `origin/main` (local ahead; push pending)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
@@ -17,12 +17,12 @@ Maintain the stable integration branch for future feature work, with permanent h
 - Merged `feature/wallpaper-countdown-dirty-rect` (FF on `origin/main` at `9dd5780`).
 - Merged `feature/timezone-map-lock-position` (`2db20b3`).
 - Merged `chore/remove-preview-reset-button` (`3c2f7ca`).
-- Archived all three branch handoffs/histories (`4bb4c8a`).
+- Archived all three branch handoffs/histories (`4bb4c8a`); tip sync `1727095`.
 
 ## Current status
 
-- Clean `main` only after cleanup: no living feature/chore branches; no stashes.
-- Primary worktree only after chore worktree removal.
+- Clean `main` only: no living feature/chore branches; no stashes; primary worktree only.
+- Local ahead of `origin/main` until push.
 
 ## Next actions
 
