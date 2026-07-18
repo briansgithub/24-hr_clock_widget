@@ -1481,6 +1481,7 @@ fun ExerciseMetricsScreen(
 ) {
     val scope = rememberCoroutineScope()
     var anchorDate by remember { mutableStateOf(java.time.LocalDate.now()) }
+    var helpMetricId by remember { mutableStateOf<MetricHelpId?>(null) }
     
     // Calculate week range (Mon to Sun)
     val dayOfWeek = anchorDate.dayOfWeek.value // 1 (Mon) to 7 (Sun)
@@ -1497,6 +1498,13 @@ fun ExerciseMetricsScreen(
         if (weekMetrics.size < 7) {
             fitbitManager.fetchExerciseMetricsForRange(startOfWeek.toString(), endOfWeek.toString())
         }
+    }
+
+    helpMetricId?.let { id ->
+        ExerciseMetricHelpDialog(
+            metricId = id,
+            onDismiss = { helpMetricId = null }
+        )
     }
 
     Column(
@@ -1532,7 +1540,9 @@ fun ExerciseMetricsScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         if (weekMetrics.isEmpty() && exerciseMetrics.isEmpty()) {
-            Text("No exercise data available. Refresh Fitbit data in 'Connect' tab to fetch.")
+            Text("No exercise data available. Refresh Fitbit data in the Sleep tab to fetch.")
+            Spacer(modifier = Modifier.height(16.dp))
+            ExerciseMetricsGlossary(onOpenHelp = { helpMetricId = it })
         } else {
             val latest = if (weekMetrics.isNotEmpty()) weekMetrics.last() else exerciseMetrics.last()
             val alert = ExerciseMetricsCalculator.generateSystemAlert(latest.hrv, latest.hrss, modelSettings.hrvMedicatedBase)
@@ -1549,6 +1559,9 @@ fun ExerciseMetricsScreen(
                     color = if (alert.contains("DEPLETED") || alert.contains("OVERREACHING")) Color(0xFFFF6B6B) else if (alert.contains("OPTIMIZED")) Color(0xFF6BFF6B) else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            ExerciseMetricsGlossary(onOpenHelp = { helpMetricId = it })
             
             Spacer(modifier = Modifier.height(24.dp))
             
@@ -1561,6 +1574,9 @@ fun ExerciseMetricsScreen(
                     .height(350.dp)
                     .background(Color(0xFF121212), shape = MaterialTheme.shapes.medium)
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
+            ExerciseChartLegend(onOpenHelp = { helpMetricId = it })
             
             Spacer(modifier = Modifier.height(24.dp))
             
