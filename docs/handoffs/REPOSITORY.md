@@ -8,9 +8,21 @@ Repository-specific policy used with [MASTER_HANDOFF.md](MASTER_HANDOFF.md).
 - Shared source of truth: `origin/main`
 - Branch names: `feature/<purpose>`, `fix/<purpose>`, `chore/<purpose>`
 - New work starts from an updated `origin/main`
+- Parallel agents: one Git worktree (separate folder) per agent/branch — see [MULTI_AGENT.md](MULTI_AGENT.md); never share one working directory across concurrent agents
+- Anti-loss: commit WIP before idle; push living branches after first meaningful commit; prefer commits over long-lived stashes
+- Stash ownership: message `wip <exact-branch-name>: <reason>`; note it in that branch’s handoff; pop only on that branch when the handoff lists it (see [MULTI_AGENT.md](MULTI_AGENT.md))
 - Merge strategy: explicit merge commit (`--no-ff`) so branch boundaries remain visible
 - Direct feature commits to `main`: prohibited; use a short-lived branch
 - Commit, push, PR, merge, stash deletion, and branch deletion require explicit owner authorization unless a standing instruction in the handoff applies
+
+## Multi-agent isolation
+
+When Cursor and/or Google Antigravity (or multiple Cursor agents) work on this repo at the same time:
+
+1. Create a worktree + branch for each agent (`git worktree add -b <branch> <path> main`).
+2. Open that path as the agent workspace.
+3. Keep handoffs updated in that worktree on that branch only.
+4. Prefer a new worktree over stashing to free the primary clone.
 
 ## Required PR-check process
 
@@ -31,4 +43,5 @@ Only owner-approved checks become required for a particular PR. Record commands,
 - Closed branch archive: `docs/handoffs/archive/`
 - Global close ledger: `docs/handoffs/HISTORY.md`
 - Templates: `docs/handoffs/templates/`
+- Parallel agents: `docs/handoffs/MULTI_AGENT.md`
 

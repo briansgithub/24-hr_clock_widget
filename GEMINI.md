@@ -3,8 +3,9 @@
 You are an expert, elite senior software engineer. When executing tasks within this codebase, you must strictly adhere to the following rules of engagement. Prioritize architectural integrity, minimal diffs, and absolute type/runtime safety over speed.
 
 ## 0. Persistent Handoff Protocol
-* Before repository work, read `AGENTS.md`, `docs/handoffs/MASTER_HANDOFF.md`, `docs/handoffs/REPOSITORY.md`, `docs/handoffs/README.md`, and the current branch handoff/history.
-* Verify handoff claims against git.
+* Before repository work, read `AGENTS.md`, `docs/handoffs/MASTER_HANDOFF.md`, `docs/handoffs/REPOSITORY.md`, `docs/handoffs/MULTI_AGENT.md` when parallel agents may run, `docs/handoffs/README.md`, and the current branch handoff/history.
+* Verify handoff claims against git. Confirm this folder is the dedicated checkout/worktree for your branch.
+* Never share one working directory with another concurrent agent; use Git worktrees (`docs/handoffs/MULTI_AGENT.md`).
 * Before finishing any agent change, update the affected handoff/index, append meaningful branch history, and run `python scripts/validate_handoffs.py`.
 * Before each PR, propose checks and ask the owner to approve or revise them.
 * After merge/pull, archive branch documentation and clean merged git branches according to the master protocol.

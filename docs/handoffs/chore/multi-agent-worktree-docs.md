@@ -2,39 +2,39 @@
 
 ## Identity
 
-- Tip: uncommitted docs on `ead09d4`
-- Parent/base: `main` at `ead09d4`
-- Upstream: none
-- Role: document multi-agent Git worktree isolation
+- Tip: rebasing lean anti-loss + multi-agent docs onto `main` @ `4a9c028`
+- Parent/base: `main`
+- Upstream: none yet
+- Role: multi-agent worktree protocol + lean anti-loss/stash ownership
 - History: [multi-agent-worktree-docs.history.md](multi-agent-worktree-docs.history.md)
 - Last verified: 2026-07-18
 - Worktree: `H:\Desktop\widgets\24-hr_clock_widget-wt-multi-agent-docs`
 
 ## Goal and scope
 
-- Goal: teach Cursor/Antigravity agents to use Git worktrees for parallel work without branch thrash or stash fights.
-- Included: `MULTI_AGENT.md`, protocol/entry-point updates, worktree-aware validator; mirrored portable kit.
+- Goal: teach Cursor/Antigravity agents to use Git worktrees and lean anti-loss/stash ownership without always-read inventory docs.
+- Included: `MULTI_AGENT.md`, protocol/entry points, worktree-aware validator, anti-loss/stash bullets, portable kit mirror.
 - Excluded: application code changes.
-- Acceptance criteria: docs in repo worktree + `H:\Desktop\ai_agent_guides\git-handoff-system`; validators pass.
+- Acceptance criteria: validators pass; docs merged to `main`.
 
 ## Changes since branch creation
 
-- Added `docs/handoffs/MULTI_AGENT.md` and wired through master/repo/`AGENTS.md`/`GEMINI.md`/Cursor rule.
-- Validator requires active index + current branch only; ignores sibling worktree branches; ignores non-repo kit folders.
-- Portable kit updated to match.
+- `MULTI_AGENT.md` + entry-point wiring + worktree-aware validator.
+- Anti-loss + stash ownership bullets; validator parallel-state ledger.
+- Portable kit at `H:\Desktop\ai_agent_guides\git-handoff-system`.
 
 ## Current status
 
-- Validation: worktree validator passed (29 files, 3 indexed branches); portable kit validator passed (11 files).
-- Ready to commit/merge when owner requests.
+- Resolving rebase onto current `main`; then push/merge.
+- Stashes: three paused feature stashes to rename + note in handoffs.
 
 ## Next actions
 
-1. Owner review.
-2. Commit/push/merge on request.
-3. After merge: archive this handoff; `git worktree remove` this path.
+1. Finish rebase, push, merge into `main`.
+2. Reconcile stash messages/handoff notes.
+3. Push living branches and `main`.
 
 ## Merge and cleanup
 
 - PR base: `main`
-- Readiness: ready after owner-approved checks (docs-only)
+- Readiness: ready (docs-only, owner directed)

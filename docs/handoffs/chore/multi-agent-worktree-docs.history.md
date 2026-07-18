@@ -14,3 +14,7 @@ Append-only milestones for this branch. Current state and next actions belong in
 ### 2026-07-18 — Portable kit synchronized
 - Change: Mirrored multi-agent docs and validator into `H:\Desktop\ai_agent_guides\git-handoff-system`.
 - Validation/decision: Portable kit validation passed (11 Markdown files).
+
+### 2026-07-18 — Lean anti-loss and stash ownership
+- Change: Added short anti-loss/stash ownership bullets; validator prints worktrees, unpushed branches, and stash↔branch hints.
+- Validation/decision: No INVENTORY.md; git + validator remain the ledger.
