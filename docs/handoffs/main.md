@@ -2,8 +2,8 @@
 
 ## Identity
 
-- Tip: `f6d625b` — Archive multi-agent docs chore and note compliant stashes.
-- Upstream: `origin/main` (local ahead; push pending)
+- Tip: `da84193` — Sync main handoff tip after multi-agent chore archive.
+- Upstream: `origin/main` (local matches)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
 - Last verified: `2026-07-18`
@@ -14,6 +14,7 @@ Maintain the stable integration branch for future feature work, with permanent h
 
 ## Changes since previous published tip
 
+- `da84193`: sync main handoff tip after multi-agent chore archive.
 - `f6d625b`: archived chore handoff; compliant stash messages noted on paused features.
 - `520511e`: multi-agent worktree protocol + lean anti-loss/stash ownership; worktree-aware validator ledger.
 - `b2de326` / `af95262` / `10787ce`: Jul 16 empirical log cutoff and archive cleanup.
@@ -21,14 +22,15 @@ Maintain the stable integration branch for future feature work, with permanent h
 
 ## Current status
 
-- Living: paused feature branches (compliant stashes + handoff notes), audit worktree.
-- Working tree: clean after chore archive.
-- Local `main` ahead of `origin/main`.
+- Living features (2026-07-18 walkthrough): energy smoke PASSED at `55ff716`; display merge-of-main resolved uncommitted; exercise metric-help product restored uncommitted.
+- `audit-git-stash-state`: tip still `ead09d4`; **not** checked out — Antigravity folder of that name currently has `feature/energy-entry-backup-drive` checked out.
+- Working tree: primary clone may hold inventory handoff refreshes (uncommitted this session).
 
 ## Next actions
 
-1. Owner may push `main` and living feature branches when ready.
-2. Resume stashed feature branches via worktrees as needed (see [MULTI_AGENT.md](MULTI_AGENT.md)).
+1. Owner: push/PR energy first (smoke PASSED).
+2. Owner: authorize display merge commit + visual check; exercise visual check + commit.
+3. Owner: decide whether to delete `audit-git-stash-state` branch / recreate a clean worktree path for energy.
 
 ## Merge and cleanup
 
