@@ -36,6 +36,30 @@ class EmpiricalEnergyManager(private val context: Context) {
     private val okHttpClient = OkHttpClient()
     private val prefs = context.getSharedPreferences("empirical_energy_prefs", Context.MODE_PRIVATE)
 
+    companion object {
+        /**
+         * Earliest allowed empirical energy log: local midnight on 2026-07-16.
+         * Entries before this are dropped on load, save, import, merge, and export.
+         */
+        val EARLIEST_ALLOWED_TIMESTAMP_MS: Long by lazy {
+            Calendar.getInstance().apply {
+                set(Calendar.YEAR, 2026)
+                set(Calendar.MONTH, Calendar.JULY)
+                set(Calendar.DAY_OF_MONTH, 16)
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+        }
+    }
+
+    /** Drop any logs strictly before the Jul 16 2026 cutoff. */
+    fun pruneLogsBeforeCutoff(logs: List<EnergyLog>): List<EnergyLog> {
+        val cutoff = EARLIEST_ALLOWED_TIMESTAMP_MS
+        return logs.filter { it.timestamp >= cutoff }
+    }
+
     // Helper to format ISO timestamps from Fitbit
     private fun parseIsoTimestamp(isoStr: String): Long {
         return try {
@@ -69,12 +93,22 @@ class EmpiricalEnergyManager(private val context: Context) {
         return loadInternalLogs()
     }
 
-    // Load logs directly from internal JSON file
+    // Load logs directly from internal JSON file (purges pre-cutoff entries if present)
     private fun loadInternalLogs(): List<EnergyLog> {
         if (!file.exists()) return emptyList()
         return try {
             val content = file.readText()
-            json.decodeFromString<List<EnergyLog>>(content)
+            val raw = json.decodeFromString<List<EnergyLog>>(content)
+            val pruned = pruneLogsBeforeCutoff(raw)
+            if (pruned.size < raw.size) {
+                Log.i(
+                    "EmpiricalEnergyManager",
+                    "Purged ${raw.size - pruned.size} empirical log(s) before 2026-07-16"
+                )
+                // Local-only persist; next save/sync rewrites public CSV without pre-cutoff rows
+                file.writeText(json.encodeToString(pruned))
+            }
+            pruned
         } catch (e: Exception) {
             Log.e("EmpiricalEnergyManager", "Failed to load energy logs", e)
             emptyList()
@@ -104,12 +138,13 @@ class EmpiricalEnergyManager(private val context: Context) {
         }
     }
 
-    // Save logs to JSON file
+    // Save logs to JSON file (always strips entries before 2026-07-16)
     fun saveLogs(logs: List<EnergyLog>, syncPublic: Boolean = true) {
         try {
-            val content = json.encodeToString(logs)
+            val pruned = pruneLogsBeforeCutoff(logs).sortedBy { it.timestamp }
+            val content = json.encodeToString(pruned)
             file.writeText(content)
-            
+
             if (syncPublic) {
                 val settings = SettingsManager(context)
                 val modelSettings = runBlocking { settings.modelSettingsFlow.first() }
@@ -126,6 +161,10 @@ class EmpiricalEnergyManager(private val context: Context) {
     // Log or update a specific 30-min interval
     fun logEnergy(timestamp: Long, level: Int?) {
         val alignedTs = alignTo30MinInterval(timestamp)
+        if (alignedTs < EARLIEST_ALLOWED_TIMESTAMP_MS) {
+            Log.w("EmpiricalEnergyManager", "Ignoring energy log before 2026-07-16 cutoff")
+            return
+        }
         val logs = loadInternalLogs().toMutableList()
         val index = logs.indexOfFirst { it.timestamp == alignedTs }
 
@@ -183,9 +222,15 @@ class EmpiricalEnergyManager(private val context: Context) {
         cal.add(Calendar.DAY_OF_YEAR, -daysBack)
         cal.set(Calendar.HOUR_OF_DAY, 0)
         cal.set(Calendar.MINUTE, 0)
-        val startTs = alignTo30MinInterval(cal.timeInMillis)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+        // Never synthesize or show intervals before the Jul 16 2026 cutoff
+        val startTs = alignTo30MinInterval(
+            maxOf(cal.timeInMillis, EARLIEST_ALLOWED_TIMESTAMP_MS)
+        )
 
         val endTs = alignTo30MinInterval(System.currentTimeMillis())
+        if (startTs > endTs) return emptyList()
 
         var currentTs = startTs
         while (currentTs <= endTs) {
@@ -202,9 +247,12 @@ class EmpiricalEnergyManager(private val context: Context) {
         return fullHistory.sortedByDescending { it.timestamp }
     }
 
-    // Check if there are any missed (empty) data points outside sleep times
+    /**
+     * Count missed (empty) data points for today only, outside sleep intervals.
+     * Used by the 10:00 PM daily reminder — not a multi-day backlog count.
+     */
     fun getMissedDataPointsCount(): Int {
-        val logs = getFullLogHistory(30)
+        val logs = getFullLogHistory(0) // midnight today → now
         return logs.count { it.energyLevel == null && it.status != "SLEEP_EXCLUDED" }
     }
 
@@ -303,10 +351,11 @@ class EmpiricalEnergyManager(private val context: Context) {
                 }
             }
             
-            if (newLogs.isNotEmpty()) {
-                // Merge with existing internal logs
+            val prunedImport = pruneLogsBeforeCutoff(newLogs)
+            if (prunedImport.isNotEmpty()) {
+                // Merge with existing internal logs (saveLogs also re-applies cutoff)
                 val existing = loadInternalLogs().associateBy { it.timestamp }.toMutableMap()
-                for (log in newLogs) {
+                for (log in prunedImport) {
                     existing[log.timestamp] = log
                 }
                 saveLogs(existing.values.toList().sortedBy { it.timestamp }, syncPublic = false)
@@ -361,7 +410,7 @@ class EmpiricalEnergyManager(private val context: Context) {
                     parsedLogs.add(EnergyLog(ts, level, status))
                 }
             }
-            parsedLogs
+            pruneLogsBeforeCutoff(parsedLogs)
         } catch (e: Exception) {
             Log.e("EmpiricalEnergyManager", "Failed to read logs from public storage", e)
             emptyList()
@@ -386,21 +435,21 @@ class EmpiricalEnergyManager(private val context: Context) {
 
     // Merges internal app logs and public storage CSV logs based on precedence rules
     fun mergeLogs(appLogs: List<EnergyLog>, publicLogs: List<EnergyLog>): MergeResult {
-        val appMap = appLogs.associateBy { it.timestamp }
-        val publicMap = publicLogs.associateBy { it.timestamp }
-        
+        val appMap = pruneLogsBeforeCutoff(appLogs).associateBy { it.timestamp }
+        val publicMap = pruneLogsBeforeCutoff(publicLogs).associateBy { it.timestamp }
+
         val allTimestamps = (appMap.keys + publicMap.keys).sorted()
         val merged = mutableListOf<EnergyLog>()
         val conflicts = mutableListOf<MergeConflict>()
-        
+
         for (ts in allTimestamps) {
             val appLog = appMap[ts]
             val publicLog = publicMap[ts]
-            
+
             if (appLog != null && publicLog != null) {
                 val appVal = appLog.energyLevel
                 val publicVal = publicLog.energyLevel
-                
+
                 if (appVal != null && publicVal != null) {
                     if (appVal == publicVal) {
                         merged.add(appLog)

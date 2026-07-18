@@ -82,7 +82,7 @@ class SettingsManager(private val context: Context) {
             restingHR = 55.0,
             hrvPeakPotential = 71.0,
             hrvMedicatedBase = 30.0,
-            googleDriveUrl = "",
+            googleDriveUrl = ModelSettings.DEFAULT_GOOGLE_DRIVE_WEB_APP_URL,
             localBackupUri = "",
             lastEmpiricalSync = 0L
         )
@@ -216,8 +216,13 @@ data class ModelSettings(
     val restingHR: Double = 55.0,
     val hrvPeakPotential: Double = 71.0,
     val hrvMedicatedBase: Double = 30.0,
-    val googleDriveUrl: String = "",
+    val googleDriveUrl: String = DEFAULT_GOOGLE_DRIVE_WEB_APP_URL,
     val localBackupUri: String = "",
     val lastEmpiricalSync: Long = 0L
-)
+) {
+    companion object {
+        const val DEFAULT_GOOGLE_DRIVE_WEB_APP_URL =
+            "https://script.google.com/macros/s/AKfycby_x-wS3XfqWZSLgmS69OUZDr30xp5KdcNuM3uH78A6hHMs4URCUm22tz48PXdp_bsi/exec"
+    }
+}
 

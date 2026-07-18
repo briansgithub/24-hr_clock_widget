@@ -94,11 +94,33 @@ def validate_active_pairs(
     entries: dict[str, tuple[Path, Path]],
     errors: list[str],
 ) -> None:
-    branches = run_git(root, "for-each-ref", "--format=%(refname:short)", "refs/heads")
-    local_branches = set(branches.stdout.splitlines()) if branches.returncode == 0 else set()
+    """Require handoffs for indexed branches and the current checkout only.
 
-    expected = set(entries) | local_branches
-    for branch in sorted(expected):
+    Other local branches may live in sibling worktrees; their handoff files are
+    not required to exist in this working tree until those branches merge.
+    """
+    inside = run_git(root, "rev-parse", "--is-inside-work-tree")
+    toplevel = run_git(root, "rev-parse", "--show-toplevel")
+    in_repo = (
+        inside.returncode == 0
+        and inside.stdout.strip() == "true"
+        and toplevel.returncode == 0
+        and Path(toplevel.stdout.strip()).resolve() == root.resolve()
+    )
+
+    current_branch = ""
+    local_branches: set[str] = set()
+    if in_repo:
+        current = run_git(root, "branch", "--show-current")
+        current_branch = current.stdout.strip() if current.returncode == 0 else ""
+        branches = run_git(root, "for-each-ref", "--format=%(refname:short)", "refs/heads")
+        local_branches = set(branches.stdout.splitlines()) if branches.returncode == 0 else set()
+
+    required = set(entries)
+    if current_branch:
+        required.add(current_branch)
+
+    for branch in sorted(required):
         handoff, history = entries.get(branch, branch_paths(handoffs, branch))
         if not handoff.is_file():
             errors.append(f"{branch}: missing active handoff {handoff.relative_to(root)}")
@@ -113,6 +135,14 @@ def validate_active_pairs(
             errors.append(f"{branch}: index handoff does not mirror branch path")
         if history.resolve() != expected_history.resolve():
             errors.append(f"{branch}: index history does not mirror branch path")
+
+    if in_repo:
+        for branch in sorted(local_branches - required):
+            print(
+                f"note: local branch `{branch}` not required in this worktree's "
+                f"active index (ok when owned by another worktree)",
+                file=sys.stderr,
+            )
 
 
 def validate_archive_pairs(root: Path, handoffs: Path, errors: list[str]) -> None:
@@ -133,6 +163,100 @@ def validate_archive_pairs(root: Path, handoffs: Path, errors: list[str]) -> Non
             peer = relative.removesuffix(".md") + ".history.md"
         if peer not in files:
             errors.append(f"archive/{relative}: missing paired archive file {peer}")
+
+
+def report_parallel_state(
+    root: Path,
+    handoffs: Path,
+    entries: dict[str, tuple[Path, Path]],
+) -> None:
+    """Print worktree / tracking / stash hints (ledger via git, not a new doc)."""
+    inside = run_git(root, "rev-parse", "--is-inside-work-tree")
+    toplevel = run_git(root, "rev-parse", "--show-toplevel")
+    in_repo = (
+        inside.returncode == 0
+        and inside.stdout.strip() == "true"
+        and toplevel.returncode == 0
+        and Path(toplevel.stdout.strip()).resolve() == root.resolve()
+    )
+    if not in_repo:
+        return
+
+    print("Parallel-state ledger (git):")
+    worktrees = run_git(root, "worktree", "list", "--porcelain")
+    if worktrees.returncode == 0 and worktrees.stdout.strip():
+        path = branch = None
+        for line in worktrees.stdout.splitlines():
+            if line.startswith("worktree "):
+                path = line[len("worktree ") :]
+            elif line.startswith("branch "):
+                ref = line[len("branch ") :]
+                branch = ref.removeprefix("refs/heads/") if ref.startswith("refs/") else ref
+            elif line == "":
+                if path:
+                    label = branch or "(detached)"
+                    print(f"- worktree: {path} -> {label}")
+                path = branch = None
+        if path:
+            print(f"- worktree: {path} -> {branch or '(detached)'}")
+    else:
+        listing = run_git(root, "worktree", "list")
+        for line in listing.stdout.splitlines():
+            print(f"- worktree: {line}")
+
+    branches = run_git(
+        root,
+        "for-each-ref",
+        "--format=%(refname:short)%09%(upstream:short)%09%(upstream:track)",
+        "refs/heads",
+    )
+    if branches.returncode == 0:
+        for line in branches.stdout.splitlines():
+            name, upstream, track = (line.split("\t") + ["", ""])[:3]
+            if name == "main":
+                continue
+            if not upstream:
+                print(f"- warning: branch `{name}` has no upstream (push with -u to back up)")
+            elif track:
+                print(f"- note: branch `{name}` tracking {upstream} {track}".rstrip())
+
+    stash = run_git(root, "stash", "list")
+    if stash.returncode != 0 or not stash.stdout.strip():
+        print("- stash: (none)")
+        return
+
+    print("- stash entries:")
+    wip_msg = re.compile(r"^wip\s+(?P<branch>[^:]+):\s*(?P<reason>.+)$", re.I)
+    for line in stash.stdout.splitlines():
+        # stash@{N}: On <branch>: <rest>  OR  stash@{N}: WIP on <branch>: <rest>
+        print(f"  - {line}")
+        body = line.split(": ", 1)[-1] if ": " in line else line
+        # Prefer explicit wip <branch>: format inside the message tail
+        named = None
+        for part in (body, line):
+            match = wip_msg.search(part)
+            if match:
+                named = match.group("branch").strip()
+                break
+        if named is None:
+            on_match = re.search(r"^(?:WIP on|On)\s+(\S+):", body)
+            if on_match:
+                named = on_match.group(1)
+                print(
+                    f"    hint: rename to `wip {named}: <reason>` for ownership clarity"
+                )
+        if not named:
+            print("    warning: stash message missing `wip <branch>: <reason>` ownership format")
+            continue
+        handoff, _history = entries.get(named, branch_paths(handoffs, named))
+        if not handoff.is_file():
+            print(f"    warning: no active handoff file for stash branch `{named}` in this checkout")
+            continue
+        text = handoff.read_text(encoding="utf-8", errors="replace")
+        if named not in text and "stash" not in text.lower():
+            print(
+                f"    warning: handoff `{handoff.relative_to(root)}` does not mention stash/`{named}`"
+            )
 
 
 def resolve_base_ref(root: Path, explicit: str | None) -> str | None:
@@ -181,6 +305,7 @@ def main() -> int:
         root / "AGENTS.md",
         handoffs / "MASTER_HANDOFF.md",
         handoffs / "REPOSITORY.md",
+        handoffs / "MULTI_AGENT.md",
         handoffs / "README.md",
         handoffs / "HISTORY.md",
         handoffs / "templates" / "BRANCH_HANDOFF.md",
@@ -200,6 +325,7 @@ def main() -> int:
     validate_append_only(
         root, markdown_files, resolve_base_ref(root, args.base_ref), errors
     )
+    report_parallel_state(root, handoffs, entries)
 
     if errors:
         print("Handoff validation failed:")
