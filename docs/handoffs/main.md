@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: `3b5bb18` — Finalize main tip after audit branch close.
+- Tip: `1f3764e` — Merge pull request #5 from briansgithub/feature/display-tab-lock-first
 - Upstream: `origin/main` (matches)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
@@ -14,19 +14,17 @@ Maintain the stable integration branch for future feature work, with permanent h
 
 ## Changes since previous published tip
 
-- `3b5bb18`: Finalize main tip after audit branch close.
-- Closed `audit-git-stash-state` without merge; archived its handoff.
-- Earlier: exercise/display/energy PRs #3–#1 archived.
+- `1f3764e` / `0c07664`: Merged display Lock-first + light-gray Reset (PRs #5 / #4).
+- Earlier: audit close; exercise/display/energy PRs #3–#1 archived.
 
 ## Current status
 
-- Living feature: `feature/display-tab-lock-first` ([PR #4](https://github.com/briansgithub/24-hr_clock_widget/pull/4) merge-ready).
-- No stashes.
+- Clean `main` only: no living feature branches; no stashes.
 - Primary worktree only.
 
 ## Next actions
 
-1. Finish / review `feature/display-tab-lock-first`, then return `main` to integration-only.
+1. Start the next feature from updated `origin/main` in a dedicated worktree when needed.
 
 ## Merge and cleanup
 

@@ -99,3 +99,9 @@ Disposition phrases: `merged into main`, `superseded` (commits landed via descen
 - Merge / PR: none (placeholder; tip already on `main` history)
 - Summary: Deleted local/remote audit worktree placeholder after feature cleanup; no unique commits.
 - Archive: `archive/audit-git-stash-state.md`
+
+### 2026-07-18 — `feature/display-tab-lock-first` → merged into `main`
+- Final tip: `a7f45ac`
+- Merge / PR: `0c07664` / https://github.com/briansgithub/24-hr_clock_widget/pull/4 ; `1f3764e` / https://github.com/briansgithub/24-hr_clock_widget/pull/5
+- Summary: Lock Screen first/default on Display; light-gray Reset to Defaults buttons (Display + preview).
+- Archive: `archive/feature/display-tab-lock-first.md`
