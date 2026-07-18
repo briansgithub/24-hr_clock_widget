@@ -8,14 +8,14 @@ Last verified: 2026-07-18
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | ahead of `origin/main` after bedtime merge `52444d9` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
-| `feature/android-settings-ui-polish` | WIP in stash | Feature: settings UI polish (paused) | [handoff](feature/android-settings-ui-polish.md) | [history](feature/android-settings-ui-polish.history.md) |
+| `main` | ahead of `origin/main` (includes bedtime + wind-down) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `feature/android-settings-ui-polish` | Switch + Display icons only (uncommitted) | Feature: minimal settings toggle polish | [handoff](feature/android-settings-ui-polish.md) | [history](feature/android-settings-ui-polish.history.md) |
 | `feature/energy-entry-backup-drive` | WIP in stash | Feature: Drive backup on energy entry (paused) | [handoff](feature/energy-entry-backup-drive.md) | [history](feature/energy-entry-backup-drive.history.md) |
 
 ## Current merge order
 
-1. `feature/android-settings-ui-polish` -> `main` (restore stash to resume)
-2. `feature/energy-entry-backup-drive` -> `main` (restore stash to resume)
+1. `feature/android-settings-ui-polish` → `main` (current focus)
+2. `feature/energy-entry-backup-drive` → `main` (restore stash to resume)
 
 Recently archived: `feature/bedtime-countdown-10pm-floor` (merged). Earlier: `chore/portable-handoff-kit`, `feature/dynamic-sun-color`, `feature/empirical-public-priority` (merged); `feature/empirical-energy-logging` (superseded).
 
