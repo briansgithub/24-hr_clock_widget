@@ -81,3 +81,9 @@ Disposition phrases: `merged into main`, `superseded` (commits landed via descen
 - Merge / PR: `c4de4b2` / https://github.com/briansgithub/24-hr_clock_widget/pull/1
 - Summary: Real-time Google Drive sync after user energy entry; prompt datetime label; MISSED seeds skip Drive.
 - Archive: `archive/feature/energy-entry-backup-drive.md`
+
+### 2026-07-18 — `feature/display-tab-home-lock-ux` → merged into `main`
+- Final tip: `354a8db`
+- Merge / PR: `cd4f97d` / https://github.com/briansgithub/24-hr_clock_widget/pull/2
+- Summary: Display Home/Lock UX — remove Preview button; tab-scoped Reset; Home/Lock tab icons.
+- Archive: `archive/feature/display-tab-home-lock-ux.md`
