@@ -8,12 +8,14 @@ Last verified: 2026-07-18
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | ahead of `origin/main` after timezone map merge `f0ee7c5` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `main` | ahead of `origin/main` at `ead09d4` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `feature/display-tab-home-lock-ux` | uncommitted WIP | Feature: Display Home/Lock tab UX | [handoff](feature/display-tab-home-lock-ux.md) | [history](feature/display-tab-home-lock-ux.history.md) |
 | `feature/energy-entry-backup-drive` | WIP in stash | Feature: Drive backup on energy entry (paused) | [handoff](feature/energy-entry-backup-drive.md) | [history](feature/energy-entry-backup-drive.history.md) |
 
 ## Current merge order
 
-1. `feature/energy-entry-backup-drive` → `main` (restore stash to resume)
+1. `feature/display-tab-home-lock-ux` → `main`
+2. `feature/energy-entry-backup-drive` → `main` (restore stash to resume)
 
 Recently archived: `feature/timezone-mercator-map` (merged). Earlier: `feature/android-settings-ui-polish`, `feature/bedtime-countdown-10pm-floor`, `chore/portable-handoff-kit`, `feature/dynamic-sun-color`, `feature/empirical-public-priority` (merged); `feature/empirical-energy-logging` (superseded).
 

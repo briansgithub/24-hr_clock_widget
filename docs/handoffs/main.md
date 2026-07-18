@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: `66486ed` — Archive timezone-mercator-map handoffs after merge.
+- Tip: `ead09d4` — Sync main handoff tip after timezone map archive.
 - Upstream: `origin/main` (local ahead; push pending owner request)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
@@ -18,17 +18,19 @@ Maintain the stable integration branch for future feature work, with permanent h
 - `dea5ea7`: wind-down wedge gradient `#5C5C5C` → `#111111`.
 - `c13f36a`: merged settings Switch toggles + Display element glyphs.
 - `f0ee7c5`: merged equirectangular timezone world map + location dot.
+- `ead09d4`: timezone map handoff archive + tip sync.
 
 ## Current status
 
-- Living branches: `main`, `feature/energy-entry-backup-drive` (stashed WIP).
-- Working tree: post-merge handoff archive in progress.
+- Living branches: `main`, `feature/display-tab-home-lock-ux` (active), `feature/energy-entry-backup-drive` (stashed WIP).
+- Working tree: clean on `main` tip; Display UX work is on the feature branch.
 - Local `main` ahead of `origin/main`; not pushed yet.
 
 ## Next actions
 
 1. Owner may push `main` when ready.
-2. Resume stashed `feature/energy-entry-backup-drive` as needed.
+2. Merge `feature/display-tab-home-lock-ux` when ready.
+3. Resume stashed `feature/energy-entry-backup-drive` as needed.
 
 ## Merge and cleanup
 
