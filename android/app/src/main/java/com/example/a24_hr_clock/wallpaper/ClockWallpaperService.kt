@@ -98,6 +98,7 @@ class ClockWallpaperService : WallpaperService() {
             locationManager = LocationManager(applicationContext)
             // Initial default location (will be updated)
             celestialManager = CelestialManager(40.7128, -74.0060) // NYC
+            renderer.ensureMapBitmap(applicationContext.resources)
             
             updateLockState()
             startDataUpdates()
@@ -399,6 +400,9 @@ class ClockWallpaperService : WallpaperService() {
                     showManualWake = currentSettings.showManualWake,
                     manualWakeTime = modelSettings.manualWakeTime,
                     showWakeSunriseInfo = currentSettings.showWakeSunriseInfo,
+                    showTimezoneMap = currentSettings.showTimezoneMap,
+                    userLatitude = celestialManager.latitude,
+                    userLongitude = celestialManager.longitude,
                     showBathyphase = currentSettings.showBathyphase,
                     showAcrophase = currentSettings.showAcrophase,
                     showGrogginess = currentSettings.showGrogginess,
