@@ -8,7 +8,7 @@ Last verified: 2026-07-18
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | `cd4f97d` + display archive cleanup | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `main` | `82b9866` = `origin/main` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
 | `feature/exercise-metric-help` | based on older main + uncommitted metric-help restore | Feature: Exercise HRSS/TRIMP/HRV help | [handoff](feature/exercise-metric-help.md) | [history](feature/exercise-metric-help.history.md) |
 | `audit-git-stash-state` | tip `ead09d4`; cleanup candidate (do not merge) | Audit/worktree | [handoff](audit-git-stash-state.md) | [history](audit-git-stash-state.history.md) |
 
