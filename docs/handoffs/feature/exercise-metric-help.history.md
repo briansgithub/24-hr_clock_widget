@@ -25,3 +25,8 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Commit/base: product `c24547e`; merge `e041101` onto `origin/main` `cd755b3`
 - Change: Restored metric-help product files; committed; merged energy/display main history.
 - Validation/decision: Owner authorized commit/push/PR after visual check.
+
+### 2026-07-18 — PR #3 opened
+- Commit/base: tip `e0a08f1`; PR https://github.com/briansgithub/24-hr_clock_widget/pull/3
+- Change: Pushed branch and opened PR into `main`.
+- Validation/decision: Owner authorized push/PR.
