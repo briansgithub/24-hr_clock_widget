@@ -64,6 +64,20 @@ git worktree list
 - **Google Antigravity / Gemini:** point the agent at the worktree folder (Antigravity often creates worktrees under its own path—treat that folder as the workspace and keep handoffs updated there).
 - Keep `AGENTS.md` / `GEMINI.md` / `.cursor/rules/` in the repo so every worktree inherits the same protocol after checkout.
 
+## Android Studio (Android apps)
+
+Git allows only one checkout of a given branch. If a worktree already has `feature/foo`, Android Studio’s branch switcher in another folder will fail with “already used by worktree…”.
+
+**Smoother device-run workflow:**
+
+1. Treat each worktree as a **separate Android Studio project** — `File → Open` the worktree folder (e.g. `…/repo-wt-foo`), do not open the primary clone and try to check out that branch.
+2. After creating a worktree, copy gitignored local machine files the build needs (especially `local.properties` with the Android SDK path) from the primary clone into the new folder.
+3. Expect the **first** open/sync of a new worktree to be slow (Gradle + indexes). Later opens via *Recent Projects* are usually much faster; `~/.gradle` is shared across projects.
+4. Prefer **one** Android Studio window for the branch you are flashing to a device; leave agents editing in Cursor/Antigravity on their worktree paths.
+5. Use the primary clone in Android Studio only for the default branch (e.g. `main`), or when no other worktree holds the branch you need.
+
+**Do not:** switch branches inside one Android Studio window to reach a branch already checked out in another worktree.
+
 ## What not to do
 
 - Do not tell Agent B to `git checkout` Agent A’s branch in the same folder.
