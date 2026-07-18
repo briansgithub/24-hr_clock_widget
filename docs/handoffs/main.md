@@ -2,8 +2,8 @@
 
 ## Identity
 
-- Tip: `a57c752` — docs: record finalized main tip SHA
-- Upstream: `origin/main` (local ahead; push pending)
+- Tip: `30b70a8` — docs: align main handoff tip to a57c752
+- Upstream: `origin/main` (matches)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
 - Last verified: `2026-07-18`
@@ -17,12 +17,12 @@ Maintain the stable integration branch for future feature work, with permanent h
 - Merged `feature/wallpaper-countdown-dirty-rect` (FF on `origin/main` at `9dd5780`).
 - Merged `feature/timezone-map-lock-position` (`2db20b3`).
 - Merged `chore/remove-preview-reset-button` (`3c2f7ca`).
-- Archived all three branch handoffs/histories (`4bb4c8a`); tip at `a57c752`.
+- Archived all three branch handoffs/histories; tip `30b70a8` synced to `origin/main`.
 
 ## Current status
 
 - Clean `main` only: no living feature/chore branches; no stashes; primary worktree only.
-- Local ahead of `origin/main` until push.
+- Matches `origin/main`.
 
 ## Next actions
 
