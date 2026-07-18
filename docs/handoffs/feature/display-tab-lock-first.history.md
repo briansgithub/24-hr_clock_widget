@@ -13,6 +13,6 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Validation/decision: Pending owner visual check on device.
 
 ### 2026-07-18 — Commit and PR
-- Commit/base: pending on this branch
+- Commit/base: `d1f3e29`
 - Change: Committing Display Lock-first tab UX + handoffs; opening PR to `main`.
 - Validation/decision: Proposed checks — `python scripts/validate_handoffs.py`; manual Display visual check.
