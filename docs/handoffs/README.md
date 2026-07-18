@@ -8,12 +8,14 @@ Last verified: 2026-07-18
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | `b135a9d` = `origin/main` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
-| `feature/wallpaper-countdown-dirty-rect` | `75f5d9b` ahead of `b135a9d` | Dirty-rect 1 Hz wallpaper countdown + notification header cleanup | [handoff](feature/wallpaper-countdown-dirty-rect.md) | [history](feature/wallpaper-countdown-dirty-rect.history.md) |
+| `main` | local `b135a9d`; `origin/main` = `9dd5780` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `feature/wallpaper-countdown-dirty-rect` | `9dd5780` = `origin/main` | Dirty-rect 1 Hz wallpaper countdown + notification header cleanup | [handoff](feature/wallpaper-countdown-dirty-rect.md) | [history](feature/wallpaper-countdown-dirty-rect.history.md) |
+| `feature/timezone-map-lock-position` | ahead of `9dd5780` | Timezone map fixed lock-screen position on home/lock | [handoff](feature/timezone-map-lock-position.md) | [history](feature/timezone-map-lock-position.history.md) |
 
 ## Current merge order
 
 1. `feature/wallpaper-countdown-dirty-rect`
+2. `feature/timezone-map-lock-position`
 
 Parallel agents must use separate Git worktrees — see [MULTI_AGENT.md](MULTI_AGENT.md).
 
