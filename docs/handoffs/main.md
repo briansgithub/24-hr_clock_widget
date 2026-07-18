@@ -2,8 +2,8 @@
 
 ## Identity
 
-- Tip: `ed22464` — Merge pull request #3 from briansgithub/feature/exercise-metric-help
-- Upstream: `origin/main` (local matches after pull; archive cleanup may be ahead until push)
+- Tip: `4ca26e5` — Archive exercise-metric-help handoffs after PR #3 merge.
+- Upstream: `origin/main` (ahead until push)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
 - Last verified: `2026-07-18`

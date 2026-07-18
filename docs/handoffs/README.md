@@ -8,7 +8,7 @@ Last verified: 2026-07-18
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | `ed22464` + exercise archive cleanup | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `main` | `4ca26e5` (exercise archived; push pending) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
 | `audit-git-stash-state` | tip `ead09d4`; cleanup candidate (do not merge) | Audit/worktree | [handoff](audit-git-stash-state.md) | [history](audit-git-stash-state.history.md) |
 
 ## Current merge order
