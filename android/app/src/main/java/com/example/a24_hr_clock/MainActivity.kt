@@ -1470,8 +1470,6 @@ fun ExerciseMetricsScreen(
 
         if (weekMetrics.isEmpty() && exerciseMetrics.isEmpty()) {
             Text("No exercise data available. Refresh Fitbit data in the Sleep tab to fetch.")
-            Spacer(modifier = Modifier.height(16.dp))
-            ExerciseMetricsGlossary(onOpenHelp = { helpMetricId = it })
         } else {
             val latest = if (weekMetrics.isNotEmpty()) weekMetrics.last() else exerciseMetrics.last()
             val alert = ExerciseMetricsCalculator.generateSystemAlert(latest.hrv, latest.hrss, modelSettings.hrvMedicatedBase)
@@ -1489,9 +1487,6 @@ fun ExerciseMetricsScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-            ExerciseMetricsGlossary(onOpenHelp = { helpMetricId = it })
-            
             Spacer(modifier = Modifier.height(24.dp))
             
             DualAxisChart(

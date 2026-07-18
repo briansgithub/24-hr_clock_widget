@@ -32,7 +32,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.a24_hr_clock.logic.MetricHelpContent
 import com.example.a24_hr_clock.logic.MetricHelpId
@@ -106,33 +105,6 @@ fun ExerciseMetricHelpDialog(
 }
 
 @Composable
-fun ExerciseMetricsGlossary(
-    onOpenHelp: (MetricHelpId) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(modifier = modifier.fillMaxWidth()) {
-        Text(
-            text = "Metrics glossary",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            MetricHelpContent.entries.forEach { entry ->
-                MetricHelpChip(
-                    label = entry.shortName,
-                    onClick = { onOpenHelp(entry.id) },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-    }
-}
-
-@Composable
 fun ExerciseChartLegend(
     onOpenHelp: (MetricHelpId) -> Unit,
     modifier: Modifier = Modifier
@@ -162,34 +134,6 @@ fun ExerciseChartLegend(
                 onClick = { onOpenHelp(MetricHelpId.TRIMP) }
             )
         }
-    }
-}
-
-@Composable
-private fun MetricHelpChip(
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(vertical = 8.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.width(4.dp))
-        Icon(
-            imageVector = Icons.Default.Info,
-            contentDescription = "About $label",
-            modifier = Modifier.size(16.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
     }
 }
 

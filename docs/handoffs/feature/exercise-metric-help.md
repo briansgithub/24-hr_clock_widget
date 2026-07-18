@@ -12,9 +12,9 @@
 ## Goal and scope
 
 - Goal: Define HRSS, TRIMP, and HRV on the Exercise tab at elementary, intermediate, and advanced levels so users can understand readiness jargon.
-- Included: App-accurate help copy; glossary chips + 3-level help dialog; chart legend with info taps; fix empty-state tab name (Sleep, not Connect).
-- Excluded: Full Exercise redesign; status-copy rewrite; summary tiles; theme-aware chart; baseline slider help.
-- Acceptance criteria: Each of HRSS/TRIMP/HRV opens help with three selectable levels; chart legend present; empty state points to Sleep tab.
+- Included: App-accurate help copy; chart legend (below graph) with info taps opening 3-level help dialog; fix empty-state tab name (Sleep, not Connect).
+- Excluded: Separate metrics glossary row above the chart; full Exercise redesign; status-copy rewrite; summary tiles; theme-aware chart; baseline slider help.
+- Acceptance criteria: Each of HRSS/TRIMP/HRV is reachable from the legend below the graph with three selectable help levels; empty state points to Sleep tab.
 
 ## Changes since branch creation
 
