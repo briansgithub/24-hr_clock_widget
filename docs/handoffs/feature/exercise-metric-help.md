@@ -2,9 +2,9 @@
 
 ## Identity
 
-- Tip: uncommitted — Exercise tab metric glossary help
-- Parent/base: `main` at `ead09d4`
-- Upstream: none
+- Tip: `e041101` — merge of `origin/main` onto feature (product `c24547e`)
+- Parent/base: `main` at `cd755b3` (0 behind)
+- Upstream: `origin/feature/exercise-metric-help` (push pending)
 - Role: feature
 - History: [exercise-metric-help.history.md](exercise-metric-help.history.md)
 - Last verified: `2026-07-18`
@@ -18,24 +18,24 @@
 
 ## Changes since branch creation
 
-- Uncommitted: `MetricHelpContent` with three-level copy; `ExerciseMetricHelp` glossary/dialog/legend; `ExerciseMetricsScreen` wired; empty-state points to Sleep tab.
+- `c24547e`: `MetricHelpContent.kt`, `ExerciseMetricHelp.kt`, `MainActivity` ExerciseMetricsScreen wiring.
+- `e041101`: merged current `main` (energy + display already on main).
 
 ## Current status
 
-- Working tree: clean on branch tip; implementation WIP is in stash (paused)
-- Base relationship: branched from `main` `ead09d4`
-- Validation: `python scripts/validate_handoffs.py` passed (2026-07-18) before stash
-- Risks/blockers: none known
-- Stashes: `wip feature/exercise-metric-help: pause before empirical-log-cutoff` (code + related handoff edits); restore onto this branch only
+- Working tree: clean product; handoff refresh in this commit.
+- Owner visual check: PASSED (authorized commit/push/PR).
+- Stashes: `stash@{1}` still holds original exercise WIP (product restored); drop when owner confirms. `stash@{0}` is unrelated main inventory stash.
 
 ## Next actions
 
-1. Restore stash onto `feature/exercise-metric-help`, then owner visual check.
-2. Commit when requested; then PR into `main`.
+1. Push + open PR into `main`.
+2. After merge: archive handoff/history, update HISTORY/index, delete local/remote branch.
+3. Owner: authorize `git stash drop` for exercise stash when satisfied.
 
 ## Merge and cleanup
 
 - PR base: `main`
-- Readiness: in progress
+- Readiness: ready for push/PR
 - Required predecessor: none
-- After merge: append closure history, archive this file and its history, update global HISTORY/index, then delete local/remote branch after reachability verification.
+- After merge to main: append closure history, archive this file and its history, update global HISTORY/index, then delete local/remote branch after reachability verification.
