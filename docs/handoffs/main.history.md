@@ -36,3 +36,8 @@ Append-only milestones for `main`. Current state and next actions belong in [mai
 - Commit/base: tip `412e961`; merge `c13f36a`
 - Change: Switch toggles for settings; Canvas glyphs on Display Settings rows; archived feature handoff.
 - Validation/decision: Owner requested commit and merge; push not requested.
+
+### 2026-07-18 — Merged timezone world map
+- Commit/base: tip `7908253`; merge `f0ee7c5`
+- Change: Equirectangular timezone map with meridian + location dot; archived feature handoff.
+- Validation/decision: Owner requested commit and merge; push not requested.
