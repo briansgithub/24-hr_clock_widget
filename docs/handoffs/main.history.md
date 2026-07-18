@@ -80,3 +80,8 @@ Append-only milestones for `main`. Current state and next actions belong in [mai
 - Commit/base: tip `ead09d4` (ancestor of `main`)
 - Change: Deleted local/remote placeholder branch; archived handoff as closed-without-merge.
 - Validation/decision: Owner authorized deletion after feature cleanup.
+
+### 2026-07-18 — Merged display Lock-first + gray Reset (PRs #4/#5)
+- Commit/base: tip `a7f45ac`; merges `0c07664` (PR #4), `1f3764e` (PR #5)
+- Change: Lock Screen first/default on Display; light-gray Reset buttons; archived feature handoff.
+- Validation/decision: Owner visual check confirmed; merge and post-merge cleanup authorized.

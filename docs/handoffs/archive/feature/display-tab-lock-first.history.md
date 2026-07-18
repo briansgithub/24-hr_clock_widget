@@ -26,3 +26,8 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Commit/base: `fa2582a`
 - Change: Display and preview “Reset to Defaults” buttons use light gray (`#BDBDBD`) with dark content; owner confirmed visual check and authorized commit/push/merge.
 - Validation/decision: Owner: “it’s all good”; merge PR #4 after push.
+
+### 2026-07-18 — Merged into main (PR #4 + #5)
+- Commit/base: feature tip `a7f45ac`; merges `0c07664` (PR #4 Lock-first), `1f3764e` (PR #5 gray Reset)
+- Change: Lock-first Display tabs and light-gray Reset buttons landed on `main`; closing branch for archive.
+- Validation/decision: Owner authorized commit/push/merge; gray commits followed via PR #5 after #4 merged early.
