@@ -385,12 +385,6 @@ fun MainScreen(
                     userLongitude = deviceLongitude,
                     title = if (previewIsLockScreen) "Lock Screen (Tap to toggle)" else "Home Screen (Tap to toggle)",
                     showSetWallpaper = true,
-                    onReset = {
-                        scope.launch {
-                            if (previewIsLockScreen) settingsManager.resetLockSettings()
-                            else settingsManager.resetHomeSettings()
-                        }
-                    },
                     modifier = Modifier.clickable { previewIsLockScreen = !previewIsLockScreen }
                 )
                 Screen.CALENDAR -> CalendarSettingsScreen(
@@ -477,7 +471,6 @@ fun ClockPreviewScreen(
     userLongitude: Double? = null,
     title: String = "Home Screen Preview",
     showSetWallpaper: Boolean = true,
-    onReset: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -567,21 +560,6 @@ fun ClockPreviewScreen(
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (onReset != null) {
-                Button(
-                    onClick = onReset,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFBDBDBD),
-                        contentColor = Color(0xFF212121)
-                    )
-                ) {
-                    Icon(Icons.Default.Refresh, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Reset to defaults")
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
             if (showSetWallpaper) {
                 Button(
                     onClick = {
