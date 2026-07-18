@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: `1f3764e` — Merge pull request #5 from briansgithub/feature/display-tab-lock-first
+- Tip: `7a08775` — docs: archive display-tab-lock-first after PRs #4 and #5
 - Upstream: `origin/main` (matches)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
@@ -14,7 +14,8 @@ Maintain the stable integration branch for future feature work, with permanent h
 
 ## Changes since previous published tip
 
-- `1f3764e` / `0c07664`: Merged display Lock-first + light-gray Reset (PRs #5 / #4).
+- `7a08775`: Archived `feature/display-tab-lock-first` after PRs #4/#5.
+- `1f3764e` / `0c07664`: Merged display Lock-first + light-gray Reset.
 - Earlier: audit close; exercise/display/energy PRs #3–#1 archived.
 
 ## Current status
