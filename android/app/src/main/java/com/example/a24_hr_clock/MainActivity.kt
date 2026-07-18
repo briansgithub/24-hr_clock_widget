@@ -485,7 +485,7 @@ fun ClockPreviewScreen(
     
     LaunchedEffect(Unit) {
         while(true) {
-            delay(10000) // Update every 10s for preview
+            delay(10000) // Match wallpaper cadence; countdown does not force 1s redraws
             tick = System.currentTimeMillis()
         }
     }
@@ -543,6 +543,8 @@ fun ClockPreviewScreen(
                     manualWakeTime = modelSettings.manualWakeTime,
                     showWakeSunriseInfo = settings.showWakeSunriseInfo,
                     showGrogginess = settings.showGrogginess,
+                    showWindDown = settings.showWindDown,
+                    showBedtimeCountdown = settings.showBedtimeCountdown,
                     isPreview = true,
                     previewIsLockScreen = title.contains("Lock Screen")
                 )
@@ -858,6 +860,12 @@ fun DisplaySettingsScreen(
         }
         SettingToggle("Grogginess Wedge", currentSettings.showGrogginess) {
             updateFunc(currentSettings.copy(showGrogginess = it))
+        }
+        SettingToggle("Wind-down Wedge", currentSettings.showWindDown) {
+            updateFunc(currentSettings.copy(showWindDown = it))
+        }
+        SettingToggle("Bedtime Countdown", currentSettings.showBedtimeCountdown) {
+            updateFunc(currentSettings.copy(showBedtimeCountdown = it))
         }
 
         Spacer(modifier = Modifier.height(16.dp))
