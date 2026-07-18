@@ -13,6 +13,10 @@ class ClockRenderer {
 
     private var timezoneMapBitmap: Bitmap? = null
 
+    /** Last countdown bounds from a full [draw] pass; used by the wallpaper 1 Hz dirty path. */
+    var lastCountdownDrawResult: CountdownDrawResult? = null
+        private set
+
     private val mapPaint = Paint().apply {
         isAntiAlias = true
         isFilterBitmap = true
@@ -205,6 +209,7 @@ class ClockRenderer {
     ) {
         // Clear background to OLED black
         canvas.drawColor(Color.BLACK)
+        lastCountdownDrawResult = null
 
         if (showLifeCalendar) {
             lifeCalendarRenderer.draw(canvas, width, height)
@@ -470,7 +475,7 @@ class ClockRenderer {
         if (showBedtimeCountdown) {
             val bedtimeMillis = com.example.a24_hr_clock.logic.BedtimeNotificationManager.resolveBedtimeMillis(sleepLogs)
             if (bedtimeMillis != null) {
-                drawBedtimeCountdown(
+                lastCountdownDrawResult = drawBedtimeCountdown(
                     canvas, width, height, bedtimeMillis, smallTopRight,
                     clockCenterX = centerX, clockCenterY = centerY, clockRadius = radius
                 )
@@ -723,7 +728,20 @@ class ClockRenderer {
         return Color.rgb(r, g, b)
     }
 
-    private fun drawBedtimeCountdown(
+    /** Result of drawing or laying out the bedtime countdown overlay. */
+    data class CountdownDrawResult(
+        /** Axis-aligned bounds of the current countdown stack (content, not including prior frame). */
+        val contentDirty: Rect,
+        val isOverdue: Boolean,
+        /** True when [contentDirty] overlaps the clock face — partial black clears are unsafe. */
+        val intersectsClock: Boolean
+    )
+
+    /**
+     * Layout + draw bedtime countdown. Returns dirty bounds for partial (1 Hz) updates.
+     * When [clearRect] is non-null, fills that rect with black before drawing (dirty-rect path).
+     */
+    fun drawBedtimeCountdown(
         canvas: Canvas,
         width: Int,
         height: Int,
@@ -731,8 +749,81 @@ class ClockRenderer {
         smallTopRight: Boolean,
         clockCenterX: Float,
         clockCenterY: Float,
+        clockRadius: Float,
+        clearRect: Rect? = null
+    ): CountdownDrawResult {
+        val layout = layoutBedtimeCountdown(
+            width, height, bedtimeMillis, smallTopRight,
+            clockCenterX, clockCenterY, clockRadius
+        )
+        if (clearRect != null) {
+            canvas.drawRect(clearRect, countdownClearPaint)
+        }
+        canvas.drawText("Bedtime", layout.x, layout.labelBaseline, layout.labelPaint)
+        canvas.drawText(layout.countdownStr, layout.x, layout.countdownBaseline, layout.countdownPaint)
+        if (!layout.isOverdue) {
+            canvas.drawText(layout.targetStr, layout.x, layout.targetBaseline, layout.targetPaint)
+        }
+        return CountdownDrawResult(layout.contentDirty, layout.isOverdue, layout.intersectsClock)
+    }
+
+    /** Measure countdown bounds without drawing (for dirty-rect lock planning). */
+    fun measureBedtimeCountdown(
+        width: Int,
+        height: Int,
+        bedtimeMillis: Long,
+        smallTopRight: Boolean,
+        clockCenterX: Float,
+        clockCenterY: Float,
         clockRadius: Float
-    ) {
+    ): CountdownDrawResult {
+        val layout = layoutBedtimeCountdown(
+            width, height, bedtimeMillis, smallTopRight,
+            clockCenterX, clockCenterY, clockRadius
+        )
+        return CountdownDrawResult(layout.contentDirty, layout.isOverdue, layout.intersectsClock)
+    }
+
+    /** Whether a 1 Hz dirty-rect tick is useful (active countdown, not static overdue text). */
+    fun isBedtimeCountdownTicking(bedtimeMillis: Long): Boolean {
+        val now = System.currentTimeMillis()
+        var targetMillis = bedtimeMillis
+        if (now >= targetMillis) {
+            targetMillis += 24L * 60L * 60L * 1000L
+        }
+        val lastBedtimeMillis = targetMillis - (24L * 60L * 60L * 1000L)
+        return !(now >= lastBedtimeMillis && now < lastBedtimeMillis + (6L * 60L * 60L * 1000L))
+    }
+
+    private data class CountdownLayout(
+        val x: Float,
+        val labelBaseline: Float,
+        val countdownBaseline: Float,
+        val targetBaseline: Float,
+        val countdownStr: String,
+        val targetStr: String,
+        val isOverdue: Boolean,
+        val labelPaint: TextPaint,
+        val countdownPaint: TextPaint,
+        val targetPaint: TextPaint,
+        val contentDirty: Rect,
+        val intersectsClock: Boolean
+    )
+
+    private val countdownClearPaint = Paint().apply {
+        color = Color.BLACK
+        style = Paint.Style.FILL
+    }
+
+    private fun layoutBedtimeCountdown(
+        width: Int,
+        height: Int,
+        bedtimeMillis: Long,
+        smallTopRight: Boolean,
+        clockCenterX: Float,
+        clockCenterY: Float,
+        clockRadius: Float
+    ): CountdownLayout {
         val now = System.currentTimeMillis()
         var targetMillis = bedtimeMillis
         // Keep target in the future if it just passed during rendering.
@@ -828,13 +919,68 @@ class ClockRenderer {
             labelBaseline = topY
             countdownBaseline = topY + countdownPaint.textSize + 8f
         }
+        val targetBaseline = countdownBaseline + targetPaint.textSize + 10f
 
-        canvas.drawText("Bedtime", x, labelBaseline, labelPaint)
-        canvas.drawText(countdownStr, x, countdownBaseline, countdownPaint)
-        if (!isOverdue) {
-            val targetBaseline = countdownBaseline + targetPaint.textSize + 10f
-            canvas.drawText(targetStr, x, targetBaseline, targetPaint)
+        // Widen clear region for longest plausible countdown / overdue string so shrinking text
+        // does not leave ghosts even before union with the previous frame.
+        val measureCountdown = if (isOverdue) countdownStr else maxOf(
+            countdownStr,
+            "23:59:59",
+            "GO TO BED!"
+        )
+        val measureTarget = if (isOverdue) "" else targetStr
+        val labelWidth = labelPaint.measureText("Bedtime")
+        val countdownWidth = countdownPaint.measureText(measureCountdown)
+        val targetWidth = if (measureTarget.isEmpty()) 0f else targetPaint.measureText(measureTarget)
+        val stackWidth = maxOf(labelWidth, countdownWidth, targetWidth)
+
+        val aaPad = 8
+        val left: Int
+        val right: Int
+        if (alignRight) {
+            right = (x + aaPad).toInt().coerceAtMost(width)
+            left = (x - stackWidth - aaPad).toInt().coerceAtLeast(0)
+        } else {
+            left = (x - aaPad).toInt().coerceAtLeast(0)
+            right = (x + stackWidth + aaPad).toInt().coerceAtMost(width)
         }
+
+        val top = (labelBaseline + labelPaint.ascent() - aaPad).toInt().coerceAtLeast(0)
+        val bottomY = if (isOverdue) {
+            countdownBaseline + countdownPaint.descent()
+        } else {
+            targetBaseline + targetPaint.descent()
+        }
+        val bottom = (bottomY + aaPad).toInt().coerceAtMost(height)
+        val contentDirty = Rect(left, top, right, bottom)
+
+        val clockOuter = clockRadius + faceOutlinePaint.strokeWidth / 2f
+        val intersectsClock = rectIntersectsCircle(
+            contentDirty, clockCenterX, clockCenterY, clockOuter
+        )
+
+        return CountdownLayout(
+            x = x,
+            labelBaseline = labelBaseline,
+            countdownBaseline = countdownBaseline,
+            targetBaseline = targetBaseline,
+            countdownStr = countdownStr,
+            targetStr = targetStr,
+            isOverdue = isOverdue,
+            labelPaint = labelPaint,
+            countdownPaint = countdownPaint,
+            targetPaint = targetPaint,
+            contentDirty = contentDirty,
+            intersectsClock = intersectsClock
+        )
+    }
+
+    private fun rectIntersectsCircle(rect: Rect, cx: Float, cy: Float, radius: Float): Boolean {
+        val nearestX = cx.coerceIn(rect.left.toFloat(), rect.right.toFloat())
+        val nearestY = cy.coerceIn(rect.top.toFloat(), rect.bottom.toFloat())
+        val dx = nearestX - cx
+        val dy = nearestY - cy
+        return dx * dx + dy * dy <= radius * radius
     }
 
     private fun drawWakeSunriseInfo(

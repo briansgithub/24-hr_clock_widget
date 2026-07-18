@@ -8,11 +8,12 @@ Last verified: 2026-07-18
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | `ef9d3a0` = `origin/main` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `main` | `b135a9d` = `origin/main` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `feature/wallpaper-countdown-dirty-rect` | ahead of `b135a9d` | Dirty-rect 1 Hz wallpaper countdown + notification header cleanup | [handoff](feature/wallpaper-countdown-dirty-rect.md) | [history](feature/wallpaper-countdown-dirty-rect.history.md) |
 
 ## Current merge order
 
-_(no living feature branches)_
+1. `feature/wallpaper-countdown-dirty-rect`
 
 Parallel agents must use separate Git worktrees — see [MULTI_AGENT.md](MULTI_AGENT.md).
 

@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Rect
 import android.os.Build
 import android.service.wallpaper.WallpaperService
 import android.view.SurfaceHolder
@@ -16,6 +17,8 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import java.util.*
+import kotlin.math.max
+import kotlin.math.min
 
 private const val TAG = "ClockWallpaper"
 
@@ -41,11 +44,14 @@ class ClockWallpaperService : WallpaperService() {
         private lateinit var locationManager: LocationManager
 
         private var renderJob: Job? = null
+        private var countdownJob: Job? = null
         private var dataUpdateJob: Job? = null
         private var settingsJob: Job? = null
         private var locationJob: Job? = null
         private var calendarObserver: android.database.ContentObserver? = null
         private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+        /** Prior countdown content bounds; unioned with the next dirty clear to erase shrinking glyphs. */
+        private var lastCountdownDirty: Rect? = null
 
         private val refreshReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
@@ -221,6 +227,8 @@ class ClockWallpaperService : WallpaperService() {
                     if (isVisible) {
                         drawFrame()
                         startRendering()
+                    } else {
+                        stopCountdownTicks()
                     }
                 }
             }
@@ -241,15 +249,106 @@ class ClockWallpaperService : WallpaperService() {
             renderJob = scope.launch {
                 while (isActive) {
                     drawFrame()
-                    // Full canvas redraw; keep the normal 10s cadence even with countdown
-                    // (a 1s loop would be costly). Seconds update when the frame refreshes.
+                    // Full canvas redraw at 10s; countdown seconds use a separate dirty-rect 1 Hz job.
                     delay(10000)
                 }
             }
+            syncCountdownTicks()
         }
 
         private fun stopRendering() {
             renderJob?.cancel()
+            stopCountdownTicks()
+        }
+
+        private fun syncCountdownTicks() {
+            if (!isVisible || !currentSettings.showBedtimeCountdown) {
+                stopCountdownTicks()
+                return
+            }
+            val bedtimeMillis = BedtimeNotificationManager.resolveBedtimeMillis(sleepLogs)
+            if (bedtimeMillis == null || !renderer.isBedtimeCountdownTicking(bedtimeMillis)) {
+                stopCountdownTicks()
+                return
+            }
+            if (countdownJob?.isActive == true) return
+            countdownJob = scope.launch {
+                while (isActive) {
+                    delay(1000)
+                    if (!isVisible || !currentSettings.showBedtimeCountdown) break
+                    val millis = BedtimeNotificationManager.resolveBedtimeMillis(sleepLogs) ?: break
+                    if (!renderer.isBedtimeCountdownTicking(millis)) break
+                    drawCountdownDirty(millis)
+                }
+                countdownJob = null
+            }
+        }
+
+        private fun stopCountdownTicks() {
+            countdownJob?.cancel()
+            countdownJob = null
+        }
+
+        private fun clockLayout(width: Int, height: Int, smallTopRight: Boolean): Triple<Float, Float, Float> {
+            return if (smallTopRight) {
+                val radius = min(width, height) / 6f * 0.9f
+                val centerX = width - radius - 80f
+                val centerY = radius + 150f
+                Triple(centerX, centerY, radius)
+            } else {
+                val centerX = width / 2f
+                val radius = min(width, height) / 2f - 150f
+                val moonDiameter = max(12f, radius / 7f)
+                val centerY = height / 2f - (1.75f * moonDiameter)
+                Triple(centerX, centerY, radius)
+            }
+        }
+
+        private fun drawCountdownDirty(bedtimeMillis: Long) {
+            val holder = surfaceHolder
+            val frame = holder.surfaceFrame
+            if (frame.isEmpty) return
+            val width = frame.width()
+            val height = frame.height()
+            val smallTopRight = currentSettings.smallTopRight
+            val (centerX, centerY, radius) = clockLayout(width, height, smallTopRight)
+            if (radius < 20f) return
+
+            // Measure first so we can skip unsafe clears that would erase the dial.
+            val prior = lastCountdownDirty
+            val probeResult = renderer.measureBedtimeCountdown(
+                width = width,
+                height = height,
+                bedtimeMillis = bedtimeMillis,
+                smallTopRight = smallTopRight,
+                clockCenterX = centerX,
+                clockCenterY = centerY,
+                clockRadius = radius
+            )
+            if (probeResult.intersectsClock || probeResult.isOverdue) return
+
+            val clearRect = Rect(probeResult.contentDirty)
+            if (prior != null) clearRect.union(prior)
+
+            val canvas = holder.lockCanvas(clearRect) ?: return
+            try {
+                val result = renderer.drawBedtimeCountdown(
+                    canvas = canvas,
+                    width = width,
+                    height = height,
+                    bedtimeMillis = bedtimeMillis,
+                    smallTopRight = smallTopRight,
+                    clockCenterX = centerX,
+                    clockCenterY = centerY,
+                    clockRadius = radius,
+                    clearRect = clearRect
+                )
+                if (!result.intersectsClock) {
+                    lastCountdownDirty = Rect(result.contentDirty)
+                }
+            } finally {
+                holder.unlockCanvasAndPost(canvas)
+            }
         }
 
         private fun startDataUpdates() {
@@ -414,6 +513,9 @@ class ClockWallpaperService : WallpaperService() {
             } finally {
                 surfaceHolder.unlockCanvasAndPost(canvas)
             }
+            // Seed dirty bounds after a full frame so the 1 Hz path can union correctly.
+            lastCountdownDirty = renderer.lastCountdownDrawResult?.contentDirty?.let { Rect(it) }
+            syncCountdownTicks()
         }
 
         override fun onDestroy() {
