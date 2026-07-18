@@ -56,3 +56,8 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Commit/base: uncommitted on `2a3614f`
 - Change: Normalized Display toggle capitalization to Title Case (`Subtract Awake`, `Bathyphase Indicator`, `Acrophase Indicator`).
 - Validation/decision: Done.
+
+### 2026-07-18 — Merged into main
+- Commit/base: tip `7908253`; merge `f0ee7c5`
+- Change: Feature committed and merged into `main` with `--no-ff`.
+- Validation/decision: Local merge complete; handoffs archived; local branch deleted after cleanup commit.
