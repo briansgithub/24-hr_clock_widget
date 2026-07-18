@@ -8,7 +8,7 @@ Last verified: 2026-07-18
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | ahead of `origin/main` at `520511e` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `main` | ahead of `origin/main` at `f6d625b` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
 | `feature/exercise-metric-help` | WIP in stash | Feature: Exercise HRSS/TRIMP/HRV help (paused) | [handoff](feature/exercise-metric-help.md) | [history](feature/exercise-metric-help.history.md) |
 | `feature/display-tab-home-lock-ux` | WIP in stash | Feature: Display Home/Lock tab UX (paused) | [handoff](feature/display-tab-home-lock-ux.md) | [history](feature/display-tab-home-lock-ux.history.md) |
 | `feature/energy-entry-backup-drive` | WIP in stash | Feature: Drive backup on energy entry (paused) | [handoff](feature/energy-entry-backup-drive.md) | [history](feature/energy-entry-backup-drive.history.md) |
