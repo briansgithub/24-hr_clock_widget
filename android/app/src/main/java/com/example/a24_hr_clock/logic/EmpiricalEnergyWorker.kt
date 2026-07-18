@@ -39,7 +39,7 @@ class EmpiricalEnergyWorker(
             // 3. Trigger survey notification only if NOT currently in a sleep window
             if (!isCurrentlySleeping) {
                 if (existing == null) {
-                    manager.logEnergy(nowMs, null) // log as MISSED initially
+                    manager.logEnergy(nowMs, null, uploadDrive = false) // MISSED seed; Drive on user entry
                 }
                 helper.showSurveyNotification()
             } else {
