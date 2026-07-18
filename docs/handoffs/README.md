@@ -8,17 +8,15 @@ Last verified: 2026-07-18
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | in sync with `origin/main` @ `b0187f4` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
-| `feature/bedtime-countdown-10pm-floor` | uncommitted overlay | Feature: bedtime 22:00 floor + wallpaper countdown + wind-down wedge | [handoff](feature/bedtime-countdown-10pm-floor.md) | [history](feature/bedtime-countdown-10pm-floor.history.md) |
-| `feature/android-settings-ui-polish` | WIP in `stash@{0}` | Feature: settings UI polish (paused) | [handoff](feature/android-settings-ui-polish.md) | [history](feature/android-settings-ui-polish.history.md) |
-| `feature/energy-entry-backup-drive` | WIP in `stash@{1}` | Feature: Drive backup on energy entry (paused) | [handoff](feature/energy-entry-backup-drive.md) | [history](feature/energy-entry-backup-drive.history.md) |
+| `main` | ahead of `origin/main` after bedtime merge `52444d9` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `feature/android-settings-ui-polish` | WIP in stash | Feature: settings UI polish (paused) | [handoff](feature/android-settings-ui-polish.md) | [history](feature/android-settings-ui-polish.history.md) |
+| `feature/energy-entry-backup-drive` | WIP in stash | Feature: Drive backup on energy entry (paused) | [handoff](feature/energy-entry-backup-drive.md) | [history](feature/energy-entry-backup-drive.history.md) |
 
 ## Current merge order
 
-1. `feature/bedtime-countdown-10pm-floor` → `main` (when ready)
-2. `feature/android-settings-ui-polish` → `main` (independent; restore stash)
-3. `feature/energy-entry-backup-drive` → `main` (independent; restore stash)
+1. `feature/android-settings-ui-polish` -> `main` (restore stash to resume)
+2. `feature/energy-entry-backup-drive` -> `main` (restore stash to resume)
 
-Recently archived: `chore/portable-handoff-kit` (merged). Earlier: `feature/dynamic-sun-color`, `feature/empirical-public-priority` (merged); `feature/empirical-energy-logging` (superseded).
+Recently archived: `feature/bedtime-countdown-10pm-floor` (merged). Earlier: `chore/portable-handoff-kit`, `feature/dynamic-sun-color`, `feature/empirical-public-priority` (merged); `feature/empirical-energy-logging` (superseded).
 
 New branches use [templates/](templates/). Validate with `python scripts/validate_handoffs.py`.

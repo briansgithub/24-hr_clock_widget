@@ -22,3 +22,7 @@ Append-only milestones for `main`. Current state and next actions belong in [mai
 - Change: Merged templates, agent entry points, repository policy, validator, and CI; archived the chore branch.
 - Validation/decision: Owner requested commit/merge/push for a clean development baseline.
 
+### 2026-07-18 — Merged bedtime countdown feature
+- Commit/base: merge 52444d9; tip 94ed3ce
+- Change: Merged 10pm floor and optional home/lock wallpaper bedtime countdown; archived feature handoff.
+- Validation/decision: Owner requested commit and merge; push not requested.
