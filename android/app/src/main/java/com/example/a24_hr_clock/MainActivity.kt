@@ -404,16 +404,6 @@ fun MainScreen(
                 Screen.DISPLAY -> DisplaySettingsScreen(
                     homeSettings = homeSettings,
                     lockSettings = lockSettings,
-                    modelSettings = modelSettings,
-                    sleepLogs = sleepLogs,
-                    metrics = metrics,
-                    sunTimes = sunTimes,
-                    celestialPositions = celestialPositions,
-                    solarIrradiance = solarIrradiance,
-                    calendarEvents = calendarEvents,
-                    sleepDebt = sleepDebt,
-                    userLatitude = deviceLatitude,
-                    userLongitude = deviceLongitude,
                     onUpdateHome = { scope.launch { settingsManager.updateHomeSettings(it) } },
                     onUpdateLock = { scope.launch { settingsManager.updateLockSettings(it) } },
                     onResetHome = { scope.launch { settingsManager.resetHomeSettings() } },
@@ -731,16 +721,6 @@ fun CalendarSettingsScreen(
 fun DisplaySettingsScreen(
     homeSettings: ClockSettings,
     lockSettings: ClockSettings,
-    modelSettings: ModelSettings,
-    sleepLogs: List<SleepLogEntry>,
-    metrics: Triple<Double?, Double, Double>,
-    sunTimes: Pair<Double, Double>,
-    celestialPositions: CelestialManager.SunMoonPosition,
-    solarIrradiance: Int,
-    calendarEvents: List<CalendarEvent>,
-    sleepDebt: Double,
-    userLatitude: Double? = null,
-    userLongitude: Double? = null,
     onUpdateHome: (ClockSettings) -> Unit,
     onUpdateLock: (ClockSettings) -> Unit,
     onResetHome: () -> Unit,
@@ -749,39 +729,6 @@ fun DisplaySettingsScreen(
     var selectedTab by remember { mutableIntStateOf(0) }
     val currentSettings = if (selectedTab == 0) homeSettings else lockSettings
     val updateFunc: (ClockSettings) -> Unit = if (selectedTab == 0) onUpdateHome else onUpdateLock
-    var showPreview by remember { mutableStateOf(false) }
-
-    if (showPreview) {
-        androidx.compose.ui.window.Dialog(
-            onDismissRequest = { showPreview = false },
-            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
-        ) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                ClockPreviewScreen(
-                    settings = currentSettings,
-                    modelSettings = modelSettings,
-                    sleepLogs = sleepLogs,
-                    metrics = metrics,
-                    sunTimes = sunTimes,
-                    celestialPositions = celestialPositions,
-                    solarIrradiance = solarIrradiance,
-                    calendarEvents = calendarEvents,
-                    sleepDebt = sleepDebt,
-                    userLatitude = userLatitude,
-                    userLongitude = userLongitude,
-                    title = if (selectedTab == 0) "Home Screen Preview" else "Lock Screen Preview",
-                    onReset = if (selectedTab == 0) onResetHome else onResetLock
-                )
-                
-                IconButton(
-                    onClick = { showPreview = false },
-                    modifier = Modifier.align(Alignment.TopStart).padding(16.dp).padding(top = 32.dp)
-                ) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
-                }
-            }
-        }
-    }
 
     Column(
         modifier = Modifier
@@ -793,48 +740,30 @@ fun DisplaySettingsScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         TabRow(selectedTabIndex = selectedTab) {
-            Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
-                Text("Home Screen", modifier = Modifier.padding(16.dp))
-            }
-            Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
-                Text("Lock Screen", modifier = Modifier.padding(16.dp))
-            }
+            Tab(
+                selected = selectedTab == 0,
+                onClick = { selectedTab = 0 },
+                text = { Text("Home Screen") },
+                icon = { Icon(Icons.Default.Home, contentDescription = null) }
+            )
+            Tab(
+                selected = selectedTab == 1,
+                onClick = { selectedTab = 1 },
+                text = { Text("Lock Screen") },
+                icon = { Icon(Icons.Default.Lock, contentDescription = null) }
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-
         Button(
-            onClick = { showPreview = true },
+            onClick = if (selectedTab == 0) onResetHome else onResetLock,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)),
+            contentPadding = PaddingValues(horizontal = 8.dp)
         ) {
-            Icon(Icons.Default.Visibility, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Preview ${if (selectedTab == 0) "Home Screen" else "Lock Screen"}")
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-                onClick = onResetHome,
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)),
-                contentPadding = PaddingValues(horizontal = 8.dp)
-            ) {
-                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Reset Home", maxLines = 1, softWrap = false)
-            }
-            Button(
-                onClick = onResetLock,
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)),
-                contentPadding = PaddingValues(horizontal = 8.dp)
-            ) {
-                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Reset Lock", maxLines = 1, softWrap = false)
-            }
+            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Reset to Defaults", maxLines = 1, softWrap = false)
         }
 
         Spacer(modifier = Modifier.height(16.dp))

@@ -2,8 +2,8 @@
 
 ## Identity
 
-- Tip: `f6d625b` — Archive multi-agent docs chore and note compliant stashes.
-- Upstream: `origin/main` (local ahead; push pending)
+- Tip: `82b9866` — Archive display-tab-home-lock-ux handoffs after PR #2 merge.
+- Upstream: `origin/main` (local matches after push)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
 - Last verified: `2026-07-18`
@@ -14,21 +14,21 @@ Maintain the stable integration branch for future feature work, with permanent h
 
 ## Changes since previous published tip
 
-- `f6d625b`: archived chore handoff; compliant stash messages noted on paused features.
-- `520511e`: multi-agent worktree protocol + lean anti-loss/stash ownership; worktree-aware validator ledger.
-- `b2de326` / `af95262` / `10787ce`: Jul 16 empirical log cutoff and archive cleanup.
-- Earlier: timezone map, settings UI polish, wind-down gradient, bedtime countdown.
+- `cd4f97d` / `354a8db` / `9740fd8`: Display Home/Lock UX — remove Preview button; tab-scoped Reset; Home/Lock icons.
+- `eeb27c4` / `7239aa0` / energy PR #1: Drive backup on energy entry; handoff archive.
+- Earlier: multi-agent docs, Jul 16 empirical cutoff, timezone map, settings UI polish, wind-down gradient, bedtime countdown.
 
 ## Current status
 
-- Living: paused feature branches (compliant stashes + handoff notes), audit worktree.
-- Working tree: clean after chore archive.
-- Local `main` ahead of `origin/main`.
+- Display feature merged via PR #2; handoff archival + branch/worktree deletion in this cleanup.
+- Living feature: `feature/exercise-metric-help` (metric-help restored uncommitted in worktree).
+- `audit-git-stash-state`: tip `ead09d4`; do not merge; optional owner cleanup.
+- Stashes: `wip main: pre-energy-archive inventory handoffs` (superseded); exercise stash still present until exercise lands.
 
 ## Next actions
 
-1. Owner may push `main` and living feature branches when ready.
-2. Resume stashed feature branches via worktrees as needed (see [MULTI_AGENT.md](MULTI_AGENT.md)).
+1. Owner: exercise visual check + authorize commit/push/PR.
+2. Owner: decide whether to delete `audit-git-stash-state` and drop superseded stashes.
 
 ## Merge and cleanup
 
