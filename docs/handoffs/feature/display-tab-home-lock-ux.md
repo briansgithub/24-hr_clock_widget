@@ -2,9 +2,9 @@
 
 ## Identity
 
-- Tip: uncommitted — Display tab Home/Lock UX cleanup
-- Parent/base: `main` at `ead09d4`
-- Upstream: none
+- Tip: `b05b886` — docs: record display branch tip after main catch-up merge (product `9740fd8`)
+- Parent/base: `main` at `eeb27c4` (0 behind)
+- Upstream: `origin/feature/display-tab-home-lock-ux` (in sync after push)
 - Role: feature
 - History: [display-tab-home-lock-ux.history.md](display-tab-home-lock-ux.history.md)
 - Last verified: `2026-07-18`
@@ -18,24 +18,26 @@
 
 ## Changes since branch creation
 
-- Uncommitted: `DisplaySettingsScreen` drops inline preview dialog; single tab-scoped “Reset to Defaults” button; Material Home/Lock icons on tabs; unused preview-only params removed from call site.
+- Committed (`9740fd8`): `DisplaySettingsScreen` drops inline preview dialog; single tab-scoped “Reset to Defaults” button; Material Home/Lock icons on tabs; unused preview-only params removed from call site.
+- Merged onto current `main` (`b3b9bfd` / `d04120a`); tip docs `b05b886`.
 
 ## Current status
 
-- Working tree: Android WIP is in stash; restore in a worktree/checkout of this branch only when resuming.
-- Base relationship: branched from `main` `ead09d4`
-- Validation: not run (Android toolchain may be unavailable)
-- Risks/blockers: none known
-- Stashes: `wip feature/display-tab-home-lock-ux: pause before exercise-metric-help`
+- Working tree: clean; pushed to origin.
+- PR: https://github.com/briansgithub/24-hr_clock_widget/pull/2
+- Base relationship: 0 behind `origin/main`.
+- Validation: owner authorized push/PR; device visual check items listed on the PR.
+- Risks/blockers: none known for product.
+- Stashes: none owned by this branch.
 
 ## Next actions
 
-1. Restore stash and finish owner visual check on Display Home/Lock tabs.
-2. Commit when requested; then PR into `main`.
+1. Owner: complete PR #2 test plan / merge when satisfied.
+2. After merge: archive handoff/history, update HISTORY/index, delete local/remote branch.
 
 ## Merge and cleanup
 
 - PR base: `main`
-- Readiness: in progress
-- Required predecessor: none
-- After merge: append closure history, archive this file and its history, update global HISTORY/index, then delete local/remote branch after reachability verification.
+- Readiness: PR open — ready after owner checks
+- Required predecessor: none (energy already merged)
+- After merge to main: append closure history, archive this file and its history, update global HISTORY/index, then delete local/remote branch after reachability verification.
