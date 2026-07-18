@@ -8,11 +8,12 @@ Last verified: 2026-07-18
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | `88fb3be` = `origin/main` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `main` | `112ae45` = `origin/main` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `fix/bedtime-countdown-sleep-default` | ahead of `112ae45` | Scoped 10pm clamp + no-log fallback | [handoff](fix/bedtime-countdown-sleep-default.md) | [history](fix/bedtime-countdown-sleep-default.history.md) |
 
 ## Current merge order
 
-_No living feature/chore branches._
+1. `fix/bedtime-countdown-sleep-default` → `main`
 
 Parallel agents must use separate Git worktrees — see [MULTI_AGENT.md](MULTI_AGENT.md).
 

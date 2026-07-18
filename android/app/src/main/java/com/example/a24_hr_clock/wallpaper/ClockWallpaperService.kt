@@ -267,7 +267,7 @@ class ClockWallpaperService : WallpaperService() {
                 return
             }
             val bedtimeMillis = BedtimeNotificationManager.resolveBedtimeMillis(sleepLogs)
-            if (bedtimeMillis == null || !renderer.isBedtimeCountdownTicking(bedtimeMillis)) {
+            if (!renderer.isBedtimeCountdownTicking(bedtimeMillis)) {
                 stopCountdownTicks()
                 return
             }
@@ -276,7 +276,7 @@ class ClockWallpaperService : WallpaperService() {
                 while (isActive) {
                     delay(1000)
                     if (!isVisible || !currentSettings.showBedtimeCountdown) break
-                    val millis = BedtimeNotificationManager.resolveBedtimeMillis(sleepLogs) ?: break
+                    val millis = BedtimeNotificationManager.resolveBedtimeMillis(sleepLogs)
                     if (!renderer.isBedtimeCountdownTicking(millis)) break
                     drawCountdownDirty(millis)
                 }
