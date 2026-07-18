@@ -3,7 +3,7 @@
 ## Identity
 
 - Tip: (this commit) — Document Android Studio worktree workflow; drop obsolete stashes
-- Upstream: `origin/main`
+- Upstream: `origin/main` (ahead until push)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
 - Last verified: `2026-07-18`

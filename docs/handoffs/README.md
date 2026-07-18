@@ -8,7 +8,7 @@ Last verified: 2026-07-18
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | tip pending Android Studio docs commit | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `main` | 1b7bcfc = origin/main (after push) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
 | `audit-git-stash-state` | tip `ead09d4`; cleanup candidate (do not merge) | Audit/worktree | [handoff](audit-git-stash-state.md) | [history](audit-git-stash-state.history.md) |
 
 ## Current merge order
