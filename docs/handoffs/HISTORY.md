@@ -75,3 +75,9 @@ Disposition phrases: `merged into main`, `superseded` (commits landed via descen
 - Merge / PR: `520511e` (fast-forward)
 - Summary: Multi-agent worktree protocol plus lean anti-loss/stash ownership rules; validator parallel-state ledger.
 - Archive: `archive/chore/multi-agent-worktree-docs.md`
+
+### 2026-07-18 — `feature/energy-entry-backup-drive` → merged into `main`
+- Final tip: `ff1c762`
+- Merge / PR: `c4de4b2` / https://github.com/briansgithub/24-hr_clock_widget/pull/1
+- Summary: Real-time Google Drive sync after user energy entry; prompt datetime label; MISSED seeds skip Drive.
+- Archive: `archive/feature/energy-entry-backup-drive.md`
