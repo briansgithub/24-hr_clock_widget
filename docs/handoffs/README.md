@@ -8,17 +8,17 @@ Last verified: 2026-07-18
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | ahead of `origin/main` at `f6d625b` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `main` | ahead of `origin/main` at `da84193` | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
 | `feature/exercise-metric-help` | WIP in stash | Feature: Exercise HRSS/TRIMP/HRV help (paused) | [handoff](feature/exercise-metric-help.md) | [history](feature/exercise-metric-help.history.md) |
-| `feature/display-tab-home-lock-ux` | WIP in stash | Feature: Display Home/Lock tab UX (paused) | [handoff](feature/display-tab-home-lock-ux.md) | [history](feature/display-tab-home-lock-ux.history.md) |
-| `feature/energy-entry-backup-drive` | WIP in stash | Feature: Drive backup on energy entry (paused) | [handoff](feature/energy-entry-backup-drive.md) | [history](feature/energy-entry-backup-drive.history.md) |
+| `feature/display-tab-home-lock-ux` | ahead of main | Feature: Display Home/Lock tab UX | [handoff](feature/display-tab-home-lock-ux.md) | [history](feature/display-tab-home-lock-ux.history.md) |
+| `feature/energy-entry-backup-drive` | ahead of main (WIP rebase) | Feature: Drive backup on energy entry | [handoff](feature/energy-entry-backup-drive.md) | [history](feature/energy-entry-backup-drive.history.md) |
 | `audit-git-stash-state` | worktree at `ead09d4` | Audit/worktree (non-feature) | [handoff](audit-git-stash-state.md) | [history](audit-git-stash-state.history.md) |
 
 ## Current merge order
 
-1. `feature/exercise-metric-help` → `main` (restore stash to resume).
-2. `feature/display-tab-home-lock-ux` → `main` (restore stash to resume).
-3. `feature/energy-entry-backup-drive` → `main` (restore stash to resume).
+1. `feature/display-tab-home-lock-ux` → `main` (when ready)
+2. `feature/energy-entry-backup-drive` → `main` (when rebase complete)
+3. `feature/exercise-metric-help` → `main` (restore stash to resume)
 
 Parallel agents must use separate Git worktrees — see [MULTI_AGENT.md](MULTI_AGENT.md).
 

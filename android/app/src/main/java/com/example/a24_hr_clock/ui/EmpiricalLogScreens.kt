@@ -43,10 +43,21 @@ import java.util.Locale
 fun EnergyLogInputScreen(
     onSave: (Int) -> Unit,
     onCancel: () -> Unit,
-    initialValue: String = ""
+    initialValue: String = "",
+    entryTimestamp: Long = System.currentTimeMillis()
 ) {
     var inputVal by remember { mutableStateOf(initialValue) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val alignedTs = remember(entryTimestamp) {
+        EmpiricalEnergyManager(context).alignTo30MinInterval(entryTimestamp)
+    }
+    val entryDateTimeLabel = remember(alignedTs) {
+        val ldt = LocalDateTime.ofInstant(Instant.ofEpochMilli(alignedTs), ZoneId.systemDefault())
+        val dateStr = DateTimeFormatter.ofPattern("MMM dd, yyyy").withLocale(Locale.US).format(ldt)
+        val timeStr = DateTimeFormatter.ofPattern("hh:mm a").withLocale(Locale.US).format(ldt)
+        "$dateStr at $timeStr"
+    }
 
     Scaffold(
         topBar = {
@@ -68,6 +79,13 @@ fun EnergyLogInputScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            Text(
+                text = "Logging for $entryDateTimeLabel",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
             Text(
                 text = "How energetic do you feel right now?",
                 style = MaterialTheme.typography.titleMedium,
