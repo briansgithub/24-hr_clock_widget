@@ -16,3 +16,8 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Commit/base: `d1f3e29` (feature), `9e43fcc` (handoff tip sync)
 - Change: Committing Display Lock-first tab UX + handoffs; opened [PR #4](https://github.com/briansgithub/24-hr_clock_widget/pull/4).
 - Validation/decision: Proposed checks — `python scripts/validate_handoffs.py`; manual Display visual check.
+
+### 2026-07-18 — Babysit triage: merge-ready
+- Commit/base: tip `926f072` vs `origin/main` `3b5bb18` (0 behind, 3 ahead)
+- Change: Reviewed unresolved PR threads (none), issue comments (Bugbot upsell only), CI (`validate` success), mergeability (`MERGEABLE`/`CLEAN`). No code fixes required.
+- Validation/decision: PR merge-ready; remaining optional gate is owner device visual check.

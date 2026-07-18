@@ -20,7 +20,7 @@ Maintain the stable integration branch for future feature work, with permanent h
 
 ## Current status
 
-- Living feature: `feature/display-tab-lock-first` (PR pending).
+- Living feature: `feature/display-tab-lock-first` ([PR #4](https://github.com/briansgithub/24-hr_clock_widget/pull/4) merge-ready).
 - No stashes.
 - Primary worktree only.
 
