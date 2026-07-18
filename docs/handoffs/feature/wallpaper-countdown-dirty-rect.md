@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: `75f5d9b` — Add battery-safe 1 Hz dirty-rect wallpaper countdown
+- Tip: `75f5d9b` - Add battery-safe 1 Hz dirty-rect wallpaper countdown
 - Parent/base: `main` at `b135a9d`
 - Upstream: none yet
 - Role: feature
@@ -18,13 +18,14 @@
 
 ## Changes since branch creation
 
-- Dirty-rect 1 Hz wallpaper countdown path; notification builder chronometer removed (`setShowWhen(false)`); branch handoff/index.
+- `75f5d9b`: Dirty-rect 1 Hz wallpaper countdown path; notification builder chronometer removed (setShowWhen(false)); branch handoff/index.
+- `224d05a`: Record tip SHA in handoff/index.
 
 ## Current status
 
-- Working tree: clean after commit.
+- Working tree: clean after UTF-8 tip fix.
 - Base relationship: ahead of `origin/main` `b135a9d`.
-- Validation: `python scripts/validate_handoffs.py` passed. JDK (Studio JBR 21) now on user PATH. Awaiting owner device check.
+- Validation: validate_handoffs.py after this fix. JDK (Studio JBR 21) on user PATH. Awaiting owner device check.
 - Risks/blockers: none known beyond owner visual confirmation.
 - Stashes: none.
 
