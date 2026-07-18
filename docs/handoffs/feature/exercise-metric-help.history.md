@@ -20,3 +20,8 @@ Append-only milestones for this branch. Current state and next actions belong in
 ### 2026-07-18 — Stash message made ownership-compliant
 - Change: Renamed stash message to `wip feature/exercise-metric-help: pause before empirical-log-cutoff`.
 - Validation/decision: Matches MULTI_AGENT stash ownership rules; pop only on this branch when handoff lists it.
+
+### 2026-07-18 — Product committed and merged onto current main
+- Commit/base: product `c24547e`; merge `e041101` onto `origin/main` `cd755b3`
+- Change: Restored metric-help product files; committed; merged energy/display main history.
+- Validation/decision: Owner authorized commit/push/PR after visual check.
