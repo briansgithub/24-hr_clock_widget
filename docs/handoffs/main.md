@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: `26c6efc` — docs: finalize main tip SHA after three-branch archive
+- Tip: `a57c752` — docs: record finalized main tip SHA
 - Upstream: `origin/main` (local ahead; push pending)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
@@ -17,7 +17,7 @@ Maintain the stable integration branch for future feature work, with permanent h
 - Merged `feature/wallpaper-countdown-dirty-rect` (FF on `origin/main` at `9dd5780`).
 - Merged `feature/timezone-map-lock-position` (`2db20b3`).
 - Merged `chore/remove-preview-reset-button` (`3c2f7ca`).
-- Archived all three branch handoffs/histories (`4bb4c8a`); tip finalized at `26c6efc`.
+- Archived all three branch handoffs/histories (`4bb4c8a`); tip at `a57c752`.
 
 ## Current status
 
