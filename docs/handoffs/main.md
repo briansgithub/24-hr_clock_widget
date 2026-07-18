@@ -2,8 +2,8 @@
 
 ## Identity
 
-- Tip: `cd4f97d` — Merge pull request #2 from briansgithub/feature/display-tab-home-lock-ux
-- Upstream: `origin/main` (local matches after pull; archive cleanup commit may be ahead until push)
+- Tip: `82b9866` — Archive display-tab-home-lock-ux handoffs after PR #2 merge.
+- Upstream: `origin/main` (local matches after push)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
 - Last verified: `2026-07-18`
