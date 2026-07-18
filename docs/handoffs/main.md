@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: `ef9d3a0` — docs: sync main tip after display archive
+- Tip: `b135a9d` — docs: finalize main tip SHA after archive sync
 - Upstream: `origin/main` (matches)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
