@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: pending gray-reset commit on `687cf93`
+- Tip: `fa2582a` — fix: make Reset to Defaults buttons light gray
 - Feature tip: `d1f3e29` — feat: default Display tab to Lock Screen first
 - Parent/base: `main` / `origin/main` at `3b5bb18`
 - Upstream: `origin/feature/display-tab-lock-first`
@@ -21,18 +21,18 @@
 ## Changes since branch creation
 
 - `d1f3e29`: Lock Screen tab first; default lock settings.
-- Uncommitted: light-gray Reset buttons (Display + preview overlay).
+- `fa2582a`: light-gray Reset buttons (Display + preview overlay).
 - Handoff/PR babysit commits through `687cf93`.
 
 ## Current status
 
-- Working tree: dirty — gray reset styling + handoffs; owner said visual check good; merge authorized after this commit.
-- Validation: prior CI green; `python scripts/validate_handoffs.py` pending before push.
+- Working tree: clean after gray-reset commit; pushing and merging PR #4.
+- Validation: handoff validate passed; owner visual check confirmed; merge authorized.
 - Stashes: none.
 
 ## Next actions
 
-1. Commit, push, merge PR #4 (`--merge` / no-ff).
+1. Push and merge PR #4 (`--merge` / no-ff).
 2. After merge: archive handoff/history, update HISTORY/index/main, delete local/remote branch.
 
 ## Merge and cleanup
