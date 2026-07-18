@@ -71,3 +71,7 @@ Append-only milestones for `main`. Current state and next actions belong in [mai
 - Commit/base: tip `d1fac1a`; merge `ed22464`; PR https://github.com/briansgithub/24-hr_clock_widget/pull/3
 - Change: Three-level HRSS/TRIMP/HRV help via chart legend; archived feature handoff; exercise stash dropped.
 - Validation/decision: Owner authorized merge, post-merge cleanup, and stash drop.
+
+### 2026-07-18 — Android Studio worktree workflow documented
+- Change: Added Android Studio section to `MULTI_AGENT.md` (open worktree as project; copy `local.properties`; no branch-switch into worktree-held branches); `REPOSITORY.md` pointer. Dropped superseded inventory stash.
+- Validation/decision: Owner authorized restore/commit of docs stash and drop of pre-energy inventory stash.

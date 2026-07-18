@@ -23,6 +23,7 @@ When Cursor and/or Google Antigravity (or multiple Cursor agents) work on this r
 2. Open that path as the agent workspace.
 3. Keep handoffs updated in that worktree on that branch only.
 4. Prefer a new worktree over stashing to free the primary clone.
+5. Android Studio: open each worktree as its own project; copy `local.properties`; see [MULTI_AGENT.md](MULTI_AGENT.md) (Android Studio section).
 
 ## Required PR-check process
 
