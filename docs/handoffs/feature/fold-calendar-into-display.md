@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: uncommitted — Calendar folded into Display (accordion picker)
+- Tip: `a45246e` — Fold Calendar settings into Display with accordion picker.
 - Parent/base: `main` at `02fa6f4`
 - Upstream: none
 - Role: feature
@@ -22,7 +22,7 @@
 
 ## Current status
 
-- Working tree: dirty (implementation complete, not committed)
+- Working tree: clean after `a45246e`
 - Base relationship: branched from `main` `02fa6f4`
 - Validation: handoff validator pending; Android compile not run in this session
 - Risks/blockers: none known

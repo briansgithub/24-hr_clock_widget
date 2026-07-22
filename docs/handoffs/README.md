@@ -9,7 +9,7 @@ Last verified: 2026-07-18
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
 | `main` | `02fa6f4` (ahead of `origin/main`) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
-| `feature/fold-calendar-into-display` | uncommitted (from main 02fa6f4) | Fold Calendar into Display | [handoff](feature/fold-calendar-into-display.md) | [history](feature/fold-calendar-into-display.history.md) |
+| `feature/fold-calendar-into-display` | `a45246e` | Fold Calendar into Display | [handoff](feature/fold-calendar-into-display.md) | [history](feature/fold-calendar-into-display.history.md) |
 
 ## Current merge order
 
