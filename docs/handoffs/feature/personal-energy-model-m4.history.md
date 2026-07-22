@@ -32,4 +32,8 @@ Append-only milestones. Current state: [personal-energy-model-m4.md](personal-en
 ### 2026-07-22 — Wake-episode grouping default
 - Change: `build_fitting_frame(..., grouping="wake_episode")` default; helpers moved to `empirical_sleep.py`; `--calendar-grouping` CLI flag.
 - Metrics: M4 in-sample MAE 15.5 / R² 0.39; alignment_artifact 0; Jul 21 M4 MAE 11.0.
+
+### 2026-07-22 — Docs glossary + branch commit `aa398ca`
+- Change: `docs/energy_model_glossary.md` defines MAE, LOO-CV, M1–M6, Process S, k_s, outlier classes; linked from playbook, handoff, validation report.
+- Validation: 26 tests pass; handoff validator pass; commit excludes empirical CSV.
 - Validation: 26 tests pass; full pipeline + validation report refreshed.

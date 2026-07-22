@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: uncommitted WIP (parent `43f0872` on `main`)
+- Tip: `aa398ca`
 - Parent/base: `main` at `43f0872` (includes fold-calendar merge)
 - Upstream: none
 - Role: feature — empirical energy model retrofit (M4 personal fit)
@@ -36,7 +36,7 @@ Abbreviation definitions: [energy_model_glossary.md](../../energy_model_glossary
 
 ## Current status
 
-- Working tree: dirty (uncommitted); branch at `feature/personal-energy-model-m4`
+- Working tree: clean at `aa398ca`; branch at `feature/personal-energy-model-m4`
 - Validation: `python python/test_energy_fit.py` — 26 passed (2026-07-22)
 - **Sleep grouping:** wake-episode is now the harness default (`grouping="wake_episode"`); `--calendar-grouping` for legacy comparison
 - Re-fit (2026-07-22 post wake-episode): LOO winner **M3** (19.3); **M4** LOO MAE 21.1 / R² −0.24; in-sample MAE **15.5** / R² **0.39**
@@ -55,5 +55,5 @@ Abbreviation definitions: [energy_model_glossary.md](../../energy_model_glossary
 ## Merge and cleanup
 
 - PR base: `main`
-- Readiness: in progress (uncommitted)
+- Readiness: in progress (committed on branch; PR pending)
 - Proposed PR checks: `python python/test_energy_fit.py`, `python scripts/validate_handoffs.py`, Android `EnergyCalculatorTest`
