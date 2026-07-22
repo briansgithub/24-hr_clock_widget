@@ -1,6 +1,6 @@
 # History: `feature/fold-calendar-into-display`
 
-Append-only milestones for this branch. Current state and next actions belong in [`fold-calendar-into-display.md`](fold-calendar-into-display.md).
+Append-only milestones. Archived with [fold-calendar-into-display.md](fold-calendar-into-display.md).
 
 ### 2026-07-18 — Branch created
 - Commit/base: `main` at `02fa6f4`
@@ -21,3 +21,8 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Commit/base: uncommitted
 - Change: Consolidated all calendar settings (events toggle, accordion picker, sync/auth) under one CALENDAR heading at the bottom of Display.
 - Validation/decision: UI-only tweak per owner request.
+
+### 2026-07-22 — Merged into main; branch deleted
+- Merge: `43f0872`
+- Change: Feature commits reachable on `main`; handoff archived; local git branch deleted per owner request.
+- Validation/decision: `a45246e` ancestor of `main`; branch tip `7192f89` was checkout checkpoint only.

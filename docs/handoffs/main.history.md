@@ -99,4 +99,4 @@ Append-only milestones for `main`. Current state and next actions belong in [mai
 ### 2026-07-22 — Merged fold-calendar into Display
 - Commit/base: merge `43f0872`; feature tip `a45246e`
 - Change: Folded Calendar bottom-nav into Display accordion picker; added `DisplayElementGlyphs.kt` calendar glyph.
-- Validation/decision: Local merge onto `main`; push and fold-calendar handoff archive pending owner.
+- Validation/decision: Local merge onto `main`; handoff archived 2026-07-22; local git branch deleted.
