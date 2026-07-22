@@ -67,7 +67,6 @@ import kotlin.math.*
 
 enum class Screen {
     PREVIEW,
-    CALENDAR,
     DISPLAY,
     ENERGY,
     SLEEP,
@@ -337,12 +336,6 @@ fun MainScreen(
                     icon = { Icon(Icons.Default.Visibility, contentDescription = null) }
                 )
                 NavigationBarItem(
-                    selected = currentScreen == Screen.CALENDAR,
-                    onClick = { currentScreen = Screen.CALENDAR },
-                    label = { Text("Calendar") },
-                    icon = { Icon(Icons.Default.CalendarMonth, contentDescription = null) }
-                )
-                NavigationBarItem(
                     selected = currentScreen == Screen.DISPLAY,
                     onClick = { currentScreen = Screen.DISPLAY },
                     label = { Text("Display") },
@@ -387,17 +380,11 @@ fun MainScreen(
                     showSetWallpaper = true,
                     modifier = Modifier.clickable { previewIsLockScreen = !previewIsLockScreen }
                 )
-                Screen.CALENDAR -> CalendarSettingsScreen(
+                Screen.DISPLAY -> DisplaySettingsScreen(
                     calendarSettings = calendarSettings,
                     homeSettings = homeSettings,
                     lockSettings = lockSettings,
                     onUpdateCalendarSettings = { scope.launch { settingsManager.updateCalendarSettings(it) } },
-                    onUpdateHome = { scope.launch { settingsManager.updateHomeSettings(it) } },
-                    onUpdateLock = { scope.launch { settingsManager.updateLockSettings(it) } }
-                )
-                Screen.DISPLAY -> DisplaySettingsScreen(
-                    homeSettings = homeSettings,
-                    lockSettings = lockSettings,
                     onUpdateHome = { scope.launch { settingsManager.updateHomeSettings(it) } },
                     onUpdateLock = { scope.launch { settingsManager.updateLockSettings(it) } },
                     onResetHome = { scope.launch { settingsManager.resetHomeSettings() } },
@@ -580,128 +567,11 @@ fun ClockPreviewScreen(
 }
 
 @Composable
-fun CalendarSettingsScreen(
+fun DisplaySettingsScreen(
     calendarSettings: CalendarSettings,
     homeSettings: ClockSettings,
     lockSettings: ClockSettings,
     onUpdateCalendarSettings: (CalendarSettings) -> Unit,
-    onUpdateHome: (ClockSettings) -> Unit,
-    onUpdateLock: (ClockSettings) -> Unit
-) {
-    val context = LocalContext.current
-    val calendarManager = remember { CalendarManager(context) }
-    var allCalendars by remember { mutableStateOf(emptyList<CalendarInfo>()) }
-    val hasCalendarPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
-
-    LaunchedEffect(hasCalendarPermission) {
-        if (hasCalendarPermission) {
-            allCalendars = calendarManager.getAllCalendars()
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
-    ) {
-        Text(text = "Calendar Settings", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text(text = "SYNC", style = MaterialTheme.typography.labelLarge)
-        Spacer(modifier = Modifier.height(8.dp))
-
-        if (!hasCalendarPermission) {
-            Button(
-                onClick = {
-                    (context as? MainActivity)?.requestPermissionLauncher?.launch(arrayOf(Manifest.permission.READ_CALENDAR))
-                },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
-            ) {
-                Text("Authorize Google Calendar")
-            }
-        } else {
-            Text(
-                text = "Status: Authorized (System Calendar)",
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Button(
-                onClick = {
-                    context.sendBroadcast(Intent("com.example.a24_hr_clock.REFRESH_DATA"))
-                    Toast.makeText(context, "Refreshing Calendar...", Toast.LENGTH_SHORT).show()
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Sync Calendar Now")
-            }
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-        Text(text = "DISPLAY", style = MaterialTheme.typography.labelLarge)
-        
-        SettingToggle("Show on Home Screen", homeSettings.showCalendar) {
-            onUpdateHome(homeSettings.copy(showCalendar = it))
-        }
-        SettingToggle("Show on Lock Screen", lockSettings.showCalendar) {
-            onUpdateLock(lockSettings.copy(showCalendar = it))
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-        Text(text = "MY CALENDARS", style = MaterialTheme.typography.labelLarge)
-        Spacer(modifier = Modifier.height(8.dp))
-
-        if (allCalendars.isEmpty() && hasCalendarPermission) {
-            Text("No calendars found or still loading...", style = MaterialTheme.typography.bodyMedium)
-        }
-
-        allCalendars.forEach { cal ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-                    .clickable {
-                        val newIds = if (calendarSettings.enabledIds.contains(cal.id)) {
-                            calendarSettings.enabledIds - cal.id
-                        } else {
-                            calendarSettings.enabledIds + cal.id
-                        }
-                        onUpdateCalendarSettings(calendarSettings.copy(enabledIds = newIds, initialized = true))
-                    },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(16.dp)
-                        .background(Color(cal.color), shape = MaterialTheme.shapes.small)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(text = cal.name, style = MaterialTheme.typography.bodyLarge)
-                    Text(text = cal.account, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Checkbox(
-                    checked = calendarSettings.enabledIds.contains(cal.id),
-                    onCheckedChange = { checked ->
-                        val newIds = if (checked) {
-                            calendarSettings.enabledIds + cal.id
-                        } else {
-                            calendarSettings.enabledIds - cal.id
-                        }
-                        onUpdateCalendarSettings(calendarSettings.copy(enabledIds = newIds, initialized = true))
-                    }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun DisplaySettingsScreen(
-    homeSettings: ClockSettings,
-    lockSettings: ClockSettings,
     onUpdateHome: (ClockSettings) -> Unit,
     onUpdateLock: (ClockSettings) -> Unit,
     onResetHome: () -> Unit,
@@ -711,6 +581,18 @@ fun DisplaySettingsScreen(
     var selectedTab by remember { mutableIntStateOf(0) }
     val currentSettings = if (selectedTab == 0) lockSettings else homeSettings
     val updateFunc: (ClockSettings) -> Unit = if (selectedTab == 0) onUpdateLock else onUpdateHome
+
+    val context = LocalContext.current
+    val calendarManager = remember { CalendarManager(context) }
+    var allCalendars by remember { mutableStateOf(emptyList<CalendarInfo>()) }
+    val hasCalendarPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+    var calendarsExpanded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(hasCalendarPermission) {
+        if (hasCalendarPermission) {
+            allCalendars = calendarManager.getAllCalendars()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -752,7 +634,7 @@ fun DisplaySettingsScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        Text(text = "ELEMENTS", style = MaterialTheme.typography.labelLarge)
+        DisplaySectionHeader("ELEMENTS")
 
         SettingToggle("Clock Face Numbers", currentSettings.showNumbers, { GlyphNumbers() }) {
             updateFunc(currentSettings.copy(showNumbers = it))
@@ -774,7 +656,7 @@ fun DisplaySettingsScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        Text(text = "SLEEP", style = MaterialTheme.typography.labelLarge)
+        DisplaySectionHeader("SLEEP")
 
         SettingToggle("Show Sleep on Clock", currentSettings.showSleep, { GlyphSleepArc(showTotalBedtime = true) }) {
             updateFunc(currentSettings.copy(showSleep = it))
@@ -809,7 +691,7 @@ fun DisplaySettingsScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        Text(text = "ENERGY", style = MaterialTheme.typography.labelLarge)
+        DisplaySectionHeader("ENERGY")
 
         SettingToggle("Show Energy Curve", currentSettings.showEnergy, { GlyphEnergyCurve() }) {
             updateFunc(currentSettings.copy(showEnergy = it))
@@ -820,7 +702,124 @@ fun DisplaySettingsScreen(
         SettingToggle("Normalize Energy", currentSettings.normalizeEnergy, { GlyphNormalizeEnergy() }) {
             updateFunc(currentSettings.copy(normalizeEnergy = it))
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        DisplaySectionHeader("CALENDAR")
+
+        SettingToggle("Show Calendar Events", currentSettings.showCalendar, { GlyphCalendarEvents() }) {
+            updateFunc(currentSettings.copy(showCalendar = it))
+        }
+
+        if (currentSettings.showCalendar) {
+            val selectedCount = allCalendars.count { calendarSettings.enabledIds.contains(it.id) }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { calendarsExpanded = !calendarsExpanded }
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Calendars · $selectedCount selected",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Icon(
+                    imageVector = if (calendarsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (calendarsExpanded) "Collapse calendars" else "Expand calendars"
+                )
+            }
+
+            if (calendarsExpanded) {
+                if (allCalendars.isEmpty() && hasCalendarPermission) {
+                    Text(
+                        "No calendars found or still loading...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                allCalendars.forEach { cal ->
+                    val checked = calendarSettings.enabledIds.contains(cal.id)
+                    fun toggleCalendar(enabled: Boolean) {
+                        val newIds = if (enabled) {
+                            calendarSettings.enabledIds + cal.id
+                        } else {
+                            calendarSettings.enabledIds - cal.id
+                        }
+                        onUpdateCalendarSettings(calendarSettings.copy(enabledIds = newIds, initialized = true))
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { toggleCalendar(!checked) }
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(12.dp)
+                                .background(Color(cal.color), shape = MaterialTheme.shapes.small)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = cal.name, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                text = cal.account,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Checkbox(
+                            checked = checked,
+                            onCheckedChange = { toggleCalendar(it) },
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        if (!hasCalendarPermission) {
+            Button(
+                onClick = {
+                    (context as? MainActivity)?.requestPermissionLauncher?.launch(arrayOf(Manifest.permission.READ_CALENDAR))
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+            ) {
+                Text("Authorize Google Calendar")
+            }
+        } else {
+            Text(
+                text = "Status: Authorized (System Calendar)",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = {
+                    context.sendBroadcast(Intent("com.example.a24_hr_clock.REFRESH_DATA"))
+                    Toast.makeText(context, "Refreshing Calendar...", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+            ) {
+                Text("Sync Calendar Now")
+            }
+        }
     }
+}
+
+@Composable
+private fun DisplaySectionHeader(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold
+    )
 }
 
 @Composable

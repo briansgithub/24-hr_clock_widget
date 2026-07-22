@@ -8,11 +8,12 @@ Last verified: 2026-07-18
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | `fc8c33c` (ahead of `origin/main`) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `main` | `02fa6f4` (ahead of `origin/main`) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `feature/fold-calendar-into-display` | `dc74564` | Fold Calendar into Display | [handoff](feature/fold-calendar-into-display.md) | [history](feature/fold-calendar-into-display.history.md) |
 
 ## Current merge order
 
-_No living feature/chore branches._
+1. `feature/fold-calendar-into-display`
 
 Parallel agents must use separate Git worktrees — see [MULTI_AGENT.md](MULTI_AGENT.md).
 

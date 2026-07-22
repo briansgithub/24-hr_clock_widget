@@ -175,6 +175,47 @@ fun GlyphLifeCalendar(modifier: Modifier = Modifier) {
     }
 }
 
+/** Outer event arcs matching ClockRenderer.drawCalendarEvents. */
+@Composable
+fun GlyphCalendarEvents(modifier: Modifier = Modifier) {
+    Canvas(modifier.size(40.dp)) {
+        val c = Offset(size.width / 2f, size.height / 2f)
+        val r = min(size.width, size.height) * 0.42f
+        drawCircle(FaceBlack, r, c, style = Stroke(1.5f))
+        val arcR = r * 0.85f
+        val stroke = r * 0.22f
+        val topLeft = Offset(c.x - arcR, c.y - arcR)
+        val arcSize = Size(arcR * 2, arcR * 2)
+        drawArc(
+            color = Color(0xFF4A90D9),
+            startAngle = hourToCanvasDegrees(9.0),
+            sweepAngle = 45f,
+            useCenter = false,
+            topLeft = topLeft,
+            size = arcSize,
+            style = Stroke(stroke, cap = StrokeCap.Butt)
+        )
+        drawArc(
+            color = Color(0xFFE57373),
+            startAngle = hourToCanvasDegrees(14.0),
+            sweepAngle = 30f,
+            useCenter = false,
+            topLeft = topLeft,
+            size = arcSize,
+            style = Stroke(stroke, cap = StrokeCap.Butt)
+        )
+        drawArc(
+            color = Color(0xFF66BB6A),
+            startAngle = hourToCanvasDegrees(18.0),
+            sweepAngle = 50f,
+            useCenter = false,
+            topLeft = topLeft,
+            size = arcSize,
+            style = Stroke(stroke, cap = StrokeCap.Butt)
+        )
+    }
+}
+
 @Composable
 fun GlyphWakeSunriseInfo(modifier: Modifier = Modifier) {
     Canvas(modifier.size(40.dp)) {
