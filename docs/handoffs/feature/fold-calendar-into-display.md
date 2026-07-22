@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: `a45246e` — Fold Calendar settings into Display with accordion picker.
+- Tip: `dc74564` — docs: record fold-calendar-into-display tip a45246e
 - Parent/base: `main` at `02fa6f4`
 - Upstream: none
 - Role: feature
