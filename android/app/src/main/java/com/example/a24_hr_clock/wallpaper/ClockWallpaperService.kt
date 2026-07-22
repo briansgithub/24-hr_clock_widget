@@ -508,7 +508,8 @@ class ClockWallpaperService : WallpaperService() {
                     showWindDown = currentSettings.showWindDown,
                     showBedtimeCountdown = currentSettings.showBedtimeCountdown,
                     isPreview = isPreview,
-                    previewIsLockScreen = previewLockScreen
+                    previewIsLockScreen = previewLockScreen,
+                    modelSettings = modelSettings
                 )
             } finally {
                 surfaceHolder.unlockCanvasAndPost(canvas)

@@ -45,4 +45,5 @@ Only owner-approved checks become required for a particular PR. Record commands,
 - Global close ledger: `docs/handoffs/HISTORY.md`
 - Templates: `docs/handoffs/templates/`
 - Parallel agents: `docs/handoffs/MULTI_AGENT.md`
+- Agent guides index: `docs/ai_agent_guides/README.md` (source kit: `H:\Desktop\ai_agent_guides\git-handoff-system`)
 

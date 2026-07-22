@@ -1,4 +1,6 @@
 import math
+import json
+import os
 import tkinter as tk
 
 # -----------------------------------------------------------------------------
@@ -127,6 +129,139 @@ def two_process_energy(
         return max(0.0, min(1.0, alertness))
     return alertness
 
+
+# -----------------------------------------------------------------------------
+# PERSONAL EMPIRICAL MODEL (M4 — circadian + daily baseline)
+# Loaded from python/personal_energy_fit.json after analyze_energy_fit.py runs.
+# -----------------------------------------------------------------------------
+
+_personal_fit_cache: dict | None = None
+
+
+def load_personal_fit(path: str | None = None) -> dict | None:
+    """Load personal model config; returns None if missing or disabled."""
+    global _personal_fit_cache
+    if path is None:
+        path = os.path.join(os.path.dirname(__file__), "personal_energy_fit.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        settings_path = os.path.join(os.path.dirname(__file__), "sleep_settings.json")
+        if os.path.exists(settings_path):
+            with open(settings_path, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+            pm = settings.get("personal_model", {})
+            if not pm.get("enabled", True):
+                return None
+        _personal_fit_cache = data
+        return data
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def personal_m4_energy(
+    t: float,
+    sleep_duration: float,
+    sleep_debt_hours: float,
+    sleep_efficiency: float = 0.9,
+    params: dict | None = None,
+    clamp: bool = True,
+) -> float:
+    """
+    M4: baseline(day) + circadian shape. Returns alertness 0.0–1.0.
+    """
+    if params is None:
+        fit = load_personal_fit()
+        params = (fit or {}).get("params", {})
+
+    baseline = (
+        params.get("baseline_intercept", 50.0)
+        + params.get("baseline_sleep_coef", 0.0) * sleep_duration
+        + params.get("baseline_debt_coef", 0.0) * sleep_debt_hours
+        + params.get("baseline_efficiency_coef", 0.0) * sleep_efficiency
+    )
+    circ_amp = params.get("circ_amp", 15.0)
+    circ_amp2 = params.get("circ_amp2", 5.0)
+    circ_offset = params.get("circ_offset", 8.0)
+    shape = (
+        circ_amp * math.cos((math.pi / 12.0) * (t - circ_offset))
+        + circ_amp2 * math.cos((math.pi / 6.0) * (t - 8.0))
+    )
+    energy_pct = max(0.0, min(100.0, baseline + shape))
+    alertness = energy_pct / 100.0
+    if clamp:
+        return max(0.0, min(1.0, alertness))
+    return alertness
+
+
+def personal_scaled_s_energy(
+    t: float,
+    sleep_debt_hours: float = 0.0,
+    sleep_duration: float = 7.5,
+    clamp: bool = True,
+    params: dict | None = None,
+) -> float:
+    """M3 fallback: two-process with scaled Process S (k_S). Returns 0.0–1.0."""
+    if params is None:
+        fit = load_personal_fit()
+        params = (fit or {}).get("params", {})
+    k_s = params.get("k_s", 1.0)
+    raw = two_process_energy(
+        t,
+        sleep_debt_hours,
+        sleep_duration,
+        params.get("circadian_peak_offset", 10.0),
+        clamp=False,
+        tau_wake=params.get("tau_wake", 23.0),
+        tau_sleep=params.get("tau_sleep", 4.0),
+        tau_inertia=params.get("tau_inertia", 1.5),
+        debt_factor=params.get("debt_factor", 1.0),
+    )
+    # Approximate scaling: reduce S contribution by adjusting toward circadian-only
+    if k_s != 1.0:
+        s_only = two_process_energy(t, 0.0, sleep_duration, 10.0, clamp=False,
+                                    tau_wake=params.get("tau_wake", 23.0),
+                                    tau_sleep=params.get("tau_sleep", 4.0),
+                                    tau_inertia=0.01, debt_factor=0.0)
+        c_only = two_process_energy(t, 0.0, sleep_duration, 10.0, clamp=False,
+                                    tau_wake=999.0, tau_sleep=4.0,
+                                    tau_inertia=params.get("tau_inertia", 1.5), debt_factor=0.0)
+        raw = c_only - k_s * (c_only - s_only) - (sleep_debt_hours * params.get("debt_factor", 1.0) / 25.0)
+    if clamp:
+        return max(0.0, min(1.0, raw))
+    return raw
+
+
+def get_personal_energy(
+    t: float,
+    sleep_duration: float,
+    sleep_debt_hours: float,
+    sleep_efficiency: float = 0.9,
+    clamp: bool = True,
+) -> float | None:
+    """Returns personal-model energy if configured, else None."""
+    fit = load_personal_fit()
+    if not fit:
+        return None
+    model_id = fit.get("model_id", "")
+    params = fit.get("params", {})
+    if model_id == "M4_circadian_daily_baseline":
+        return personal_m4_energy(t, sleep_duration, sleep_debt_hours, sleep_efficiency, params, clamp)
+    if model_id == "M3_scaled_process_s":
+        return personal_scaled_s_energy(t, sleep_debt_hours, sleep_duration, clamp, params)
+    if model_id == "M2_tuned_two_process":
+        return two_process_energy(
+            t, sleep_debt_hours, sleep_duration,
+            params.get("circadian_peak_offset", 10.0), clamp,
+            tau_wake=params.get("tau_wake", 23.0),
+            tau_sleep=params.get("tau_sleep", 4.0),
+            tau_inertia=params.get("tau_inertia", 1.5),
+            debt_factor=params.get("debt_factor", 1.0),
+        )
+    return personal_m4_energy(t, sleep_duration, sleep_debt_hours, sleep_efficiency, params, clamp)
+
 _energy_summary_printed = False
 
 def get_energy_level(
@@ -141,13 +276,21 @@ def get_energy_level(
     tau_inertia: float = 1.5,
     debt_factor: float = 1.0,
     circadian_peak_offset: float = None,
+    sleep_efficiency: float = 0.9,
+    use_personal_model: bool = True,
 ) -> float:
     """
     Wrapper for UI that maps wall-clock time to hours-since-wake.
+    Uses personal empirical model (M4) when personal_energy_fit.json exists.
     """
     global _energy_summary_printed
     
     t = (h_clock - wake_hour) % 24.0
+
+    if use_personal_model:
+        personal = get_personal_energy(t, sleep_duration, sleep_debt_hours, sleep_efficiency, clamp)
+        if personal is not None:
+            return personal
 
     # Calculate peak_offset
     if circadian_peak_offset is not None:
@@ -174,6 +317,66 @@ def get_energy_level(
         tau_inertia=tau_inertia,
         debt_factor=debt_factor
     )
+
+
+def sync_sleep_inclusion(
+    excluded_dates: list[str] | None,
+    explicit_dates: list[str] | None,
+    raw_logs: list[dict],
+    today_str: str,
+) -> list[str]:
+    """
+    Apply sleep-table inclusion rules:
+    - Past dates (T-1..T-14): always included unless user explicitly toggled off.
+    - Today (T-0): included only when a main-sleep record exists, unless explicit.
+    """
+    from datetime import datetime, timedelta
+
+    excluded = list(excluded_dates or [])
+    explicit = set(explicit_dates or [])
+    today = datetime.strptime(today_str, "%Y-%m-%d").date()
+    main_dates = {
+        log.get("dateOfSleep")
+        for log in raw_logs
+        if log.get("isMainSleep") and log.get("dateOfSleep")
+    }
+
+    for i in range(1, 15):
+        d = (today - timedelta(days=i)).strftime("%Y-%m-%d")
+        if d not in explicit and d in excluded:
+            excluded.remove(d)
+
+    if today_str not in explicit:
+        if today_str in main_dates:
+            if today_str in excluded:
+                excluded.remove(today_str)
+        elif today_str not in excluded:
+            excluded.append(today_str)
+
+    return excluded
+
+
+def sleep_table_sessions(
+    raw_logs: list[dict],
+    date_str: str,
+    include_naps: bool,
+) -> list[tuple[str, dict | None]]:
+    """Return ordered table sessions for a date: ('main'|'nap'|'empty', record)."""
+    logs = [r for r in raw_logs if r.get("dateOfSleep") == date_str]
+    main = next((s for s in logs if s.get("isMainSleep")), None)
+    naps = sorted(
+        [s for s in logs if not s.get("isMainSleep")],
+        key=lambda s: s.get("startTime", ""),
+    )
+    rows: list[tuple[str, dict | None]] = []
+    if main:
+        rows.append(("main", main))
+    elif not logs:
+        rows.append(("empty", None))
+    if include_naps:
+        rows.extend(("nap", nap) for nap in naps)
+    return rows
+
 
 def compute_sleep_debt(
     sleep_logs: list[dict], 

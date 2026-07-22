@@ -290,6 +290,8 @@ class FitbitClient:
                         all_points.append(p)
                 print(f"  {date_str}: {len(points)} raw points, "
                       f"{sum(1 for p in points if True)} fetched")
+            except ReauthRequiredError:
+                raise
             except Exception as e:
                 print(f"  {date_str}: FAILED — {e}")
                 print("  -> Is your app registered as type 'Personal' on dev.fitbit.com?")
@@ -340,6 +342,8 @@ class FitbitClient:
         is_stale_fallback = False
         try:
             sleep_logs = self.get_sleep_range(start_date, end_date, force=force)
+        except ReauthRequiredError:
+            raise
         except Exception as e:
             print(f"[get_all_energy_inputs] API fetch failed: {e}. Falling back to cached logs.")
             is_stale_fallback = True
@@ -541,7 +545,9 @@ class FitbitClient:
 
         # Save to separate cache files for pragmatic data handling
         # We always cache the logs if we have them, so toggles are instant.
-        if sleep_logs:
+        # Do not mask a forced refresh failure by re-stamping stale cache as today.
+        should_cache = sleep_logs and not (force and is_stale_fallback)
+        if should_cache:
             try:
                 # 1. Summary Cache (Lightweight, used for UI startup)
                 with open(summary_cache, 'w') as f:
@@ -564,6 +570,8 @@ class FitbitClient:
                 print(f"[get_all_energy_inputs] Cached results for {today_str} (is_real_today={is_real_today})")
             except Exception as e:
                 print(f"[get_all_energy_inputs] Failed to save cache: {e}")
+        elif force and is_stale_fallback:
+            print("[get_all_energy_inputs] Skipping cache write — forced refresh used stale fallback.")
 
         inputs['raw_sleep_logs'] = sleep_logs
         inputs['raw_hr_points']  = hr_points

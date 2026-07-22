@@ -22,16 +22,13 @@
 
 ## Current status
 
-- Working tree: clean after `a45246e`
-- Base relationship: branched from `main` `02fa6f4`
-- Validation: handoff validator pending; Android compile not run in this session
+- Merged into `main` at `43f0872` (local merge, not pushed)
+- Feature tip: `a45246e` (fold Calendar into Display accordion picker)
 - Risks/blockers: none known
-- Stashes: none
 
 ## Next actions
 
-1. Owner: commit when ready; manual check Lock/Home toggles, accordion, sync, bottom nav.
-2. Open PR to `main` after owner-approved checks.
+1. Archive handoff after owner pushes `main` per master protocol.
 
 ## Merge and cleanup
 

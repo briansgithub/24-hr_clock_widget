@@ -4,6 +4,31 @@ import kotlin.math.*
 
 object EnergyCalculator {
 
+    fun personalM4Energy(
+        t: Double,
+        sleepDuration: Double,
+        sleepDebtHours: Double,
+        sleepEfficiency: Double = 0.9,
+        baselineIntercept: Double = 37.3,
+        baselineSleepCoef: Double = 0.04,
+        baselineDebtCoef: Double = 0.45,
+        baselineEfficiencyCoef: Double = -0.8,
+        circAmp: Double = 20.0,
+        circAmp2: Double = 3.3,
+        circOffset: Double = 4.9,
+        clamp: Boolean = true
+    ): Double {
+        val baseline = baselineIntercept +
+            baselineSleepCoef * sleepDuration +
+            baselineDebtCoef * sleepDebtHours +
+            baselineEfficiencyCoef * sleepEfficiency
+        val shape = circAmp * cos((PI / 12.0) * (t - circOffset)) +
+            circAmp2 * cos((PI / 6.0) * (t - 8.0))
+        val energyPct = (baseline + shape).coerceIn(0.0, 100.0)
+        val alertness = energyPct / 100.0
+        return if (clamp) alertness.coerceIn(0.0, 1.0) else alertness
+    }
+
     fun twoProcessEnergy(
         t: Double,
         sleepDebtHours: Double = 0.0,
@@ -76,9 +101,27 @@ object EnergyCalculator {
         tauSleep: Double = 4.0,
         tauInertia: Double = 1.5,
         debtFactor: Double = 1.0,
-        circadianPeakOffset: Double? = null
+        circadianPeakOffset: Double? = null,
+        sleepEfficiency: Double = 0.9,
+        usePersonalModel: Boolean = false,
+        personalModelId: String = "",
+        baselineIntercept: Double = 37.3,
+        baselineSleepCoef: Double = 0.04,
+        baselineDebtCoef: Double = 0.45,
+        baselineEfficiencyCoef: Double = -0.8,
+        circAmp: Double = 20.0,
+        circAmp2: Double = 3.3,
+        circOffset: Double = 4.9
     ): Double {
         val t = (hClock - wakeHour).mod(24.0)
+
+        if (usePersonalModel && personalModelId == "M4_circadian_daily_baseline") {
+            return personalM4Energy(
+                t, sleepDuration, sleepDebtHours, sleepEfficiency,
+                baselineIntercept, baselineSleepCoef, baselineDebtCoef, baselineEfficiencyCoef,
+                circAmp, circAmp2, circOffset, clamp
+            )
+        }
 
         // Calculate peak_offset
         val peakOffset = if (circadianPeakOffset != null) {
@@ -127,6 +170,43 @@ object EnergyCalculator {
 
         return weightedDebt
     }
+
+    /**
+     * Convenience wrapper that passes personal-model fields from [ModelSettings].
+     */
+    fun getEnergyLevelFromSettings(
+        hClock: Double,
+        wakeHour: Double,
+        sleepDebtHours: Double,
+        sleepDuration: Double,
+        bathyphaseHour: Double?,
+        settings: ModelSettings,
+        useBathyphase: Boolean,
+        clamp: Boolean = false,
+        sleepEfficiency: Double = 0.9
+    ): Double = getEnergyLevel(
+        hClock = hClock,
+        wakeHour = wakeHour,
+        sleepDebtHours = sleepDebtHours,
+        sleepDuration = sleepDuration,
+        bathyphaseHour = if (useBathyphase) bathyphaseHour else null,
+        clamp = clamp,
+        tauWake = settings.tauWake,
+        tauSleep = settings.tauSleep,
+        tauInertia = settings.tauInertia,
+        debtFactor = settings.debtFactor,
+        circadianPeakOffset = if (useBathyphase) null else settings.circadianOffset,
+        sleepEfficiency = sleepEfficiency,
+        usePersonalModel = settings.usePersonalModel,
+        personalModelId = settings.personalModelId,
+        baselineIntercept = settings.baselineIntercept,
+        baselineSleepCoef = settings.baselineSleepCoef,
+        baselineDebtCoef = settings.baselineDebtCoef,
+        baselineEfficiencyCoef = settings.baselineEfficiencyCoef,
+        circAmp = settings.circAmp,
+        circAmp2 = settings.circAmp2,
+        circOffset = settings.circOffset
+    )
 
     fun findBathyphase(intradayHr: List<HeartRatePoint>): Double? {
         if (intradayHr.isEmpty()) return null

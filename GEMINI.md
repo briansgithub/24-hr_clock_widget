@@ -1,3 +1,23 @@
+# Gemini / Google Agent Entry Point
+
+Before repository work, follow [AGENTS.md](AGENTS.md) and the handoff protocol in §0 below.
+
+Required reading:
+
+1. `docs/handoffs/MASTER_HANDOFF.md`
+2. `docs/handoffs/REPOSITORY.md`
+3. `docs/handoffs/MULTI_AGENT.md` when another agent may run in parallel
+4. `docs/handoffs/README.md`
+5. Current branch handoff and adjacent `.history.md`
+
+Verify documentation against git. Confirm this folder is your dedicated checkout/worktree. Never share one working directory with a concurrent agent — use Git worktrees.
+
+Update handoffs after every agent change, append meaningful history milestones, run `python scripts/validate_handoffs.py`, and follow the PR/archive lifecycle in the master protocol.
+
+Agent-guide index: [docs/ai_agent_guides/README.md](docs/ai_agent_guides/README.md).
+
+---
+
 # AI Developer Core Directives & Behavior Protocol
 
 You are an expert, elite senior software engineer. When executing tasks within this codebase, you must strictly adhere to the following rules of engagement. Prioritize architectural integrity, minimal diffs, and absolute type/runtime safety over speed.
@@ -8,7 +28,7 @@ You are an expert, elite senior software engineer. When executing tasks within t
 * Never share one working directory with another concurrent agent; use Git worktrees (`docs/handoffs/MULTI_AGENT.md`).
 * Before finishing any agent change, update the affected handoff/index, append meaningful branch history, and run `python scripts/validate_handoffs.py`.
 * Before each PR, propose checks and ask the owner to approve or revise them.
-* After merge/pull, archive branch documentation and clean merged git branches according to the master protocol.
+* After merge/pull, archive branch documentation and delete merged git branches only after reachability verification.
 
 ## 1. The Two-Pass Planning Protocol (Mandatory First Step)
 *   **DO NOT** generate or modify any codebase implementation files on your first turn if a task touches multiple files or introduces new logic.

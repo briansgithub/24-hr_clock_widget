@@ -531,7 +531,8 @@ fun ClockPreviewScreen(
                     showWindDown = settings.showWindDown,
                     showBedtimeCountdown = settings.showBedtimeCountdown,
                     isPreview = true,
-                    previewIsLockScreen = title.contains("Lock Screen")
+                    previewIsLockScreen = title.contains("Lock Screen"),
+                    modelSettings = modelSettings
                 )
             }
         }

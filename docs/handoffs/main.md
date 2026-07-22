@@ -2,30 +2,30 @@
 
 ## Identity
 
-- Tip: `fc8c33c` — docs: archive fix/bedtime-countdown-sleep-default after merge
-- Upstream: `origin/main` (local ahead; push not requested)
+- Tip: `43f0872` — Merge fold-calendar into Display settings.
+- Upstream: `origin/main` (ahead; verify before push)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
-- Last verified: `2026-07-18`
+- Last verified: `2026-07-22`
 
 ## Goal and scope
 
-Maintain the stable integration branch for future feature work, with permanent handoff infrastructure and multi-agent worktree guidance in place.
+Maintain the stable integration branch for feature work, with permanent handoff infrastructure in place.
 
 ## Changes since previous published tip
 
-- Merged `fix/bedtime-countdown-sleep-default` (`e27f695`); archived handoff (`fc8c33c`).
+- Merged `feature/fold-calendar-into-display` (`a45246e`): Calendar bottom-nav folded into Display accordion picker; `DisplayElementGlyphs.kt` calendar glyph; handoff docs for fold-calendar.
 
 ## Current status
 
-- Clean `main` after archive cleanup.
-- Ahead of `origin/main` (not pushed).
-- No living feature/chore branches.
+- Clean at tip `43f0872` (fold-calendar merged locally; not pushed)
+- Active feature: [feature/personal-energy-model-m4.md](feature/personal-energy-model-m4.md) (uncommitted WIP branched from this tip)
 
 ## Next actions
 
-1. Owner may push `main` when ready; verify bedtime countdown on Pixel 7a from this checkout.
-2. Start the next feature from updated `origin/main` in a dedicated worktree when needed.
+1. Owner push `main` when ready (includes fold-calendar merge)
+2. Archive `feature/fold-calendar-into-display` handoff after push per master protocol
+3. Merge `feature/personal-energy-model-m4` when owner approves PR checks
 
 ## Merge and cleanup
 

@@ -134,6 +134,7 @@ class ClockWidget:
 
         self.sleep_settings_file = os.path.join(os.path.dirname(__file__), "sleep_settings.json")
         self.excluded_dates = self._load_sleep_settings()
+        self._sync_sleep_inclusion()
 
         # Load Fitbit Config
         self._load_fitbit_config()
@@ -759,6 +760,21 @@ class ClockWidget:
                 pass
         return [today_str]
 
+    def _sync_sleep_inclusion(self, raw_logs: list | None = None) -> None:
+        """Normalize excluded_dates: past nights included; today needs main sleep."""
+        from energy_logic import sync_sleep_inclusion
+
+        today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+        before = list(self.excluded_dates)
+        self.excluded_dates = sync_sleep_inclusion(
+            self.excluded_dates,
+            getattr(self, "explicit_dates", []),
+            raw_logs or getattr(self, "raw_sleep_logs", []),
+            today_str,
+        )
+        if self.excluded_dates != before:
+            self._save_sleep_settings()
+
     def _load_fitbit_config(self):
         config_path = os.path.join(os.path.dirname(__file__), "fitbit_config.json")
         if os.path.exists(config_path):
@@ -1056,6 +1072,21 @@ class ClockWidget:
 
         threading.Thread(target=_fetch, daemon=True).start()
 
+    def relink_fitbit_and_refresh(self):
+        """Re-authorize Fitbit OAuth, then force-fetch fresh sleep data."""
+        def _task():
+            try:
+                print("[ClockWidget] Starting Fitbit re-authorization...")
+                self.fitbit.authorize()
+                print("[ClockWidget] Fitbit re-authorization succeeded — refreshing data.")
+                self.root.after(0, lambda: self._set_reauth_status('fitbit', False))
+                self.update_fitbit_data(force=True)
+            except Exception as e:
+                print(f"[ClockWidget] Fitbit re-link failed: {e}")
+                self.root.after(0, lambda: self._set_reauth_status('fitbit', True))
+
+        threading.Thread(target=_task, daemon=True).start()
+
     def update_fitbit_data(self, force: bool = False):
         """
         Background task to fetch latest Fitbit sleep & HR.
@@ -1089,7 +1120,10 @@ class ClockWidget:
                 # Collect results for main-thread application (no shared state mutation here)
                 raw_logs = inputs.get('raw_sleep_logs', [])
                 today_str = datetime.datetime.now().strftime("%Y-%m-%d")
-                has_today_log = any(log.get('dateOfSleep') == today_str for log in raw_logs)
+                has_today_main = any(
+                    log.get('dateOfSleep') == today_str and log.get('isMainSleep')
+                    for log in raw_logs
+                )
 
                 # Check if we have an explicit saved setting for today yet (file I/O is safe)
                 has_saved_setting = False
@@ -1109,7 +1143,7 @@ class ClockWidget:
 
                 # Schedule ALL state mutations on the main thread to avoid data races
                 self.root.after(0, lambda: self._apply_fitbit_results(
-                    inputs, today_str, has_today_log, has_saved_setting, should_save_image
+                    inputs, today_str, has_today_main, has_saved_setting, should_save_image
                 ))
 
             except ReauthRequiredError:
@@ -1120,7 +1154,7 @@ class ClockWidget:
        
         threading.Thread(target=_task, daemon=True).start()
 
-    def _apply_fitbit_results(self, inputs, today_str, has_today_log, has_saved_setting, should_save_image):
+    def _apply_fitbit_results(self, inputs, today_str, has_today_main, has_saved_setting, should_save_image):
         """Apply Fitbit fetch results on the main thread (thread-safe)."""
         eff   = inputs.get('empirical_efficiency', 1.0)
         need  = inputs.get('sleep_need_hours', self.bedtime_goal.get())
@@ -1133,14 +1167,23 @@ class ClockWidget:
         self.raw_sleep_logs = inputs.get('raw_sleep_logs', [])
         self._sleep_table_needs_refresh = True
 
-        # Handle auto-inclusion logic for Today (T-0)
-        if not has_saved_setting:
-            if has_today_log and today_str in self.excluded_dates:
-                self.excluded_dates.remove(today_str)
-                self._save_sleep_settings()
-            elif not has_today_log and today_str not in self.excluded_dates:
-                self.excluded_dates.append(today_str)
-                self._save_sleep_settings()
+        self._sync_sleep_inclusion(self.raw_sleep_logs)
+
+        # Legacy today-only hook (explicit_dates bypass handled inside sync)
+        if not has_saved_setting and has_today_main and today_str in self.excluded_dates:
+            self.excluded_dates.remove(today_str)
+            self._save_sleep_settings()
+
+        try:
+            from energy_logic import compute_sleep_debt
+            debt = compute_sleep_debt(
+                self.raw_sleep_logs,
+                need,
+                self.include_naps.get(),
+                self.excluded_dates,
+            )
+        except Exception:
+            pass
 
         if wake is not None:
             self.wake_hour          = wake
@@ -1421,7 +1464,6 @@ class ClockWidget:
         if not hasattr(self, 'table_frame') or not hasattr(self, '_table_cols'):
             return
 
-        # Remove previous data rows (keep row 0=headers, row 1=separator)
         for widget in self.table_frame.grid_slaves():
             if int(widget.grid_info().get('row', 0)) >= 2:
                 widget.destroy()
@@ -1433,37 +1475,32 @@ class ClockWidget:
         TODAY_BG  = "#2a2a4a"
         TODAY_FG  = "#aaddff"
         FG        = "#e0e0e0"
+        NAP_FG    = "#9ecfb8"
 
-        # Group by date
-        daily_logs = {}
+        daily_logs: dict[str, list] = {}
         for rec in self.raw_sleep_logs:
             d = rec.get('dateOfSleep', '?')
-            if d not in daily_logs: daily_logs[d] = []
-            daily_logs[d].append(rec)
-        
-        today_dt = datetime.datetime.now()
-        
-        # We'll display T-0 to T-14 (15 rows total)
-        display_dates = []
-        for i in range(15):
-            display_dates.append((today_dt - datetime.timedelta(days=i)).strftime("%Y-%m-%d"))
+            daily_logs.setdefault(d, []).append(rec)
 
-        grid_row        = 2
-        total_raw       = 0.0
-        total_wtd       = 0.0
-        
-        # Lists for calculating averages
-        start_hours     = []
-        end_hours       = []
-        durations       = []
-        efficiencies    = []
+        today_dt = datetime.datetime.now()
+        display_dates = [
+            (today_dt - datetime.timedelta(days=i)).strftime("%Y-%m-%d")
+            for i in range(15)
+        ]
+
+        grid_row = 2
+        total_raw = 0.0
+        total_wtd = 0.0
+        start_hours: list[float] = []
+        end_hours: list[float] = []
+        durations: list[float] = []
+        efficiencies: list[float] = []
 
         def toggle_date(date_str, var):
-            # Mark this date as having a manual/explicit setting
-            if not hasattr(self, 'explicit_dates'): self.explicit_dates = []
+            if not hasattr(self, 'explicit_dates'):
+                self.explicit_dates = []
             if date_str not in self.explicit_dates:
                 self.explicit_dates.append(date_str)
-
             if var.get():
                 if date_str in self.excluded_dates:
                     self.excluded_dates.remove(date_str)
@@ -1471,128 +1508,166 @@ class ClockWidget:
                 if date_str not in self.excluded_dates:
                     self.excluded_dates.append(date_str)
             self._save_sleep_settings()
-            
-            # --- Instant Local Recalculation ---
             try:
                 from energy_logic import compute_sleep_debt
                 new_debt = compute_sleep_debt(
-                    self.raw_sleep_logs, 
-                    self.sleep_need_hours, 
-                    self.include_naps.get(), 
-                    self.excluded_dates
+                    self.raw_sleep_logs,
+                    self.sleep_need_hours,
+                    self.include_naps.get(),
+                    self.excluded_dates,
                 )
                 self.sleep_debt_hours = new_debt
                 self.energy_curve.sleep_debt_hours = new_debt
-                
-                # Refresh UI immediately
                 self.update_metric_labels()
                 self.populate_sleep_table()
                 self.draw_clock()
             except Exception as e:
                 print(f"[toggle_date] Instant refresh failed: {e}")
-
-            # Still trigger the background task
             self.update_fitbit_data()
+
+        def fmt_clock(iso_str: str) -> tuple[str, float | None]:
+            if not iso_str:
+                return "?", None
+            try:
+                dt = datetime.datetime.fromisoformat(iso_str.replace('Z', ''))
+                return dt.strftime("%I:%M %p").lstrip('0'), dt.hour + dt.minute / 60.0
+            except Exception:
+                return iso_str[:5], None
+
+        def session_fields(session: dict) -> tuple[str, str, float, float | None]:
+            start_fmt, _ = fmt_clock(session.get('startTime', ''))
+            end_fmt, _ = fmt_clock(session.get('endTime', ''))
+            mins_asleep = session.get('minutesAsleep', 0)
+            mins_in_bed = session.get('timeIn_bed', session.get('timeInBed', 0))
+            asleep_h = mins_asleep / 60.0
+            eff_val = (mins_asleep / mins_in_bed * 100) if mins_in_bed > 0 else None
+            return start_fmt, end_fmt, asleep_h, eff_val
+
+        def render_row(
+            row_idx: int,
+            bg_color: str,
+            row_fg: str,
+            debt_fg: str,
+            inc_widget,
+            day_fmt: str,
+            date_fmt: str,
+            start_fmt: str,
+            end_fmt: str,
+            dur_fmt: str,
+            eff_fmt: str,
+            debt_fmt: str,
+            wtd_fmt: str,
+            font: tuple = ("Segoe UI", 9),
+        ) -> None:
+            if inc_widget is not None:
+                inc_widget.grid(row=row_idx, column=0, sticky="nsew")
+            else:
+                tk.Label(self.table_frame, text="", bg=bg_color).grid(row=row_idx, column=0, sticky="nsew")
+            cell_data = [
+                (day_fmt, "center", row_fg),
+                (date_fmt, "e", row_fg),
+                (start_fmt, "e", row_fg),
+                (end_fmt, "e", row_fg),
+                (dur_fmt, "e", row_fg),
+                (eff_fmt, "e", row_fg),
+                (debt_fmt, "e", debt_fg),
+                (wtd_fmt, "e", debt_fg),
+            ]
+            for col_i, (val, anc, fg_color) in enumerate(cell_data):
+                tk.Label(
+                    self.table_frame, text=val,
+                    bg=bg_color, fg=fg_color,
+                    font=font, anchor=anc, padx=6,
+                ).grid(row=row_idx, column=col_i + 1, sticky="ew", pady=1)
 
         for i, date_str in enumerate(display_dates):
             is_excluded = date_str in self.excluded_dates
-            
-            # 1. Inclusion Checkbox
+            bg_color = TODAY_BG if date_str == TODAY_STR else (ROW_ODD if i % 2 == 0 else ROW_EVN)
+            row_fg = TODAY_FG if date_str == TODAY_STR else FG
+            if is_excluded:
+                row_fg = "#666666"
+
+            try:
+                dt_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+                day_fmt = dt_obj.strftime("%a")
+                date_fmt = dt_obj.strftime("%m/%d")
+            except Exception:
+                day_fmt = ""
+                date_fmt = date_str
+
+            logs = daily_logs.get(date_str, [])
+            main_sleep = next((s for s in logs if s.get('isMainSleep')), None)
+            naps = [s for s in logs if not s.get('isMainSleep')]
+
             cb_var = tk.BooleanVar(value=not is_excluded)
             cb = tk.Checkbutton(
                 self.table_frame,
                 variable=cb_var,
                 command=lambda d=date_str, v=cb_var: toggle_date(d, v),
-                bg=TODAY_BG if date_str == TODAY_STR else (ROW_ODD if i % 2 == 0 else ROW_EVN),
-                selectcolor="#3c3c3c",
-                activebackground=TODAY_BG if date_str == TODAY_STR else (ROW_ODD if i % 2 == 0 else ROW_EVN),
-                bd=0,
-                padx=0,
-                pady=0
+                bg=bg_color, selectcolor="#3c3c3c",
+                activebackground=bg_color, bd=0, padx=0, pady=0,
             )
-            cb.grid(row=grid_row, column=0, sticky="nsew")
 
-            logs = daily_logs.get(date_str, [])
-            
-            if logs:
-                main_sleep = next((s for s in logs if s.get('isMainSleep')), logs[0])
-                # ... rest of data extraction ...
-                start_raw   = main_sleep.get('startTime', '')
-                end_raw     = main_sleep.get('endTime', '')
-                mins_asleep = sum(s.get('minutesAsleep', 0) for s in logs)
-                mins_in_bed = sum(s.get('timeIn_bed', s.get('timeInBed', 0)) for s in logs)
-                asleep_h    = mins_asleep / 60.0
-                eff_val     = (mins_asleep / mins_in_bed * 100) if mins_in_bed > 0 else None
-                
-                try:
-                    st        = datetime.datetime.fromisoformat(start_raw.replace('Z', ''))
-                    start_fmt = st.strftime("%I:%M %p").lstrip('0')
-                    if not is_excluded: start_hours.append(st.hour + st.minute / 60.0)
-                except: start_fmt = start_raw[:5] if start_raw else '?'
-
-                try:
-                    en        = datetime.datetime.fromisoformat(end_raw.replace('Z', ''))
-                    end_fmt   = en.strftime("%I:%M %p").lstrip('0')
-                    if not is_excluded: end_hours.append(en.hour + en.minute / 60.0)
-                except: end_fmt = end_raw[:5] if end_raw else '?'
-            else:
-                start_fmt   = "—"
-                end_fmt     = "—"
-                asleep_h    = 0.0
-                eff_val     = None
-                
-            bg_color = TODAY_BG if date_str == TODAY_STR else (ROW_ODD if i % 2 == 0 else ROW_EVN)
-            row_fg   = TODAY_FG if date_str == TODAY_STR else FG
-            if is_excluded:
-                row_fg = "#666666"
-
-            # Format values
-            try:
-                dt_obj   = datetime.datetime.strptime(date_str, "%Y-%m-%d")
-                day_fmt  = dt_obj.strftime("%a")
-                date_fmt = dt_obj.strftime("%m/%d")
-            except Exception:
-                day_fmt  = ""
-                date_fmt = date_str
-
-            dur_fmt   = f"{asleep_h:.1f}h"
-            if not is_excluded: durations.append(asleep_h)
-            
-            eff_fmt   = f"{eff_val:.0f}%" if eff_val is not None else "—"
-            if eff_val is not None and not is_excluded:
-                efficiencies.append(eff_val)
-            
-            debt_val  = (self.sleep_need_hours - asleep_h)
-            wtd_val   = debt_val * (0.9 ** i)
-            
-            if not is_excluded:
-                total_raw += debt_val
-                total_wtd += wtd_val
-            
-            debt_fg   = "#ff6b6b" if debt_val > 0.1 else "#6bff6b" if debt_val < -0.1 else row_fg
-            if is_excluded: debt_fg = "#442222" if debt_val > 0.1 else "#224422"
-
-            cell_data = [
-                (day_fmt,   "center",  row_fg),
-                (date_fmt,  "e",  row_fg),
-                (start_fmt, "e",  row_fg),
-                (end_fmt,   "e",  row_fg),
-                (dur_fmt,   "e",  row_fg),
-                (eff_fmt,   "e",  row_fg),
-                (f"{debt_val:+.1f}h",  "e",  debt_fg),
-                (f"{wtd_val:+.1f}h",   "e",  debt_fg),
-            ]
-
-            for col_i, (val, anc, fg_color) in enumerate(cell_data):
-                lbl = tk.Label(
-                    self.table_frame, text=val,
-                    bg=bg_color, fg=fg_color,
-                    font=("Segoe UI", 9),
-                    anchor=anc,
-                    padx=6
+            if main_sleep:
+                start_fmt, end_fmt, asleep_h, eff_val = session_fields(main_sleep)
+                _, start_h = fmt_clock(main_sleep.get('startTime', ''))
+                _, end_h = fmt_clock(main_sleep.get('endTime', ''))
+                if not is_excluded:
+                    if start_h is not None:
+                        start_hours.append(start_h)
+                    if end_h is not None:
+                        end_hours.append(end_h)
+                    durations.append(asleep_h)
+                    if eff_val is not None:
+                        efficiencies.append(eff_val)
+                debt_val = self.sleep_need_hours - asleep_h
+                wtd_val = debt_val * (0.9 ** i)
+                if not is_excluded:
+                    total_raw += debt_val
+                    total_wtd += wtd_val
+                debt_fg = "#ff6b6b" if debt_val > 0.1 else "#6bff6b" if debt_val < -0.1 else row_fg
+                if is_excluded:
+                    debt_fg = "#442222" if debt_val > 0.1 else "#224422"
+                render_row(
+                    grid_row, bg_color, row_fg, debt_fg, cb,
+                    day_fmt, date_fmt, start_fmt, end_fmt,
+                    f"{asleep_h:.1f}h",
+                    f"{eff_val:.0f}%" if eff_val is not None else "—",
+                    f"{debt_val:+.1f}h", f"{wtd_val:+.1f}h",
                 )
-                lbl.grid(row=grid_row, column=col_i + 1, sticky="ew", pady=1)
+            else:
+                debt_val = self.sleep_need_hours
+                wtd_val = debt_val * (0.9 ** i)
+                if not is_excluded:
+                    total_raw += debt_val
+                    total_wtd += wtd_val
+                debt_fg = "#ff6b6b" if not is_excluded else "#442222"
+                render_row(
+                    grid_row, bg_color, row_fg, debt_fg, cb,
+                    day_fmt, date_fmt, "—", "—", "0.0h", "—",
+                    f"{debt_val:+.1f}h", f"{wtd_val:+.1f}h",
+                )
+
             grid_row += 1
+
+            if self.include_naps.get() and naps and not is_excluded:
+                for nap in sorted(naps, key=lambda s: s.get('startTime', '')):
+                    nap_fg = "#666666" if is_excluded else NAP_FG
+                    start_fmt, end_fmt, nap_h, eff_val = session_fields(nap)
+                    nap_debt = -nap_h
+                    nap_wtd = nap_debt * (0.9 ** i)
+                    total_raw += nap_debt
+                    total_wtd += nap_wtd
+                    nap_debt_fg = "#6bff6b" if nap_h > 0.05 else row_fg
+                    render_row(
+                        grid_row, bg_color, nap_fg, nap_debt_fg, None,
+                        "nap", date_fmt, start_fmt, end_fmt,
+                        f"{nap_h:.1f}h",
+                        f"{eff_val:.0f}%" if eff_val is not None else "—",
+                        f"{nap_debt:+.1f}h", f"{nap_wtd:+.1f}h",
+                        font=("Segoe UI", 8, "italic"),
+                    )
+                    grid_row += 1
 
         # Summary Row (Averages / Totals)
         sep = tk.Frame(self.table_frame, bg="#444444", height=1)
@@ -1734,7 +1809,7 @@ class ClockWidget:
             self.root.after(0, self.toggle_widget)
            
         def on_reauth(icon, item=None):
-            self.root.after(0, self.fitbit.authorize)
+            self.root.after(0, self.relink_fitbit_and_refresh)
 
         self.tray_menu = pystray.Menu(
             pystray.MenuItem('Show/Hide Clock', on_toggle, default=True),
@@ -2610,7 +2685,7 @@ class ClockWidget:
                     fill="#00ccff", outline="white", width=2, tags="reauth_icon_fitbit"
                 )
                 self.canvas.create_text(ix, iy, text="F", fill="white", font=("Arial", int(icon_r), "bold"), tags="reauth_icon_fitbit")
-                self.canvas.tag_bind("reauth_icon_fitbit", "<Button-1>", lambda e: self.fitbit.authorize())
+                self.canvas.tag_bind("reauth_icon_fitbit", "<Button-1>", lambda e: self.relink_fitbit_and_refresh())
                 Tooltip(self.canvas, "Fitbit Auth Expired - Click to Re-link")
                 iy += icon_r * 2.5
                 

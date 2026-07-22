@@ -84,7 +84,16 @@ class SettingsManager(private val context: Context) {
             hrvMedicatedBase = 30.0,
             googleDriveUrl = ModelSettings.DEFAULT_GOOGLE_DRIVE_WEB_APP_URL,
             localBackupUri = "",
-            lastEmpiricalSync = 0L
+            lastEmpiricalSync = 0L,
+            usePersonalModel = true,
+            personalModelId = "M4_circadian_daily_baseline",
+            baselineIntercept = 37.30320553378204,
+            baselineSleepCoef = 0.042489107249623334,
+            baselineDebtCoef = 0.4463493452453248,
+            baselineEfficiencyCoef = -0.8018439800808569,
+            circAmp = 20.0,
+            circAmp2 = 3.2914687807723015,
+            circOffset = 4.929056621498718
         )
 
         private val DEFAULT_CALENDAR_SETTINGS = CalendarSettings()
@@ -218,7 +227,17 @@ data class ModelSettings(
     val hrvMedicatedBase: Double = 30.0,
     val googleDriveUrl: String = DEFAULT_GOOGLE_DRIVE_WEB_APP_URL,
     val localBackupUri: String = "",
-    val lastEmpiricalSync: Long = 0L
+    val lastEmpiricalSync: Long = 0L,
+    /** When true, use empirical personal model (M4) instead of population two-process defaults. */
+    val usePersonalModel: Boolean = true,
+    val personalModelId: String = "M4_circadian_daily_baseline",
+    val baselineIntercept: Double = 37.30320553378204,
+    val baselineSleepCoef: Double = 0.042489107249623334,
+    val baselineDebtCoef: Double = 0.4463493452453248,
+    val baselineEfficiencyCoef: Double = -0.8018439800808569,
+    val circAmp: Double = 20.0,
+    val circAmp2: Double = 3.2914687807723015,
+    val circOffset: Double = 4.929056621498718
 ) {
     companion object {
         const val DEFAULT_GOOGLE_DRIVE_WEB_APP_URL =
