@@ -893,6 +893,13 @@ class ClockWidget:
             self._max_rested_energy_args = current_args
         return self._max_rested_energy
 
+    def _energy_display_pct(self, current_e: float) -> int:
+        """Percent of today's personal peak (same sleep/debt inputs as the live curve)."""
+        max_e = self.energy_curve._cached_e_max
+        if max_e <= 0:
+            return 0
+        return min(100, max(0, int(round((current_e / max_e) * 100))))
+
     def on_right_click_start(self, event):
         self._right_click_active = True
         self._update_phantom_hand(event.x_root, event.y_root)
@@ -965,9 +972,8 @@ class ClockWidget:
             self.canvas.itemconfig("phantom_hand_dot", fill="#222222")
         
         if self.wake_hour is not None:
-            max_e = self._get_max_energy()
-            if max_e > 0:
-                pct = max(0, int(round((current_e / max_e) * 100)))
+            pct = self._energy_display_pct(current_e)
+            if self.energy_curve._cached_e_max > 0:
                 icon_size = max(12, int(radius / 7))
                 tip_offset = icon_size + 10
                 tx = center_x + (current_r + tip_offset) * math.cos(rad)
@@ -1941,12 +1947,9 @@ class ClockWidget:
         if self.wake_hour is not None:
             self._apply_energy_curve_params()
             current_e = self.energy_curve.get_cached_energy(current_hour)
-            
-            # max energy today if fully rested
-            max_e = self._get_max_energy()
-                
-            if max_e > 0 and self.show_energy_pct.get():
-                pct = max(0, int(round((current_e / max_e) * 100)))
+
+            if self.energy_curve._cached_e_max > 0 and self.show_energy_pct.get():
+                pct = self._energy_display_pct(current_e)
                 # Text at the tip of the hand
                 icon_size = max(12, int(radius / 7))
                 tip_offset = icon_size + 10

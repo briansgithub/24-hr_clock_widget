@@ -486,7 +486,7 @@ class ClockRenderer {
             val mainSleep = activeLogs.find { it.isMainSleep } ?: activeLogs.maxByOrNull { it.endTime }
             val totalAsleep = if (includeNaps) activeLogs.sumOf { it.minutesAsleep / 60.0 } else (mainSleep?.minutesAsleep ?: 0) / 60.0
 
-            drawEnergyPct(canvas, centerX, centerY, radius, exactHour, handRad, wakeHour, sleepDebt, totalAsleep, bathyphaseHour, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset, useBathyphase, maxEPerfection, modelSettings, sleepEfficiency)
+            drawEnergyPct(canvas, centerX, centerY, radius, exactHour, handRad, wakeHour, sleepDebt, totalAsleep, bathyphaseHour, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset, useBathyphase, peakEnergyToday, modelSettings, sleepEfficiency)
         }
 
         // 11.5 Timezone equirectangular map — fixed lock-screen (large centered) anchor
@@ -628,7 +628,7 @@ class ClockRenderer {
         debtFactor: Double,
         circadianOffset: Double,
         useBathyphase: Boolean,
-        maxEPerfection: Double,
+        todayPeakEnergy: Double,
         modelSettings: ModelSettings?,
         sleepEfficiency: Double
     ) {
@@ -637,7 +637,11 @@ class ClockRenderer {
             modelSettings, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset, useBathyphase, sleepEfficiency
         )
 
-        val pct = if (maxEPerfection > 0) (currentE / maxEPerfection * 100).roundToInt().coerceAtLeast(0) else 0
+        val pct = if (todayPeakEnergy > 0) {
+            (currentE / todayPeakEnergy * 100).roundToInt().coerceIn(0, 100)
+        } else {
+            0
+        }
         
         val textRadius = radius + 60f
         val tx = cx + textRadius * cos(handRad).toFloat()

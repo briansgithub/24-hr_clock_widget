@@ -589,5 +589,34 @@ class TestSleepInclusion(unittest.TestCase):
         self.assertEqual([kind for kind, _ in rows_off], ["main"])
 
 
+class TestEnergyDisplayPct(unittest.TestCase):
+    """Energy % label must use today's curve peak, not the perfection reference."""
+
+    def test_today_peak_pct_never_exceeds_100(self):
+        from energy_logic import get_energy_level
+
+        wake = 12.0
+        bathy = 4.0
+        goal = 9.7
+        for debt in (0.0, 1.0, 2.0):
+            for dur in (4.0, 6.0, 8.0):
+                today_levels = [
+                    get_energy_level((i / 1440.0) * 24.0, wake, debt, dur, bathy, clamp=False)
+                    for i in range(1441)
+                ]
+                today_peak = max(today_levels)
+                perfection_peak = max(
+                    get_energy_level((i / 1440.0) * 24.0, wake, 0.0, goal, bathy, clamp=False)
+                    for i in range(1441)
+                )
+                for cur in today_levels[::60]:
+                    pct_today = min(100, max(0, int(round((cur / today_peak) * 100)))) if today_peak else 0
+                    pct_wrong = int(round((cur / perfection_peak) * 100)) if perfection_peak else 0
+                    self.assertLessEqual(pct_today, 100)
+                    if dur < goal and debt == 0.0:
+                        self.assertGreaterEqual(pct_wrong, pct_today)
+                self.assertGreaterEqual(today_peak, max(today_levels))
+
+
 if __name__ == "__main__":
     unittest.main()

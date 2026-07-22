@@ -1,4 +1,4 @@
-# Energy Model Glossary
+﻿# Energy Model Glossary
 
 Definitions for abbreviations and terms used in the energy-model fit harness,
 validation reports, and handoffs.
@@ -7,15 +7,15 @@ validation reports, and handoffs.
 
 | Term | Full name | Meaning |
 |---|---|---|
-| **MAE** | Mean absolute error | Average \|observed − predicted\| across logged points (lower is better). |
+| **MAE** | Mean absolute error | Average \|observed âˆ’ predicted\| across logged points (lower is better). |
 | **RMSE** | Root mean square error | Square root of the average squared error; penalizes large misses more than MAE. |
-| **R²** | Coefficient of determination | Share of variance explained by the model; can be negative on small samples when the model is worse than the mean. |
-| **Bias** | Mean signed error | Average (predicted − observed); positive means the model tends to over-predict. |
-| **In-sample** | — | Metrics on all logged points used to fit parameters (optimistic). |
+| **RÂ²** | Coefficient of determination | Share of variance explained by the model; can be negative on small samples when the model is worse than the mean. |
+| **Bias** | Mean signed error | Average (predicted âˆ’ observed); positive means the model tends to over-predict. |
+| **In-sample** | â€” | Metrics on all logged points used to fit parameters (optimistic). |
 | **LOO** | Leave-one-out | Cross-validation that holds out one calendar day per fold. |
 | **LOO-CV** | Leave-one-out cross-validation | Primary generalization check in `analyze_energy_fit.py` (also written **CV**). |
 
-## Model tiers (M1–M6)
+## Model tiers (M1â€“M6)
 
 Candidate predictors benchmarked in `python/energy_models.py`. Names match `MODEL_REGISTRY` keys.
 
@@ -28,20 +28,28 @@ Candidate predictors benchmarked in `python/energy_models.py`. Names match `MODE
 | **M5** | `M5_mixed_fourier` | M4 plus intra-day Fourier harmonics (multi-peak afternoons). |
 | **M6** | `M6_time_varying_debt` | M2-style core with time-varying sleep-debt weighting. |
 
-**CV winner** — model with the lowest LOO MAE in a given re-fit run (not always adopted for production).
+**CV winner** â€” model with the lowest LOO MAE in a given re-fit run (not always adopted for production).
 
 ## Sleep and alertness dynamics
 
 | Term | Meaning |
 |---|---|
-| **Process S** | Homeostatic sleep pressure (Borbély two-process model): rises during wake, falls during sleep. |
+| **Process S** | Homeostatic sleep pressure (BorbÃ©ly two-process model): rises during wake, falls during sleep. |
 | **Process C** | Circadian alertness rhythm (phase relative to wake). |
 | **k_s** (also **k_S**) | Process S penalty scale in `predict_energy_sleep_aware()`; scales how strongly sleep pressure lowers predicted energy. |
-| **s_pressure** | Normalized Process S pressure (0–1) at a timestamp from sleep/wake history. |
-| **τ** / **tau** | Time constant (hours) governing wake or sleep dynamics (e.g. `tau_wake`, `tau_sleep`). |
+| **s_pressure** | Normalized Process S pressure (0â€“1) at a timestamp from sleep/wake history. |
+| **Ï„** / **tau** | Time constant (hours) governing wake or sleep dynamics (e.g. `tau_wake`, `tau_sleep`). |
 | **Sleep debt** | Rolling weighted shortfall vs personal sleep need over recent nights. |
 | **t** | Hours since main wake (mod 24) used as the circadian phase input. |
 
+
+## UI display
+
+| Term | Meaning |
+|---|---|
+| **Energy %** | Percent of today's personal energy curve peak (0–100). Uses the same sleep and debt inputs as the live ring; not compared to a perfection reference night. |
+| **Acrophase** | Clock time of the circadian energy peak for the current wake day (model-derived). |
+| **Perfection reference** | Hypothetical curve at goal sleep with zero debt; used for rested-cap logic, not for the Energy % hand label. |
 ## Sleep input grouping
 
 | Term | Meaning |
@@ -58,7 +66,7 @@ Candidate predictors benchmarked in `python/energy_models.py`. Names match `MODE
 | **INTERPOLATED** | Gap filled by linear interpolation between neighboring LOGGED points. |
 | **MISSED** | Unlogged slot; may receive a gap-fill proposal from data review. |
 
-## Outlier classifications (|error| ≥ 12)
+## Outlier classifications (|error| â‰¥ 12)
 
 | Class | Meaning |
 |---|---|
