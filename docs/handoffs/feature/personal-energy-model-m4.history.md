@@ -38,6 +38,14 @@ Append-only milestones. Current state: [personal-energy-model-m4.md](personal-en
 - Validation: 26 tests pass; handoff validator pass; commit excludes empirical CSV.
 - Validation: 26 tests pass; full pipeline + validation report refreshed.
 
-### 2026-07-22 â€” Energy % display denominator fix
+### 2026-07-22 — Energy % display denominator fix
 - Change: Python `clock_widget.py` and Android `ClockRenderer.kt` now divide by today's curve peak (same sleep/debt inputs), not the perfection reference (goal sleep, zero debt). Added `TestEnergyDisplayPct`.; ``docs/energy_model_glossary.md`` — **UI display** section (Energy %, Acrophase, Perfection reference).
 - Cause: M4 negative `baseline_sleep_coef` raises today's curve above the perfection baseline when actual sleep < `bedtime_goal`, yielding >100% labels (e.g. 102% at 4h sleep in verification logs).
+
+### 2026-07-26 — Python Display UI alignment: Bathyphase, Acrophase, Grogginess, and Wind-down Wedge
+- Change: Exposed Bathyphase Indicator and Acrophase Indicator checkboxes in Python control panel; added `show_grogginess` and `show_wind_down` BooleanVars with UI toggles under SLEEP section, JSON persistence in `sleep_settings.json`, and pre-bedtime 90-minute translucent wind-down arc rendering in `draw_sleep_arc()`.
+- Validation: `python -m compileall python`, `python scripts/validate_handoffs.py` passed.
+
+### 2026-07-26 — Python Display UI alignment: Bedtime Countdown standalone window
+- Change: Added standalone draggable `bedtime_countdown_window` Toplevel with `_build_bedtime_countdown()`, `_resolve_bedtime_target()` (mirrors Android's `BedtimeNotificationManager.resolveBedtimeMillis`: fall-asleep − 90 min, rounded to 5 min, 10 PM clamp for 22:00–23:30), `update_bedtime_countdown_visibility()`, and `_update_bedtime_countdown_tick()` (1-second live ticker). Defaulted to ON (`show_bedtime_countdown = True`). Unified `check_nearby()` time-window tracking (`in_time_window`), using screen mouse pointer coordinates (`winfo_pointerx/y`) across transparent background regions to trigger `hover_delay_var` solid transition (`make_solid()`) and `timeout_delay_var` transparent transition (`make_clock_transparent()`).
+- Validation: `python -m compileall python`, 27 tests passed, `python scripts/validate_handoffs.py` passed.

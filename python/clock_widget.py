@@ -118,6 +118,9 @@ class ClockWidget:
         self.show_manual_wake = tk.BooleanVar(value=True)
         self.show_bathyphase = tk.BooleanVar(value=True)
         self.show_acrophase = tk.BooleanVar(value=True)
+        self.show_grogginess = tk.BooleanVar(value=True)
+        self.show_wind_down = tk.BooleanVar(value=True)
+        self.show_bedtime_countdown = tk.BooleanVar(value=True)
         self.show_sleep_table = tk.BooleanVar(value=True)
         self.show_calendar = tk.BooleanVar(value=True)
         self.show_sleep_model = tk.BooleanVar(value=False)
@@ -144,6 +147,8 @@ class ClockWidget:
         self.use_bathyphase.trace_add("write", lambda *args: getattr(self, 'canvas', None) and self.draw_clock())
         self.show_bathyphase.trace_add("write", lambda *args: getattr(self, 'canvas', None) and (self.draw_clock(), self._save_sleep_settings()))
         self.show_acrophase.trace_add("write", lambda *args: getattr(self, 'canvas', None) and (self.draw_clock(), self._save_sleep_settings()))
+        self.show_grogginess.trace_add("write", lambda *args: getattr(self, 'canvas', None) and (self.draw_clock(), self._save_sleep_settings()))
+        self.show_wind_down.trace_add("write", lambda *args: getattr(self, 'canvas', None) and (self.draw_clock(), self._save_sleep_settings()))
         self.manual_wake_time.trace_add("write", lambda *args: getattr(self, 'canvas', None) and (self.draw_clock(), self._save_sleep_settings()))
 
         # ── Fitbit Integration ────────────────────────────────────────────────
@@ -218,6 +223,14 @@ class ClockWidget:
         self.sleep_model_window.overrideredirect(True)
         self.sleep_model_window.withdraw()
         self._build_sleep_model()
+
+        # ── Bedtime Countdown Window ─────────────────────────────────────────
+        self.bedtime_countdown_window = tk.Toplevel(self.root)
+        self.bedtime_countdown_window.title("Bedtime Countdown")
+        self.bedtime_countdown_window.configure(bg="#1a1a1a")
+        self.bedtime_countdown_window.overrideredirect(True)
+        self.bedtime_countdown_window.withdraw()
+        self._build_bedtime_countdown()
 
         self.controls_frame = tk.Frame(self.controls_window, bg=self.solid_bg)
         self.controls_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -338,6 +351,11 @@ class ClockWidget:
         self.sleep_toggle = add_toggle("Show Sleep on Clock", self.show_sleep, on_toggle_change, self.right_col)
         self.bedtime_toggle = add_toggle("Time in Bed vs. Asleep Hrs.", self.show_total_bedtime, on_toggle_change, self.right_col)
         self.debt_text_toggle = add_toggle("Show Sleep Debt Text", self.show_sleep_debt_text, on_toggle_change, self.right_col)
+        self.bathyphase_toggle = add_toggle("Bathyphase Indicator", self.show_bathyphase, on_toggle_change, self.right_col)
+        self.acrophase_toggle = add_toggle("Acrophase Indicator", self.show_acrophase, on_toggle_change, self.right_col)
+        self.grogginess_toggle = add_toggle("Grogginess Wedge", self.show_grogginess, on_toggle_change, self.right_col)
+        self.wind_down_toggle = add_toggle("Wind-down Wedge", self.show_wind_down, on_toggle_change, self.right_col)
+        self.bedtime_countdown_toggle = add_toggle("Bedtime Countdown", self.show_bedtime_countdown, self.update_bedtime_countdown_visibility, self.right_col)
         self.table_toggle = add_toggle("Show Sleep Log Table", self.show_sleep_table, self.update_sleep_table_visibility, self.right_col)
 
         add_divider("ENERGY", self.right_col)
@@ -393,7 +411,7 @@ class ClockWidget:
         self.canvas.bind("<Configure>", self.on_resize)
        
         # Bind hover events
-        for widget in (self.root, self.controls_window, self.sleep_table_window, self.sleep_model_window):
+        for widget in (self.root, self.controls_window, self.sleep_table_window, self.sleep_model_window, self.bedtime_countdown_window):
             widget.bind("<Enter>", self.on_enter)
             widget.bind("<Leave>", self.on_leave)
        
@@ -425,6 +443,8 @@ class ClockWidget:
             self.controls_window.attributes('-topmost', self.always_on_top.get())
         if hasattr(self, 'sleep_model_window'):
             self.sleep_model_window.attributes('-topmost', self.always_on_top.get())
+        if hasattr(self, 'bedtime_countdown_window'):
+            self.bedtime_countdown_window.attributes('-topmost', self.always_on_top.get())
 
 
     def get_borders(self):
@@ -447,6 +467,12 @@ class ClockWidget:
         self.root.configure(bg=bg_color)
         self.main_frame.configure(bg=bg_color)
         self.canvas.configure(bg=bg_color)
+        if hasattr(self, 'bedtime_countdown_window') and hasattr(self, '_bc_frame'):
+            self.bedtime_countdown_window.configure(bg=bg_color)
+            self._bc_frame.configure(bg=bg_color)
+            self._bc_label.configure(bg=bg_color)
+            self._bc_countdown.configure(bg=bg_color)
+            self._bc_target.configure(bg=bg_color)
         
         rx = self.root.winfo_rootx()
         ry = self.root.winfo_rooty()
@@ -465,6 +491,12 @@ class ClockWidget:
         self.root.configure(bg=bg_color)
         self.main_frame.configure(bg=bg_color)
         self.canvas.configure(bg=bg_color)
+        if hasattr(self, 'bedtime_countdown_window') and hasattr(self, '_bc_frame'):
+            self.bedtime_countdown_window.configure(bg=bg_color)
+            self._bc_frame.configure(bg=bg_color)
+            self._bc_label.configure(bg=bg_color)
+            self._bc_countdown.configure(bg=bg_color)
+            self._bc_target.configure(bg=bg_color)
         
         rx = self.root.winfo_rootx()
         ry = self.root.winfo_rooty()
@@ -569,6 +601,173 @@ class ClockWidget:
         else:
             self.sleep_model_window.withdraw()
 
+    # ── Bedtime Countdown Window ─────────────────────────────────────────
+
+    def _build_bedtime_countdown(self):
+        """Build the standalone bedtime countdown window UI."""
+        win = self.bedtime_countdown_window
+        win.attributes("-transparentcolor", self.transparent_key)
+        initial_bg = self.transparent_key if getattr(self, 'is_clock_transparent', False) else self.solid_bg
+        win.configure(bg=initial_bg)
+
+        frame = tk.Frame(win, bg=initial_bg)
+        self._bc_frame = frame
+        frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
+
+        self._bc_label = tk.Label(
+            frame, text="Bedtime", bg=initial_bg, fg="white",
+            font=("Segoe UI", 11), anchor=tk.W
+        )
+        self._bc_label.pack(fill=tk.X)
+
+        self._bc_countdown = tk.Label(
+            frame, text="--:--:--", bg=initial_bg, fg="white",
+            font=("Segoe UI", 22, "bold"), anchor=tk.W
+        )
+        self._bc_countdown.pack(fill=tk.X)
+
+        self._bc_target = tk.Label(
+            frame, text="", bg=initial_bg, fg="#cccccc",
+            font=("Segoe UI", 12), anchor=tk.W
+        )
+        self._bc_target.pack(fill=tk.X)
+
+        # Drag and hover bindings across window, frame, and labels
+        for w in (win, frame, self._bc_label, self._bc_countdown, self._bc_target):
+            w.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.bedtime_countdown_window))
+            w.bind("<B1-Motion>", lambda e: self.on_drag_motion(e))
+            w.bind("<Enter>", self.on_enter)
+            w.bind("<Leave>", self.on_leave)
+
+        self._bc_timer_id = None
+
+    def _resolve_bedtime_target(self):
+        """Calculate the next bedtime target as a datetime, mirroring Android's BedtimeNotificationManager.
+
+        Uses the latest main sleep start minus 90 minutes, rounded to nearest 5 min,
+        clamped to 10:00 PM when fall-asleep is in [22:00, 23:30].
+        Falls back to 10:00 PM if no main sleep data is available.
+        """
+        LEAD_MINUTES = 90
+        DEFAULT_HOUR, DEFAULT_MINUTE = 22, 0
+        now = datetime.datetime.now()
+
+        main_sleep = None
+        if self.raw_sleep_logs and self.active_sleep_date:
+            main_sleep = next(
+                (log for log in self.raw_sleep_logs
+                 if log.get('dateOfSleep') == self.active_sleep_date
+                 and log.get('isMainSleep', False)),
+                None
+            )
+
+        bedtime_time = None
+        if main_sleep:
+            try:
+                start_dt = datetime.datetime.fromisoformat(
+                    main_sleep['startTime'].replace('Z', '')
+                )
+                bedtime_dt = start_dt - datetime.timedelta(minutes=LEAD_MINUTES)
+                # Round to nearest 5 minutes
+                minute = bedtime_dt.minute
+                rounded = ((minute + 2) // 5) * 5
+                bedtime_dt = bedtime_dt.replace(minute=0, second=0, microsecond=0) + datetime.timedelta(minutes=rounded)
+
+                # Clamp to 10:00 PM when fall-asleep is in [22:00, 23:30]
+                fall_asleep_hm = start_dt.hour * 60 + start_dt.minute
+                if 22 * 60 <= fall_asleep_hm <= 23 * 60 + 30:
+                    bedtime_dt = bedtime_dt.replace(hour=22, minute=0, second=0, microsecond=0)
+
+                bedtime_time = bedtime_dt.time()
+            except (KeyError, ValueError):
+                pass
+
+        if bedtime_time is None:
+            bedtime_time = datetime.time(DEFAULT_HOUR, DEFAULT_MINUTE)
+
+        # Build next occurrence of this time-of-day
+        target = now.replace(
+            hour=bedtime_time.hour, minute=bedtime_time.minute,
+            second=0, microsecond=0
+        )
+        if target <= now:
+            target += datetime.timedelta(days=1)
+
+        return target
+
+    def update_bedtime_countdown_visibility(self, *args):
+        """Show/hide the standalone bedtime countdown window and start/stop its timer."""
+        if not hasattr(self, 'bedtime_countdown_window'):
+            return
+        self._save_sleep_settings()
+
+        if self.show_bedtime_countdown.get():
+            bg_color = self.transparent_key if getattr(self, 'is_clock_transparent', False) else self.solid_bg
+            self.bedtime_countdown_window.configure(bg=bg_color)
+            if hasattr(self, '_bc_frame'): self._bc_frame.configure(bg=bg_color)
+            if hasattr(self, '_bc_label'): self._bc_label.configure(bg=bg_color)
+            if hasattr(self, '_bc_countdown'): self._bc_countdown.configure(bg=bg_color)
+            if hasattr(self, '_bc_target'): self._bc_target.configure(bg=bg_color)
+
+            if not self.bedtime_countdown_window.winfo_viewable():
+                # Position below the clock widget on first show
+                rx = self.root.winfo_rootx()
+                ry = self.root.winfo_rooty()
+                rh = self.root.winfo_height()
+                self.bedtime_countdown_window.geometry(f"+{rx}+{ry + rh + 10}")
+            self.bedtime_countdown_window.deiconify()
+            self.bedtime_countdown_window.lift()
+            self.bedtime_countdown_window.attributes('-topmost', self.always_on_top.get())
+            self._update_bedtime_countdown_tick()
+        else:
+            if self._bc_timer_id is not None:
+                self.root.after_cancel(self._bc_timer_id)
+                self._bc_timer_id = None
+            self.bedtime_countdown_window.withdraw()
+
+    def _update_bedtime_countdown_tick(self):
+        """Tick the bedtime countdown display every second."""
+        if not self.show_bedtime_countdown.get():
+            return
+
+        now = datetime.datetime.now()
+        target = self._resolve_bedtime_target()
+
+        # Overdue check: if bedtime just passed within last 6 hours, show overdue
+        last_bedtime = target - datetime.timedelta(days=1)
+        is_overdue = (now >= last_bedtime and
+                      now < last_bedtime + datetime.timedelta(hours=6))
+
+        remaining = target - now
+        total_seconds = max(0, int(remaining.total_seconds()))
+        minutes_remaining = total_seconds / 60.0
+
+        # Color: interpolate white → gray (#888) over last 90 minutes
+        if is_overdue:
+            color = "#888888"
+        elif minutes_remaining > 90:
+            color = "#ffffff"
+        else:
+            progress = max(0.0, min(1.0, (90.0 - minutes_remaining) / 90.0))
+            channel = int(255 - (255 - 136) * progress)
+            color = f"#{channel:02x}{channel:02x}{channel:02x}"
+
+        if is_overdue:
+            countdown_str = "GO TO BED!"
+            target_str = ""
+        else:
+            hours = total_seconds // 3600
+            minutes = (total_seconds % 3600) // 60
+            seconds = total_seconds % 60
+            countdown_str = f"{hours}:{minutes:02d}:{seconds:02d}"
+            target_str = target.strftime("%I:%M %p").lstrip("0")
+
+        self._bc_label.configure(fg=color)
+        self._bc_countdown.configure(fg=color, text=countdown_str)
+        self._bc_target.configure(fg=color, text=target_str)
+
+        self._bc_timer_id = self.root.after(1000, self._update_bedtime_countdown_tick)
+
     def make_solid(self):
         self.make_clock_solid()
         self.make_controls_visible()
@@ -628,6 +827,16 @@ class ClockWidget:
         root_margin = 20 # More generous margin for resize handles
         in_root = not (mx < rx - root_margin or mx > rx + rw + root_margin or my < ry - root_margin or my > ry + rh + root_margin)
         
+        in_bedtime_timer = False
+        if getattr(self, 'bedtime_countdown_window', None) and self.bedtime_countdown_window.winfo_viewable():
+            bx = self.bedtime_countdown_window.winfo_rootx()
+            by = self.bedtime_countdown_window.winfo_rooty()
+            bw = self.bedtime_countdown_window.winfo_width()
+            bh = self.bedtime_countdown_window.winfo_height()
+            in_bedtime_timer = not (mx < bx - margin or mx > bx + bw + margin or my < by - margin or my > by + bh + margin)
+
+        in_time_window = in_root or in_bedtime_timer
+
         in_controls = False
         if getattr(self, 'controls_window', None) and self.controls_window.winfo_viewable():
             cx = self.controls_window.winfo_rootx()
@@ -650,23 +859,23 @@ class ClockWidget:
             sh = self.sleep_model_window.winfo_height()
             in_controls = not (mx < sx - margin or mx > sx + sw + margin or my < sy - margin or my > sy + sh + margin)
 
-        if in_root and in_controls:
+        if in_time_window and in_controls:
             top_widget = self.root.winfo_containing(mx, my)
             if top_widget is not None:
                 top_win = top_widget.winfo_toplevel()
-                if top_win == self.root:
+                if top_win in (self.root, getattr(self, 'bedtime_countdown_window', None)):
                     in_controls = False
-                elif top_win == getattr(self, 'controls_window', None):
-                    in_root = False
-                elif getattr(self, 'sleep_table_window', None) and top_win == self.sleep_table_window:
-                    in_root = False
-                elif getattr(self, 'sleep_model_window', None) and top_win == self.sleep_model_window:
-                    in_root = False
+                elif top_win in (getattr(self, 'controls_window', None), getattr(self, 'sleep_table_window', None), getattr(self, 'sleep_model_window', None)):
+                    in_time_window = False
             else:
-                # If on border (None), prioritize root if we are in its generous margin
-                # and it's currently solid (to allow resizing)
-                if in_root and not getattr(self, 'is_clock_transparent', False):
+                if in_time_window and not getattr(self, 'is_clock_transparent', False):
                     in_controls = False
+
+        def get_hover_ms():
+            try:
+                return int(float(self.hover_delay_var.get()) * 1000)
+            except:
+                return 750
 
         def get_timeout_ms():
             try:
@@ -674,24 +883,40 @@ class ClockWidget:
             except:
                 return 1000
 
-        # Clock Timeout Logic
+        # Time Windows (Clock & Bedtime Timer Window) Timeout & Hover Logic
         if in_controls:
             if getattr(self, '_clock_hide_timer_started', False):
                 self.root.after_cancel(self._clock_hide_timer_id)
                 self._clock_hide_timer_started = False
+            if getattr(self, '_hover_timer_started', False):
+                self.root.after_cancel(self._hover_timer_id)
+                self._hover_timer_started = False
             self.make_clock_transparent()
-        elif not in_root:
+        elif not in_time_window:
+            if getattr(self, '_hover_timer_started', False):
+                self.root.after_cancel(self._hover_timer_id)
+                self._hover_timer_started = False
             if not getattr(self, '_clock_hide_timer_started', False):
                 self._clock_hide_timer_started = True
                 self._clock_hide_timer_id = self.root.after(get_timeout_ms(), self.make_clock_transparent)
         else:
+            # Mouse is hovering inside time window (clock or bedtime timer, even transparent part)
             if getattr(self, '_clock_hide_timer_started', False):
                 self.root.after_cancel(self._clock_hide_timer_id)
                 self._clock_hide_timer_started = False
-            self.make_clock_solid()
+
+            if getattr(self, 'is_clock_transparent', False):
+                if not getattr(self, '_hover_timer_started', False):
+                    self._hover_timer_started = True
+                    self._hover_timer_id = self.root.after(get_hover_ms(), self._on_hover_timeout)
+            else:
+                if getattr(self, '_hover_timer_started', False):
+                    self.root.after_cancel(self._hover_timer_id)
+                    self._hover_timer_started = False
+                self.make_clock_solid()
 
         # Controls Timeout Logic
-        if not in_controls and not in_root:
+        if not in_controls and not in_time_window:
             if not getattr(self, '_controls_hide_timer_started', False):
                 self._controls_hide_timer_started = True
                 self._controls_hide_timer_id = self.root.after(get_timeout_ms(), self.make_controls_hidden)
@@ -701,34 +926,17 @@ class ClockWidget:
                 self._controls_hide_timer_started = False
             self.make_controls_visible()
 
-        # Stop polling only if both are hidden
-        if getattr(self, 'is_clock_transparent', False) and not getattr(self, 'is_controls_visible', False):
-            self._checking_nearby = False
-            return
-
+        # Always continue polling mouse coordinates while windows are active
         self.root.after(250, self.check_nearby)
 
+    def _on_hover_timeout(self):
+        self._hover_timer_started = False
+        self.make_solid()
+
     def on_enter(self, event):
-        if self.hover_timer is not None:
-            self.root.after_cancel(self.hover_timer)
-            self.hover_timer = None
-            
-        toplevel = event.widget.winfo_toplevel()
-        if toplevel == self.root:
-            if getattr(self, 'is_clock_transparent', False):
-                try:
-                    delay = int(float(self.hover_delay_var.get()) * 1000)
-                except:
-                    delay = 750
-                self.hover_timer = self.root.after(delay, self.make_solid)
-            else:
-                if not getattr(self, '_checking_nearby', False):
-                    self._checking_nearby = True
-                    self.check_nearby()
-        else:
-            if not getattr(self, '_checking_nearby', False):
-                self._checking_nearby = True
-                self.check_nearby()
+        if not getattr(self, '_checking_nearby', False):
+            self._checking_nearby = True
+            self.check_nearby()
 
     def _load_sleep_settings(self):
         """Load settings from JSON."""
@@ -754,6 +962,9 @@ class ClockWidget:
                         self.show_manual_wake.set(p.get("show_manual_wake", True))
                         self.show_bathyphase.set(p.get("show_bathyphase", True))
                         self.show_acrophase.set(p.get("show_acrophase", True))
+                        self.show_grogginess.set(p.get("show_grogginess", True))
+                        self.show_wind_down.set(p.get("show_wind_down", True))
+                        self.show_bedtime_countdown.set(p.get("show_bedtime_countdown", False))
 
                     return data.get("excluded_dates", [today_str])
             except:
@@ -807,7 +1018,10 @@ class ClockWidget:
                     "manual_wake_time": self.manual_wake_time.get(),
                     "show_manual_wake": self.show_manual_wake.get(),
                     "show_bathyphase": self.show_bathyphase.get(),
-                    "show_acrophase": self.show_acrophase.get()
+                    "show_acrophase": self.show_acrophase.get(),
+                    "show_grogginess": self.show_grogginess.get(),
+                    "show_wind_down": self.show_wind_down.get(),
+                    "show_bedtime_countdown": self.show_bedtime_countdown.get()
                 }
             }
             with open(self.sleep_settings_file, 'w') as f:
@@ -1756,6 +1970,7 @@ class ClockWidget:
         self.update_calendar_data()
         self.draw_clock()
         self.root.deiconify()
+        self.update_bedtime_countdown_visibility()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.setup_tray_icon()
 
@@ -2315,7 +2530,7 @@ class ClockWidget:
 
             # Draw grogginess wedge for the main sleep
             main_sleep = next((log for log in self.raw_sleep_logs if log.get('dateOfSleep') == self.active_sleep_date and log.get('isMainSleep', False)), None)
-            if main_sleep:
+            if self.show_grogginess.get() and main_sleep:
                 try:
                     end_dt = datetime.datetime.fromisoformat(main_sleep['endTime'].replace('Z', ''))
                     wake_h = end_dt.hour + end_dt.minute / 60.0 + end_dt.second / 3600.0
@@ -2333,6 +2548,44 @@ class ClockWidget:
                         
                         step_size = g_extent / num_steps
                         s_angle = g_start_angle - i * step_size
+                        
+                        self.canvas.create_arc(
+                            center_x - (radius - sleep_margin), center_y - (radius - sleep_margin),
+                            center_x + (radius - sleep_margin), center_y + (radius - sleep_margin),
+                            start=s_angle, extent=-step_size,
+                            fill=slice_color, outline=slice_color, style=tk.PIESLICE,
+                            tags="sleep_arc"
+                        )
+                except (KeyError, ValueError):
+                    pass
+
+            # Draw wind-down wedge before the main sleep
+            if self.show_wind_down.get() and main_sleep:
+                try:
+                    start_dt = datetime.datetime.fromisoformat(main_sleep['startTime'].replace('Z', ''))
+                    end_dt   = datetime.datetime.fromisoformat(main_sleep['endTime'].replace('Z', ''))
+                    
+                    asleep_h = start_dt.hour + start_dt.minute / 60.0 + start_dt.second / 3600.0
+                    if not self.show_total_bedtime.get():
+                        dur_hrs = main_sleep.get('minutesAsleep', 0) / 60.0
+                        e_h = end_dt.hour + end_dt.minute / 60.0 + end_dt.second / 3600.0
+                        asleep_h = (e_h - dur_hrs) % 24
+
+                    # 90 minutes (1.5h) wind-down leading into sleep start
+                    wd_start_h = (asleep_h - 1.5) % 24
+                    wd_start_angle = (18 - wd_start_h) * 15
+                    wd_extent = 1.5 * 15
+
+                    sleep_margin = radius * 0.15
+                    num_steps = 10
+                    for i in range(num_steps):
+                        t = i / (num_steps - 1)
+                        # Interpolate light gray #5C5C5C (92) to dark gray #111111 (17)
+                        val = int(92 + (17 - 92) * t)
+                        slice_color = f"#{val:02x}{val:02x}{val:02x}"
+                        
+                        step_size = wd_extent / num_steps
+                        s_angle = wd_start_angle - i * step_size
                         
                         self.canvas.create_arc(
                             center_x - (radius - sleep_margin), center_y - (radius - sleep_margin),
