@@ -4,6 +4,172 @@ import kotlin.math.*
 
 object EnergyCalculator {
 
+    const val MODEL_M8 = "M8_adaptive_sleep"
+
+    private val adaptivePersonalModelIds = setOf(
+        MODEL_M8,
+        // Treat persisted legacy IDs as a migration alias so existing installs
+        // receive M8 without requiring a settings reset.
+        "M4_circadian_daily_baseline",
+        "M7_empirical_clock_fourier"
+    )
+    private val adaptiveCircadianCoefs = doubleArrayOf(
+        51.760499671310974,
+        -7.1539665570855036,
+        -20.1182843432549,
+        5.748481363814623,
+        -6.102330290654
+    )
+    private const val referenceSleepHours = 8.0
+    private const val referencePeakClock = 20.0
+    private const val maxPhaseShiftHours = 3.0
+    private const val adaptiveTauWake = 23.0
+    private const val adaptiveTauSleep = 4.0
+    private const val adaptiveInertiaTau = 0.75
+    private const val homeostaticScale = 25.0
+    private const val adaptiveDebtScale = 2.0
+    private const val debtSaturationHours = 12.0
+    private const val inertiaScale = 12.0
+    private const val processSMin = 0.05
+    private const val processSMax = 1.0
+    private const val homeostaticDeltaMin = -0.15
+    private const val homeostaticDeltaMax = 0.35
+
+    private data class ProcessSContext(
+        val delta: Double,
+        val hoursSinceLastWake: Double,
+        val asleep: Boolean
+    )
+
+    private fun processSAfterSleep(sleepDuration: Double): Double {
+        val duration = sleepDuration.coerceIn(0.0, 24.0)
+        val awakeDuration = 24.0 - duration
+        val eWake = exp(-awakeDuration / adaptiveTauWake)
+        val eSleep = exp(-duration / adaptiveTauSleep)
+        val divisor = max(0.0001, 1.0 - eWake * eSleep)
+        val state = (
+            processSMax * eSleep * (1.0 - eWake) +
+                processSMin * (1.0 - eSleep)
+            ) / divisor
+        return state.coerceIn(processSMin, processSMax)
+    }
+
+    private fun processSAwake(state: Double, hours: Double): Double =
+        state + (processSMax - state) *
+            (1.0 - exp(-max(0.0, hours) / adaptiveTauWake))
+
+    private fun processSAsleep(state: Double, hours: Double): Double =
+        processSMin + (state - processSMin) *
+            exp(-max(0.0, hours) / adaptiveTauSleep)
+
+    private fun normalizedNapIntervals(intervals: List<SleepInterval>): List<SleepInterval> {
+        val ordered = intervals.mapNotNull { interval ->
+            if (!interval.startAfterWake.isFinite() || !interval.endAfterWake.isFinite()) {
+                null
+            } else {
+                val start = interval.startAfterWake.coerceIn(0.0, 24.0)
+                val end = interval.endAfterWake.coerceIn(0.0, 24.0)
+                if (end > start) SleepInterval(start, end) else null
+            }
+        }.sortedBy { it.startAfterWake }
+
+        val merged = mutableListOf<SleepInterval>()
+        for (interval in ordered) {
+            val last = merged.lastOrNull()
+            if (last != null && interval.startAfterWake <= last.endAfterWake) {
+                merged[merged.lastIndex] = SleepInterval(
+                    last.startAfterWake,
+                    max(last.endAfterWake, interval.endAfterWake)
+                )
+            } else {
+                merged.add(interval)
+            }
+        }
+        return merged
+    }
+
+    private fun adaptiveProcessSContext(
+        hoursSinceMainWake: Double,
+        sleepDuration: Double,
+        napIntervals: List<SleepInterval>
+    ): ProcessSContext {
+        var actual = processSAfterSleep(sleepDuration)
+        var rested = processSAfterSleep(referenceSleepHours)
+        val target = hoursSinceMainWake.coerceIn(0.0, 24.0)
+        var cursor = 0.0
+        var lastWake = 0.0
+
+        for (nap in normalizedNapIntervals(napIntervals)) {
+            if (nap.startAfterWake >= target) break
+            val awakeHours = max(0.0, nap.startAfterWake - cursor)
+            actual = processSAwake(actual, awakeHours)
+            rested = processSAwake(rested, awakeHours)
+
+            val sleepEnd = min(target, nap.endAfterWake)
+            actual = processSAsleep(actual, sleepEnd - nap.startAfterWake)
+            rested = processSAsleep(rested, sleepEnd - nap.startAfterWake)
+            if (target < nap.endAfterWake) {
+                return ProcessSContext(actual - rested, 0.0, true)
+            }
+            cursor = nap.endAfterWake
+            lastWake = nap.endAfterWake
+        }
+
+        val awakeHours = max(0.0, target - cursor)
+        actual = processSAwake(actual, awakeHours)
+        rested = processSAwake(rested, awakeHours)
+        return ProcessSContext(actual - rested, max(0.0, target - lastWake), false)
+    }
+
+    private fun circularHourDifference(target: Double, reference: Double): Double =
+        (target - reference + 12.0).mod(24.0) - 12.0
+
+    /**
+     * M8: personal local-clock Fourier baseline plus continuous, nap-aware
+     * Process S, saturating observed-night debt, and wake/nap sleep inertia.
+     */
+    fun adaptiveSleepEnergy(
+        clockHour: Double,
+        wakeHour: Double,
+        sleepDuration: Double,
+        sleepDebtHours: Double,
+        bathyphaseHour: Double? = null,
+        circadianPeakOffset: Double? = null,
+        napIntervals: List<SleepInterval> = emptyList(),
+        clamp: Boolean = true
+    ): Double {
+        val t = (clockHour - wakeHour).mod(24.0)
+        val process = adaptiveProcessSContext(t, sleepDuration, napIntervals)
+        if (process.asleep) return 0.0
+
+        val desiredPeak = when {
+            bathyphaseHour != null -> (bathyphaseHour + 15.0).mod(24.0)
+            circadianPeakOffset != null -> (wakeHour + circadianPeakOffset).mod(24.0)
+            else -> null
+        }
+        val phaseShift = desiredPeak?.let {
+            circularHourDifference(it, referencePeakClock)
+                .coerceIn(-maxPhaseShiftHours, maxPhaseShiftHours)
+        } ?: 0.0
+
+        val theta = 2.0 * PI * (clockHour - phaseShift).mod(24.0) / 24.0
+        val baseline = adaptiveCircadianCoefs[0] +
+            adaptiveCircadianCoefs[1] * cos(theta) +
+            adaptiveCircadianCoefs[2] * sin(theta) +
+            adaptiveCircadianCoefs[3] * cos(2.0 * theta) +
+            adaptiveCircadianCoefs[4] * sin(2.0 * theta)
+
+        val processDelta = process.delta.coerceIn(homeostaticDeltaMin, homeostaticDeltaMax)
+        val debtLoad = 1.0 - exp(-max(0.0, sleepDebtHours) / debtSaturationHours)
+        val inertiaLoad = exp(-process.hoursSinceLastWake / adaptiveInertiaTau)
+        val energyPct = baseline -
+            homeostaticScale * processDelta -
+            adaptiveDebtScale * debtLoad -
+            inertiaScale * inertiaLoad
+        val alertness = energyPct / 100.0
+        return if (clamp) alertness.coerceIn(0.0, 1.0) else alertness
+    }
+
     fun personalM4Energy(
         t: Double,
         sleepDuration: Double,
@@ -111,15 +277,21 @@ object EnergyCalculator {
         baselineEfficiencyCoef: Double = -0.8,
         circAmp: Double = 20.0,
         circAmp2: Double = 3.3,
-        circOffset: Double = 4.9
+        circOffset: Double = 4.9,
+        napIntervals: List<SleepInterval> = emptyList()
     ): Double {
         val t = (hClock - wakeHour).mod(24.0)
 
-        if (usePersonalModel && personalModelId == "M4_circadian_daily_baseline") {
-            return personalM4Energy(
-                t, sleepDuration, sleepDebtHours, sleepEfficiency,
-                baselineIntercept, baselineSleepCoef, baselineDebtCoef, baselineEfficiencyCoef,
-                circAmp, circAmp2, circOffset, clamp
+        if (usePersonalModel && personalModelId in adaptivePersonalModelIds) {
+            return adaptiveSleepEnergy(
+                clockHour = hClock,
+                wakeHour = wakeHour,
+                sleepDuration = sleepDuration,
+                sleepDebtHours = sleepDebtHours,
+                bathyphaseHour = bathyphaseHour,
+                circadianPeakOffset = circadianPeakOffset,
+                napIntervals = napIntervals,
+                clamp = clamp
             )
         }
 
@@ -154,21 +326,20 @@ object EnergyCalculator {
         }
 
         val today = java.time.LocalDate.now()
-        var weightedDebt = 0.0
+        var debt = 0.0
         val decayFactor = 0.9
+        val excluded = excludedDates.toSet()
 
-        // Process T-0 down to T-14
-        for (i in 0 until 15) {
+        // Oldest to newest: update only when an observed night exists.
+        for (i in 14 downTo 0) {
             val dateStr = today.minusDays(i.toLong()).toString()
-            if (excludedDates.contains(dateStr)) continue
-
-            val actual = dailySleep[dateStr] ?: 0.0
-            val nightlyDebt = sleepNeedHours - actual
-            val weight = decayFactor.pow(i.toDouble())
-            weightedDebt += nightlyDebt * weight
+            if (dateStr in excluded) continue
+            val actual = dailySleep[dateStr] ?: continue
+            val deficit = sleepNeedHours - actual
+            debt = max(0.0, debt * decayFactor + deficit)
         }
 
-        return weightedDebt
+        return debt
     }
 
     /**
@@ -183,7 +354,8 @@ object EnergyCalculator {
         settings: ModelSettings,
         useBathyphase: Boolean,
         clamp: Boolean = false,
-        sleepEfficiency: Double = 0.9
+        sleepEfficiency: Double = 0.9,
+        napIntervals: List<SleepInterval> = emptyList()
     ): Double = getEnergyLevel(
         hClock = hClock,
         wakeHour = wakeHour,
@@ -205,7 +377,8 @@ object EnergyCalculator {
         baselineEfficiencyCoef = settings.baselineEfficiencyCoef,
         circAmp = settings.circAmp,
         circAmp2 = settings.circAmp2,
-        circOffset = settings.circOffset
+        circOffset = settings.circOffset,
+        napIntervals = napIntervals
     )
 
     fun findBathyphase(intradayHr: List<HeartRatePoint>): Double? {
@@ -266,6 +439,11 @@ object EnergyCalculator {
         return (avgRad * 24.0 / (2.0 * PI)).mod(24.0)
     }
 }
+
+data class SleepInterval(
+    val startAfterWake: Double,
+    val endAfterWake: Double
+)
 
 data class SleepLog(
     val dateOfSleep: String,

@@ -67,8 +67,8 @@ class SettingsManager(private val context: Context) {
 
         private val DEFAULT_MODEL_SETTINGS = ModelSettings(
             bedtimeGoal = 9.75,
-            tauWake = 18.2,
-            tauSleep = 4.2,
+            tauWake = 23.0,
+            tauSleep = 4.0,
             tauInertia = 1.5,
             debtFactor = 1.0,
             circadianOffset = 12.0,
@@ -86,7 +86,7 @@ class SettingsManager(private val context: Context) {
             localBackupUri = "",
             lastEmpiricalSync = 0L,
             usePersonalModel = true,
-            personalModelId = "M4_circadian_daily_baseline",
+            personalModelId = EnergyCalculator.MODEL_M8,
             baselineIntercept = 37.30320553378204,
             baselineSleepCoef = 0.042489107249623334,
             baselineDebtCoef = 0.4463493452453248,
@@ -210,8 +210,8 @@ data class CalendarSettings(
 @Serializable
 data class ModelSettings(
     val bedtimeGoal: Double = 9.75,
-    val tauWake: Double = 18.2,
-    val tauSleep: Double = 4.2,
+    val tauWake: Double = 23.0,
+    val tauSleep: Double = 4.0,
     val tauInertia: Double = 1.5,
     val debtFactor: Double = 1.0,
     val circadianOffset: Double = 12.0,
@@ -228,9 +228,9 @@ data class ModelSettings(
     val googleDriveUrl: String = DEFAULT_GOOGLE_DRIVE_WEB_APP_URL,
     val localBackupUri: String = "",
     val lastEmpiricalSync: Long = 0L,
-    /** When true, use empirical personal model (M4) instead of population two-process defaults. */
+    /** When true, use the adaptive empirical M8 model instead of population defaults. */
     val usePersonalModel: Boolean = true,
-    val personalModelId: String = "M4_circadian_daily_baseline",
+    val personalModelId: String = EnergyCalculator.MODEL_M8,
     val baselineIntercept: Double = 37.30320553378204,
     val baselineSleepCoef: Double = 0.042489107249623334,
     val baselineDebtCoef: Double = 0.4463493452453248,

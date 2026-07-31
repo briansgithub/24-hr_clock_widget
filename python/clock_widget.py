@@ -15,7 +15,7 @@ import pystray
 from pystray import MenuItem as item
 from fitbit_client import FitbitClient, ReauthRequiredError
 from google_calendar_client import get_calendar_service, get_calendar_events, ReauthRequiredError as CalReauthRequiredError
-from energy_logic import EnergyCurve, get_energy_level
+from energy_logic import EnergyCurve, get_energy_level, sleep_model_context
 
 class Tooltip:
     def __init__(self, widget, text):
@@ -1418,10 +1418,8 @@ class ClockWidget:
 
             self.last_fitbit_update = datetime.datetime.now()
 
-            # Push all values to the EnergyCurve instance so draw() uses them
-            self.energy_curve.sleep_debt_hours = self.sleep_debt_hours
-            self.energy_curve.sleep_duration   = self.sleep_duration
-            self.energy_curve.bathyphase_hour  = self.bathyphase_hour
+            # Push main sleep and time-local naps into the adaptive model.
+            self._apply_energy_curve_params()
 
             self.update_metric_labels()
             self.populate_sleep_table()
@@ -2121,7 +2119,16 @@ class ClockWidget:
     def _apply_energy_curve_params(self):
         self.energy_curve.wake_hour = self.wake_hour
         self.energy_curve.sleep_debt_hours = self.sleep_debt_hours if self.show_sleep_debt.get() else 0.0
-        self.energy_curve.sleep_duration = self.sleep_duration
+        main_duration, nap_intervals = sleep_model_context(
+            self.raw_sleep_logs,
+            self.active_sleep_date,
+            self.include_naps.get(),
+        )
+        self.energy_curve.sleep_duration = (
+            main_duration if main_duration is not None and main_duration > 0.0
+            else self.sleep_duration
+        )
+        self.energy_curve.nap_intervals = nap_intervals
         self.energy_curve.bathyphase_hour = self.bathyphase_hour if self.use_bathyphase.get() else None
         
         self.energy_curve.tau_wake = self.tau_wake.get()
@@ -2607,16 +2614,8 @@ class ClockWidget:
             if self.show_energy.get() and self.wake_hour is not None:
                 # Draw Visual Indicators (Bathyphase and Acrophase)
                 if self.show_bathyphase.get() and self.bathyphase_hour is not None:
-                    bathy_e = get_energy_level(
-                        self.bathyphase_hour, self.wake_hour, self.sleep_debt_hours, self.sleep_duration,
-                        self.bathyphase_hour if self.use_bathyphase.get() else None,
-                        clamp=False,
-                        tau_wake=self.tau_wake.get(),
-                        tau_sleep=self.tau_sleep.get(),
-                        tau_inertia=self.tau_inertia.get(),
-                        debt_factor=self.debt_factor.get(),
-                        circadian_peak_offset=None if self.use_bathyphase.get() else self.circadian_offset.get()
-                    )
+                    self._apply_energy_curve_params()
+                    bathy_e = self.energy_curve.get_cached_energy(self.bathyphase_hour)
                     self.energy_curve.draw_bathyphase_indicator(center_x, center_y, radius, self.bathyphase_hour, bathy_e)
 
                 if self.show_acrophase.get():
