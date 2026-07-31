@@ -1,114 +1,122 @@
 package com.example.a24_hr_clock.logic
 
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EnergyCalculatorTest {
 
     @Test
-    fun testEnergyRange() {
-        val wakeHour = 7.0
-        val sleepDuration = 8.0
-        val sleepDebt = 5.0
-        
-        for (h in 0..23) {
-            val energy = EnergyCalculator.getEnergyLevel(
-                hClock = h.toDouble(),
-                wakeHour = wakeHour,
-                sleepDebtHours = sleepDebt,
-                sleepDuration = sleepDuration
+    fun adaptiveEnergyIsBoundedAcrossDay() {
+        for (halfHour in 0 until 48) {
+            val energy = EnergyCalculator.adaptiveSleepEnergy(
+                clockHour = halfHour / 2.0,
+                wakeHour = 8.0,
+                sleepDuration = 6.5,
+                sleepDebtHours = 8.0,
+                napIntervals = listOf(SleepInterval(5.0, 5.5))
             )
-            assertTrue("Energy at hour $h should be between 0 and 1, but was $energy", energy in 0.0..1.0)
+            assertTrue("M8 energy should stay in 0..1, was $energy", energy in 0.0..1.0)
         }
     }
 
     @Test
-    fun testWakeUpTrend() {
-        val wakeHour = 7.0
-        // Immediately after wake (7.0), energy should be lower due to sleep inertia
-        val energyAtWake = EnergyCalculator.getEnergyLevel(7.0, wakeHour)
-        // A few hours later (e.g. 10.0), energy should be higher
-        val energyLater = EnergyCalculator.getEnergyLevel(10.0, wakeHour)
-        
-        assertTrue("Energy should increase after waking up (inertia clearing). Wake: $energyAtWake, Later: $energyLater", energyLater > energyAtWake)
+    fun shorterSleepAndMoreDebtDoNotRaiseEnergy() {
+        val rested = EnergyCalculator.adaptiveSleepEnergy(18.0, 8.0, 8.0, 0.0)
+        val shortSleep = EnergyCalculator.adaptiveSleepEnergy(18.0, 8.0, 5.0, 0.0)
+        val highDebt = EnergyCalculator.adaptiveSleepEnergy(18.0, 8.0, 8.0, 20.0)
+        assertTrue(shortSleep < rested)
+        assertTrue(highDebt < rested)
     }
 
     @Test
-    fun testPersonalM4EnergyRange() {
-        for (t in 0..23) {
-            val energy = EnergyCalculator.personalM4Energy(
-                t = t.toDouble(),
-                sleepDuration = 7.5,
-                sleepDebtHours = 3.0,
-                sleepEfficiency = 0.9
-            )
-            assertTrue("M4 energy at t=$t should be 0-1, was $energy", energy in 0.0..1.0)
-        }
+    fun napRecoveryAndInertiaAreTimeLocal() {
+        val nap = listOf(SleepInterval(4.0, 4.5))
+        val noNapImmediate = EnergyCalculator.adaptiveSleepEnergy(12.5, 8.0, 5.5, 0.0)
+        val withNapImmediate = EnergyCalculator.adaptiveSleepEnergy(
+            12.5, 8.0, 5.5, 0.0, napIntervals = nap
+        )
+        val noNapLater = EnergyCalculator.adaptiveSleepEnergy(18.0, 8.0, 5.5, 0.0)
+        val withNapLater = EnergyCalculator.adaptiveSleepEnergy(
+            18.0, 8.0, 5.5, 0.0, napIntervals = nap
+        )
+        val asleep = EnergyCalculator.adaptiveSleepEnergy(
+            12.25, 8.0, 5.5, 0.0, napIntervals = nap
+        )
+        assertTrue(withNapImmediate < noNapImmediate)
+        assertTrue(withNapLater > noNapLater)
+        assertEquals(0.0, asleep, 0.0)
     }
 
     @Test
-    fun testPersonalModelViaSettings() {
-        val settings = ModelSettings(usePersonalModel = true, personalModelId = "M4_circadian_daily_baseline")
-        val e = EnergyCalculator.getEnergyLevelFromSettings(
+    fun settingsUseM8AndMigrateLegacyPersonalIds() {
+        val m8 = ModelSettings(usePersonalModel = true)
+        assertEquals(EnergyCalculator.MODEL_M8, m8.personalModelId)
+        val expected = EnergyCalculator.adaptiveSleepEnergy(14.0, 9.0, 7.0, 3.0)
+        val actual = EnergyCalculator.getEnergyLevelFromSettings(
             hClock = 14.0,
-            wakeHour = 10.0,
-            sleepDebtHours = 2.0,
+            wakeHour = 9.0,
+            sleepDebtHours = 3.0,
             sleepDuration = 7.0,
             bathyphaseHour = null,
-            settings = settings,
-            useBathyphase = false
+            settings = m8,
+            useBathyphase = true,
+            clamp = true
         )
-        assertTrue(e in 0.0..1.0)
+        assertEquals(expected, actual, 1e-12)
+
+        val legacy = m8.copy(personalModelId = "M4_circadian_daily_baseline")
+        val migrated = EnergyCalculator.getEnergyLevelFromSettings(
+            14.0, 9.0, 3.0, 7.0, null, legacy, true, true
+        )
+        assertEquals(expected, migrated, 1e-12)
     }
 
     @Test
-    fun testSleepDebtStabilityWhenTodayExcluded() {
-        val today = java.time.LocalDate.now().toString()
+    fun missingDatesDoNotCreateZeroSleepDeficits() {
         val yesterday = java.time.LocalDate.now().minusDays(1).toString()
-        
+        val logs = listOf(SleepLog(yesterday, 420, true, 480))
+        assertEquals(1.0, EnergyCalculator.computeSleepDebt(logs, 8.0), 1e-12)
+    }
+
+    @Test
+    fun observedOversleepRepaysPriorDebt() {
+        val today = java.time.LocalDate.now()
         val logs = listOf(
-            SleepLog(yesterday, 420, true, 480) // 7h sleep yesterday
+            SleepLog(today.minusDays(2).toString(), 360, true, 420),
+            SleepLog(today.minusDays(1).toString(), 540, true, 570)
         )
-        val sleepNeed = 8.0
-        
-        // Scenario A: Today is excluded (simulating midnight just passed)
-        val debtWithExcludedToday = EnergyCalculator.computeSleepDebt(
-            sleepLogs = logs,
-            sleepNeedHours = sleepNeed,
-            excludedDates = listOf(today)
+        assertEquals(0.8, EnergyCalculator.computeSleepDebt(logs, 8.0), 1e-12)
+    }
+
+    @Test
+    fun sharedPythonReferenceVectors() {
+        val cases = listOf(
+            Pair(
+                EnergyCalculator.adaptiveSleepEnergy(14.0, 9.0, 7.0, 3.0),
+                0.6464512909036823
+            ),
+            Pair(
+                EnergyCalculator.adaptiveSleepEnergy(
+                    20.0, 9.0, 8.0, 0.0, bathyphaseHour = 5.0
+                ),
+                0.6801698896361507
+            ),
+            Pair(
+                EnergyCalculator.adaptiveSleepEnergy(
+                    18.0, 8.0, 5.5, 8.0,
+                    circadianPeakOffset = 12.0,
+                    napIntervals = listOf(SleepInterval(4.0, 4.5))
+                ),
+                0.6397337294750542
+            ),
+            Pair(
+                EnergyCalculator.adaptiveSleepEnergy(8.0, 8.0, 8.0, 0.0),
+                0.28325070000118563
+            )
         )
-        
-        // Anchored Logic: Today (T-0) is skipped. Yesterday (T-1) has weight 0.9^1.
-        // Yesterday's debt = 8.0 - 7.0 = 1.0.
-        // T-1 (Yesterday): actual=7.0, debt=1.0, weight=0.9^1=0.9 -> 0.9
-        // T-2: actual=0.0, debt=8.0, weight=0.9^2=0.81 -> 6.48
-        // ... and so on up to T-14.
-        
-        var expected = 0.0
-        for (i in 1 until 15) {
-            val actual = if (i == 1) 7.0 else 0.0
-            val nightlyDebt = sleepNeed - actual
-            expected += nightlyDebt * Math.pow(0.9, i.toDouble())
+        for ((actual, expected) in cases) {
+            assertEquals(expected, actual, 1e-12)
         }
-        
-        assertEquals("Debt should match anchored calendar offset calculation", expected, debtWithExcludedToday, 0.001)
-        
-        // Scenario C: Today is NOT excluded and has no sleep log yet.
-        val debtWithIncludedToday = EnergyCalculator.computeSleepDebt(
-            sleepLogs = logs,
-            sleepNeedHours = sleepNeed,
-            excludedDates = emptyList()
-        )
-        
-        // Today's debt = 8.0 - 0.0 = 8.0.
-        // Total debt = 8.0 * (0.9^0) + 1.0 * (0.9^1) + 8.0 * (0.9^2) ... 8.0 * (0.9^14)
-        var expectedIncluded = 0.0
-        for (i in 0 until 15) {
-            val actual = if (i == 1) 7.0 else 0.0
-            val nightlyDebt = sleepNeed - actual
-            expectedIncluded += nightlyDebt * Math.pow(0.9, i.toDouble())
-        }
-        
-        assertEquals("Debt should increase when today is included but has no logs", expectedIncluded, debtWithIncludedToday, 0.001)
     }
 }

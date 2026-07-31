@@ -15,7 +15,7 @@ validation reports, and handoffs.
 | **LOO** | Leave-one-out | Cross-validation that holds out one calendar day per fold. |
 | **LOO-CV** | Leave-one-out cross-validation | Primary generalization check in `analyze_energy_fit.py` (also written **CV**). |
 
-## Model tiers (M1â€“M6)
+## Model tiers (M1â€“M8)
 
 Candidate predictors benchmarked in `python/energy_models.py`. Names match `MODEL_REGISTRY` keys.
 
@@ -24,9 +24,11 @@ Candidate predictors benchmarked in `python/energy_models.py`. Names match `MODE
 | **M1** | `M1_baseline` | Fixed two-process curve; no personal parameter tuning. |
 | **M2** | `M2_tuned_two_process` | Personally tuned wake/sleep time constants and circadian amplitude. |
 | **M3** | `M3_scaled_process_s` | M2 plus scaled **Process S** (homeostatic) pressure term. |
-| **M4** | `M4_circadian_daily_baseline` | **Production default:** separate nightly baseline from intraday circadian shape. |
+| **M4** | `M4_circadian_daily_baseline` | Legacy nightly baseline plus wake-relative circadian shape. |
 | **M5** | `M5_mixed_fourier` | M4 plus intra-day Fourier harmonics (multi-peak afternoons). |
 | **M6** | `M6_time_varying_debt` | M2-style core with time-varying sleep-debt weighting. |
+| **M7** | `M7_empirical_clock_fourier` | Legacy personal local-clock Fourier curve without sleep-state corrections. |
+| **M8** | `M8_adaptive_sleep` | **Production default:** personal local-clock Fourier baseline plus continuous Process S, observed-night debt, and wake/nap inertia. |
 
 **CV winner** â€” model with the lowest LOO MAE in a given re-fit run (not always adopted for production).
 
