@@ -6,6 +6,8 @@
 - Parent/base: `<branch>` at `<sha>`
 - Upstream: `<remote-branch or none>`
 - Role: `<feature/fix/chore/integration>`
+- Worktree: `<sibling path; one branch only>`
+- Owned paths: `<paths this branch may edit; no-go paths if useful>`
 - History: [<filename>.history.md](<filename>.history.md)
 - Last verified: `YYYY-MM-DD`
 
@@ -38,5 +40,6 @@
 - PR base: `<target>`
 - Readiness: `<blocked/in progress/ready after checks/ready>`
 - Required predecessor: `<branch/PR or none>`
-- After merge: append closure history, archive this file and its history, update global HISTORY/index, then delete local/remote branch after reachability verification.
+- Primary checkout: `<path used for merge/cleanup>`
+- After merge: verify reachability from the remote default branch; append closure history, archive this file and its history, update global HISTORY/index, remove the sibling worktree, then delete local/remote branch after authorization.
 

@@ -8,11 +8,14 @@ Repository-specific policy used with [MASTER_HANDOFF.md](MASTER_HANDOFF.md).
 - Shared source of truth: `origin/main`
 - Branch names: `feature/<purpose>`, `fix/<purpose>`, `chore/<purpose>`
 - New work starts from an updated `origin/main`
+- Worktree layout: sibling of the primary checkout, named `../<repo>-wt-<slug>` (or the configured sibling root); never nested in the repository or another worktree
+- Worktree commits are ordinary branch history. `push` publishes the feature branch; an authorized merge/PR from the primary checkout is required to land it on `main`.
 - Parallel agents: one Git worktree (separate folder) per agent/branch — see [MULTI_AGENT.md](MULTI_AGENT.md); never share one working directory across concurrent agents
 - Anti-loss: commit WIP before idle; push living branches after first meaningful commit; prefer commits over long-lived stashes
 - Stash ownership: message `wip <exact-branch-name>: <reason>`; note it in that branch’s handoff; pop only on that branch when the handoff lists it (see [MULTI_AGENT.md](MULTI_AGENT.md))
 - Merge strategy: explicit merge commit (`--no-ff`) so branch boundaries remain visible
 - Direct feature commits to `main`: prohibited; use a short-lived branch
+- Close sequence: verify reachability from `origin/main`, archive handoff/history, remove the sibling worktree, then `git branch -d`; delete the remote branch only after authorization
 - Commit, push, PR, merge, stash deletion, and branch deletion require explicit owner authorization unless a standing instruction in the handoff applies
 
 ## Multi-agent isolation

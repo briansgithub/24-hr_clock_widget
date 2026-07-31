@@ -22,5 +22,7 @@ Use the least context, planning, and validation that can complete the task relia
 ## Handoffs
 
 - Read the active handoff only when resuming/inheriting work or scope is unclear; read only needed, newest history. Consult relevant sections of `MASTER_HANDOFF.md` for lifecycle/recovery, `REPOSITORY.md` for policy/check profiles, and `MULTI_AGENT.md` only for actual concurrency. Concurrent agents require separate worktrees.
+- Worktrees are sibling folders beside the primary checkout, never nested; each is a normal Git branch whose commits stay in Git history. Push publishes that branch; only an authorized merge/PR brings it into the default branch.
+- Close work from the primary/default checkout: verify the merge is reachable, archive the handoff, then remove the sibling worktree and use `git branch -d`; delete the remote branch only after authorization. Stop on dirty/unmerged work; never force-delete or overwrite another agent's work.
 - Update a handoff once only when durable objective, scope, decisions, blockers, risks, meaningful validation, or next action changed—not for read-only, routine, no-op, or context-neutral work. Update the index only for branch inventory/role/order; append history only for milestones.
 - Run `python scripts/validate_handoffs.py --quiet` after structural handoff changes and when configured for PRs. Follow `MASTER_HANDOFF.md` for destructive/branch-closing operations; never delete branch documentation.

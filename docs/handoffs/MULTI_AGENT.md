@@ -41,6 +41,23 @@ One folder + one checkout forces branch switching, stashing, file overwrites, lo
    git worktree remove <path-to-new-folder>
    ```
 
+### Layout, history, and ownership
+
+- Put worktrees beside the primary clone (for example `../repo-wt-foo`); a repository or another worktree must never contain one. Use the repository's configured sibling root and naming pattern.
+- A worktree is another checkout of a normal branch, not a disposable copy. Its commits are visible through `git log --all`/`git branch -a`; `git push` publishes that branch only. Merge/PR from the primary/default checkout is what makes the work part of `main`. If “sync” direction is unclear, ask before changing branches or deleting worktrees.
+- Record the worktree path, branch, and owned/no-go paths in the active handoff. If another agent has changed an overlapping path, stop before overwriting, notify the owner, and let an authorized Git merge/review resolve it. Never reset, stash, or delete another agent's WIP.
+
+### Completion and cleanup
+
+From the primary/default checkout, after an authorized merge or PR landing:
+
+1. Confirm the feature tip or merge commit is reachable from the remote default branch (`git merge-base --is-ancestor`).
+2. Archive the branch handoff/history and update the close ledger/index as required.
+3. Run `git worktree list`, then remove the sibling worktree and delete the local branch with `git branch -d`.
+4. Delete the remote branch only with owner authorization and after reachability is verified.
+
+If the worktree is dirty or the feature is not merged into the default branch, stop and preserve it—even if its branch was pushed. Do not use `git worktree remove --force`, `git branch -D`, or delete a worktree owned by another agent without explicit authorization.
+
 List worktrees anytime:
 
 ```bash

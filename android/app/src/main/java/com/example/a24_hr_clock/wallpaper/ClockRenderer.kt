@@ -416,23 +416,14 @@ class ClockRenderer {
 
         // 9.5 Draw Bathyphase Indicator
         if (showBathyphase && bathyphaseHour != null) {
-            var bathyEnergy: Double? = null
-            if (wakeHour != null) {
-                bathyEnergy = energyAt(
-                    bathyphaseHour, wakeHour, sleepDebt, mainSleepDuration, bathyphaseHour,
-                    modelSettings, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset,
-                    useBathyphase, sleepEfficiency, napIntervals
-                )
-            }
-            drawBathyphaseIndicator(canvas, centerX, centerY, radius, bathyphaseHour, bathyEnergy)
+            drawBathyphaseIndicator(canvas, centerX, centerY, radius, bathyphaseHour)
         }
 
         // 9.6 Draw Acrophase Indicator & Calculate Peak for %
-        var peakEnergyToday = -1.0
         var peakHourToday = 0.0
-        var maxEPerfection = -1.0
 
         if (wakeHour != null) {
+            var peakEnergyToday = -Double.MAX_VALUE
             for (i in 0..144) {
                 val h = (i.toDouble() / 144) * 24.0
 
@@ -446,20 +437,10 @@ class ClockRenderer {
                     peakEnergyToday = eToday
                     peakHourToday = h
                 }
-
-                // Perfection curve (0 debt, goal sleep)
-                val ePerf = energyAt(
-                    h, wakeHour, 0.0, bedtimeGoal, bathyphaseHour,
-                    modelSettings, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset,
-                    useBathyphase, sleepEfficiency, emptyList()
-                )
-                if (ePerf > maxEPerfection) {
-                    maxEPerfection = ePerf
-                }
             }
 
             if (showAcrophase) {
-                drawAcrophaseIndicator(canvas, centerX, centerY, radius, peakHourToday, peakEnergyToday)
+                drawAcrophaseIndicator(canvas, centerX, centerY, radius, peakHourToday)
             }
         }
 
@@ -507,7 +488,7 @@ class ClockRenderer {
                 canvas, centerX, centerY, radius, exactHour, handRad, wakeHour,
                 sleepDebt, mainSleepDuration, bathyphaseHour, tauWake, tauSleep,
                 tauInertia, debtFactor, circadianOffset, useBathyphase,
-                peakEnergyToday, modelSettings, sleepEfficiency, napIntervals
+                modelSettings, sleepEfficiency, napIntervals
             )
         }
 
@@ -650,7 +631,6 @@ class ClockRenderer {
         debtFactor: Double,
         circadianOffset: Double,
         useBathyphase: Boolean,
-        todayPeakEnergy: Double,
         modelSettings: ModelSettings?,
         sleepEfficiency: Double,
         napIntervals: List<SleepInterval>
@@ -661,11 +641,7 @@ class ClockRenderer {
             useBathyphase, sleepEfficiency, napIntervals
         )
 
-        val pct = if (todayPeakEnergy > 0) {
-            (currentE / todayPeakEnergy * 100).roundToInt().coerceIn(0, 100)
-        } else {
-            0
-        }
+        val pct = (currentE * 100).roundToInt().coerceIn(0, 100)
         
         val textRadius = radius + 60f
         val tx = cx + textRadius * cos(handRad).toFloat()
@@ -1139,11 +1115,11 @@ class ClockRenderer {
         canvas.drawText(debtVal, tx, ty, textPaint)
     }
 
-    private fun drawBathyphaseIndicator(canvas: Canvas, cx: Float, cy: Float, radius: Float, bathyHour: Double, energyValue: Double?) {
+    private fun drawBathyphaseIndicator(canvas: Canvas, cx: Float, cy: Float, radius: Float, bathyHour: Double) {
         val angleDegrees = (bathyHour - 18) * 15.0
 
         val trianglePaint = Paint().apply {
-            color = if (energyValue != null) interpolateEnergyColor(energyValue) else Color.parseColor("#1E6363")
+            color = interpolateEnergyColor(0.0)
             style = Paint.Style.FILL
             isAntiAlias = true
         }
@@ -1169,11 +1145,11 @@ class ClockRenderer {
         canvas.restore()
     }
 
-    private fun drawAcrophaseIndicator(canvas: Canvas, cx: Float, cy: Float, radius: Float, acroHour: Double, energyValue: Double) {
+    private fun drawAcrophaseIndicator(canvas: Canvas, cx: Float, cy: Float, radius: Float, acroHour: Double) {
         val angleDegrees = (acroHour - 18) * 15.0
 
         val trianglePaint = Paint().apply {
-            color = interpolateEnergyColor(energyValue)
+            color = interpolateEnergyColor(1.0)
             style = Paint.Style.FILL
             isAntiAlias = true
         }

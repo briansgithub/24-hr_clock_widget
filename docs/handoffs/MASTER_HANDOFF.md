@@ -122,9 +122,11 @@ Merge-ready means scope is complete, unrelated WIP is absent, the configured che
 5. Append one close entry to global `HISTORY.md`.
 6. Remove the branch from active `README.md`; update the default-branch handoff only if durable context changed.
 7. Delete remote/local branches only after reachability verification, then commit and push the archival cleanup when authorized.
-8. Remove obsolete worktrees when their unique work is safely merged or pushed.
+8. From the primary checkout, run `git worktree list`, remove the obsolete sibling worktree only after its feature work is merged and reachable from the default branch, then delete the local branch with `git branch -d`; delete the remote branch only after authorization. A pushed but unmerged branch stays preserved unless the owner explicitly parks or abandons it.
 
 Use `git branch -d`; use `-D` only after verified reachability and a known-safe refusal.
+
+Worktrees are sibling checkouts of normal branches, not separate histories. A feature commit is already in Git's object history, but it reaches the default branch only through an authorized merge/PR. `git push` alone does not merge it. Never force-remove a dirty/unmerged worktree or another agent's checkout.
 
 ## Stashes and recoverability
 
@@ -133,7 +135,7 @@ Delete a stash only after comparing it with reachable work and establishing that
 ## New branches
 
 1. Update from the remote default branch when authorized and relevant.
-2. Create one narrow `feature/`, `fix/`, or `chore/` branch; use a dedicated worktree for actual concurrent work.
+2. Create one narrow `feature/`, `fix/`, or `chore/` branch; use a dedicated sibling worktree for actual concurrent work and record its path/owned paths in the handoff.
 3. Create the mirrored handoff/history from templates and record the objective and base milestone.
 4. Keep commits purpose-focused and exclude secrets, generated output, IDE-local state, and unrelated formatting.
 5. Use the standing validation profile, merge promptly when ready, and complete archival after merge.
