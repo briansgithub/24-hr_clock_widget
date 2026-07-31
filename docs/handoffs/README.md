@@ -9,7 +9,6 @@ Last verified: 2026-07-31
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
 | `main` | `aec4184` (ahead of `origin/main`) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
-| `chore/git-history-cleanup` | active | Archive merged branch records and audit remaining work | [handoff](chore/git-history-cleanup.md) | [history](chore/git-history-cleanup.history.md) |
 
 ## Current merge order
 

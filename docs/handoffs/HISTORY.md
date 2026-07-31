@@ -141,3 +141,9 @@ Disposition phrases: `merged into main`, `superseded` (commits landed via descen
 - Merge / PR: `62cb343` (local merge; not pushed)
 - Summary: Personal M4 energy retrofit, fitting and diagnostics tools, Android energy integration, and Python Display parity including the standalone bedtime countdown.
 - Archive: `archive/feature/personal-energy-model-m4.md`
+
+### 2026-07-31 — `chore/git-history-cleanup` → merged into `main`
+- Final tip: cleanup documentation commits on `chore/git-history-cleanup`
+- Merge / PR: local explicit merge; not pushed
+- Summary: Removed fully merged local branch labels, archived stale handoffs, and preserved the dirty worktree and unique stashes for owner review.
+- Archive: `archive/chore/git-history-cleanup.md`
