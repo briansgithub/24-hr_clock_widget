@@ -18,18 +18,30 @@ from google_calendar_client import get_calendar_service, get_calendar_events, Re
 from energy_logic import EnergyCurve, get_energy_level
 
 class Tooltip:
-    def __init__(self, widget, text):
+    def __init__(self, widget, text, tag=None):
         self.widget = widget
         self.text = text
+        self.tag = tag
         self.tip_window = None
-        self.widget.bind("<Enter>", self.show_tip)
-        self.widget.bind("<Leave>", self.hide_tip)
+        if tag is None:
+            self.widget.bind("<Enter>", self.show_tip)
+            self.widget.bind("<Leave>", self.hide_tip)
+        else:
+            self.widget.tag_bind(tag, "<Enter>", self.show_tip)
+            self.widget.tag_bind(tag, "<Leave>", self.hide_tip)
 
     def show_tip(self, event=None):
         if self.tip_window or not self.text:
             return
-        x = self.widget.winfo_rootx() + 20
-        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+        if self.tag is None:
+            x = self.widget.winfo_rootx() + 20
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+        else:
+            bounds = self.widget.bbox(self.tag)
+            if not bounds:
+                return
+            x = self.widget.winfo_rootx() + bounds[0] + 20
+            y = self.widget.winfo_rooty() + bounds[3] + 5
         self.tip_window = tw = tk.Toplevel(self.widget)
         tw.wm_overrideredirect(True)
         tw.wm_geometry(f"+{x}+{y}")
@@ -455,10 +467,16 @@ class ClockWidget:
             self.root.geometry(f"+{rx - bx}+{ry - by}")
         self.root.overrideredirect(False)
         self.root.attributes('-topmost', self.always_on_top.get())
+        if getattr(self, 'show_bedtime_countdown', None) and self.show_bedtime_countdown.get():
+            self.update_bedtime_countdown_visibility()
 
     def make_clock_transparent(self):
         if self.is_clock_transparent: return
         self.is_clock_transparent = True
+
+        # The auxiliary countdown follows the same timeout as the clock.
+        if hasattr(self, 'bedtime_countdown_window') and self.bedtime_countdown_window.winfo_viewable():
+            self.bedtime_countdown_window.withdraw()
         
         bg_color = self.transparent_key
         self.root.configure(bg=bg_color)
@@ -689,12 +707,14 @@ class ClockWidget:
                 self._clock_hide_timer_started = False
             self.make_clock_solid()
 
-        # Controls Timeout Logic
-        if not in_controls and not in_root:
+        # Controls Timeout Logic. While the clock is transparent, keep all
+        # auxiliary windows hidden until the shared hover delay completes.
+        controls_allowed = in_controls or not getattr(self, 'is_clock_transparent', False)
+        if not in_controls and not in_time_window:
             if not getattr(self, '_controls_hide_timer_started', False):
                 self._controls_hide_timer_started = True
                 self._controls_hide_timer_id = self.root.after(get_timeout_ms(), self.make_controls_hidden)
-        else:
+        elif controls_allowed:
             if getattr(self, '_controls_hide_timer_started', False):
                 self.root.after_cancel(self._controls_hide_timer_id)
                 self._controls_hide_timer_started = False
@@ -753,6 +773,9 @@ class ClockWidget:
                         self.show_manual_wake.set(p.get("show_manual_wake", True))
                         self.show_bathyphase.set(p.get("show_bathyphase", True))
                         self.show_acrophase.set(p.get("show_acrophase", True))
+                        self.show_grogginess.set(p.get("show_grogginess", True))
+                        self.show_wind_down.set(p.get("show_wind_down", True))
+                        self.show_bedtime_countdown.set(p.get("show_bedtime_countdown", True))
 
                     return data.get("excluded_dates", [today_str])
             except:
@@ -2610,8 +2633,8 @@ class ClockWidget:
                     fill="#00ccff", outline="white", width=2, tags="reauth_icon_fitbit"
                 )
                 self.canvas.create_text(ix, iy, text="F", fill="white", font=("Arial", int(icon_r), "bold"), tags="reauth_icon_fitbit")
-                self.canvas.tag_bind("reauth_icon_fitbit", "<Button-1>", lambda e: self.fitbit.authorize())
-                Tooltip(self.canvas, "Fitbit Auth Expired - Click to Re-link")
+                self.canvas.tag_bind("reauth_icon_fitbit", "<Button-1>", lambda e: self.relink_fitbit_and_refresh())
+                Tooltip(self.canvas, "Fitbit Auth Expired - Click to Re-link", tag="reauth_icon_fitbit")
                 iy += icon_r * 2.5
                 
             # Calendar warning (purple-ish)
@@ -2627,7 +2650,7 @@ class ClockWidget:
                     self.calendar_svc = None
                     self.update_calendar_data()
                 self.canvas.tag_bind("reauth_icon_cal", "<Button-1>", trigger_cal_auth)
-                Tooltip(self.canvas, "Calendar Auth Expired - Click to Re-link")
+                Tooltip(self.canvas, "Calendar Auth Expired - Click to Re-link", tag="reauth_icon_cal")
 
         # Map string names to their drawing functions
         layers = {
