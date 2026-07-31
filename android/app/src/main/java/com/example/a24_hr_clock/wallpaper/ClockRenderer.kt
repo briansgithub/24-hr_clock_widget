@@ -426,6 +426,7 @@ class ClockRenderer {
 
         if (wakeHour != null) {
             var peakEnergyToday = -Double.MAX_VALUE
+            var maxEPerfection = -Double.MAX_VALUE
             for (i in 0..144) {
                 val h = (i.toDouble() / 144) * 24.0
 
