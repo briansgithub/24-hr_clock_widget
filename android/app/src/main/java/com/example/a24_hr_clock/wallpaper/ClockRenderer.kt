@@ -416,15 +416,7 @@ class ClockRenderer {
 
         // 9.5 Draw Bathyphase Indicator
         if (showBathyphase && bathyphaseHour != null) {
-            var bathyEnergy: Double? = null
-            if (wakeHour != null) {
-                bathyEnergy = energyAt(
-                    bathyphaseHour, wakeHour, sleepDebt, mainSleepDuration, bathyphaseHour,
-                    modelSettings, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset,
-                    useBathyphase, sleepEfficiency, napIntervals
-                )
-            }
-            drawBathyphaseIndicator(canvas, centerX, centerY, radius, bathyphaseHour, bathyEnergy)
+            drawBathyphaseIndicator(canvas, centerX, centerY, radius, bathyphaseHour)
         }
 
         // 9.6 Draw Acrophase Indicator & Calculate Peak for %
@@ -433,6 +425,7 @@ class ClockRenderer {
         var maxEPerfection = -1.0
 
         if (wakeHour != null) {
+            var peakEnergyToday = -Double.MAX_VALUE
             for (i in 0..144) {
                 val h = (i.toDouble() / 144) * 24.0
 
@@ -507,7 +500,7 @@ class ClockRenderer {
                 canvas, centerX, centerY, radius, exactHour, handRad, wakeHour,
                 sleepDebt, mainSleepDuration, bathyphaseHour, tauWake, tauSleep,
                 tauInertia, debtFactor, circadianOffset, useBathyphase,
-                peakEnergyToday, modelSettings, sleepEfficiency, napIntervals
+                modelSettings, sleepEfficiency, napIntervals
             )
         }
 

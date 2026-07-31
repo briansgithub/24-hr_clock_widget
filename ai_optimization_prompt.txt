@@ -1,0 +1,7 @@
+USER EMPIRICAL DATA SUMMARY:
+- Total Logs: 158
+- CV Winner: M4_circadian_daily_baseline
+- Leave-one-day-out MAE: 14.26%
+- Params: {'tau_wake': 23.0, 'tau_sleep': 4.0, 'tau_inertia': 1.5, 'circadian_peak_offset': 10.0, 'amp_primary': 0.55, 'amp_secondary': -0.15, 'c_base': 1.1, 'debt_factor': 1.0, 'k_s': 1.0, 'debt_alpha': 0.0, 'circ_amp': np.float64(19.999999999999915), 'circ_amp2': np.float64(3.2914687807723015), 'circ_offset': np.float64(4.929056621498718), 'baseline_intercept': np.float64(37.30320553378204), 'baseline_sleep_coef': np.float64(0.042489107249623334), 'baseline_debt_coef': np.float64(0.4463493452453248), 'baseline_efficiency_coef': np.float64(-0.8018439800808569), 'fourier_coefs': []}
+
+See analysis/energy_fit_report.json for full M1–M6 comparison.
