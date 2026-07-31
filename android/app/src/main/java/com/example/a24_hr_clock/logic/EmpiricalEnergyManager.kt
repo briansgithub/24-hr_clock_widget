@@ -29,7 +29,7 @@ import java.util.Calendar
 data class EnergyLog(
     val timestamp: Long,       // 30-min boundary timestamp in milliseconds
     val energyLevel: Int?,     // 0-100, null if missed
-    val status: String         // "LOGGED", "MISSED", "SLEEP_EXCLUDED"
+    val status: String         // "LOGGED", "MISSED", "SLEEP_EXCLUDED", "INTERPOLATED"
 )
 
 class EmpiricalEnergyManager(private val context: Context) {
@@ -271,7 +271,62 @@ class EmpiricalEnergyManager(private val context: Context) {
      */
     fun getMissedDataPointsCount(): Int {
         val logs = getFullLogHistory(0) // midnight today → now
-        return logs.count { it.energyLevel == null && it.status != "SLEEP_EXCLUDED" }
+        return logs.count {
+            it.energyLevel == null &&
+                it.status != "SLEEP_EXCLUDED" &&
+                it.status != "INTERPOLATED"
+        }
+    }
+
+    /**
+     * Linearly interpolate MISSED slots between two LOGGED points within the same
+     * calendar day, never across SLEEP_EXCLUDED blocks. Interpolated rows are
+     * tagged INTERPOLATED and excluded from model fitting.
+     *
+     * @return number of slots filled
+     */
+    fun interpolateMissedGaps(): Int {
+        val logs = loadInternalLogs().sortedBy { it.timestamp }.toMutableList()
+        if (logs.size < 2) return 0
+
+        val byDate = logs.groupBy { log ->
+            Instant.ofEpochMilli(log.timestamp)
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate()
+                .toString()
+        }
+
+        var filled = 0
+        for ((_, dayLogs) in byDate) {
+            val sorted = dayLogs.sortedBy { it.timestamp }
+            val loggedIndices = sorted.indices.filter { sorted[it].status == "LOGGED" && sorted[it].energyLevel != null }
+            for (i in 0 until loggedIndices.size - 1) {
+                val aIdx = loggedIndices[i]
+                val bIdx = loggedIndices[i + 1]
+                val a = sorted[aIdx]
+                val b = sorted[bIdx]
+                val aLevel = a.energyLevel ?: continue
+                val bLevel = b.energyLevel ?: continue
+                val between = (aIdx + 1 until bIdx).map { sorted[it] }
+                if (between.any { it.status == "SLEEP_EXCLUDED" }) continue
+                val gaps = between.filter { it.status == "MISSED" && it.energyLevel == null }
+                if (gaps.isEmpty()) continue
+                val n = gaps.size
+                gaps.forEachIndexed { j, gap ->
+                    val frac = (j + 1).toDouble() / (n + 1)
+                    val value = (aLevel + frac * (bLevel - aLevel)).toInt().coerceIn(0, 100)
+                    val globalIdx = logs.indexOfFirst { it.timestamp == gap.timestamp }
+                    if (globalIdx >= 0) {
+                        logs[globalIdx] = EnergyLog(gap.timestamp, value, "INTERPOLATED")
+                        filled++
+                    }
+                }
+            }
+        }
+        if (filled > 0) {
+            saveLogs(logs, syncPublic = true, uploadDrive = false)
+        }
+        return filled
     }
 
     // Export formatted CSV data

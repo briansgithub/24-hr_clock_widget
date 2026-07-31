@@ -129,3 +129,9 @@ Disposition phrases: `merged into main`, `superseded` (commits landed via descen
 - Merge / PR: `e27f695` (local merge; not pushed)
 - Summary: Scoped 10pm clamp to fall-asleep [22:00, 23:30]; no-log fallback to next 10pm; unit tests.
 - Archive: `archive/fix/bedtime-countdown-sleep-default.md`
+
+### 2026-07-22 — `feature/fold-calendar-into-display` → merged into `main`
+- Final tip: `dc74564` (feature); branch pointer `7192f89` was checkout checkpoint only
+- Merge / PR: `43f0872`
+- Summary: Calendar bottom-nav folded into Display accordion picker with sync/auth in CALENDAR section.
+- Archive: `archive/feature/fold-calendar-into-display.md`

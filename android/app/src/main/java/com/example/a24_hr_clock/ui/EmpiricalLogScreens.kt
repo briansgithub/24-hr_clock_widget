@@ -658,6 +658,7 @@ fun EmpiricalLogHistoryScreen(
 
                     val (statusText, statusColor) = when (log.status) {
                         "LOGGED" -> "✓ ${log.energyLevel} / 100" to Color(0xFF1B5E20)
+                        "INTERPOLATED" -> "↔ ${log.energyLevel} / 100 (interpolated)" to Color(0xFF1565C0)
                         "SLEEP_EXCLUDED" -> "💤 Sleep (Ignored)" to Color(0xFF616161)
                         else -> "⚠️ Missed (Tap to fill)" to Color(0xFFB71C1C)
                     }
@@ -673,11 +674,13 @@ fun EmpiricalLogHistoryScreen(
                         colors = CardDefaults.cardColors(
                             containerColor = when (log.status) {
                                 "LOGGED" -> Color(0xFFE8F5E9)
+                                "INTERPOLATED" -> Color(0xFFE3F2FD)
                                 "SLEEP_EXCLUDED" -> Color(0xFFF5F5F5)
                                 else -> Color(0xFFFFEBEE)
                             },
                             contentColor = when (log.status) {
                                 "LOGGED" -> Color(0xFF1B5E20)
+                                "INTERPOLATED" -> Color(0xFF1565C0)
                                 "SLEEP_EXCLUDED" -> Color(0xFF212121)
                                 else -> Color(0xFFB71C1C)
                             }

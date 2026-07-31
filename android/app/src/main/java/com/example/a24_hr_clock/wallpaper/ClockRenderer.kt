@@ -5,6 +5,7 @@ import android.graphics.*
 import android.text.TextPaint
 import com.example.a24_hr_clock.R
 import com.example.a24_hr_clock.logic.EnergyCalculator
+import com.example.a24_hr_clock.logic.ModelSettings
 import com.example.a24_hr_clock.logic.TimeZoneUtils
 import java.util.*
 import kotlin.math.*
@@ -12,6 +13,37 @@ import kotlin.math.*
 class ClockRenderer {
 
     private var timezoneMapBitmap: Bitmap? = null
+
+    private fun energyAt(
+        h: Double,
+        wakeHour: Double,
+        sleepDebt: Double,
+        sleepDuration: Double,
+        bathyphaseHour: Double?,
+        modelSettings: ModelSettings?,
+        tauWake: Double,
+        tauSleep: Double,
+        tauInertia: Double,
+        debtFactor: Double,
+        circadianOffset: Double,
+        useBathyphase: Boolean,
+        sleepEfficiency: Double = 0.9,
+        clamp: Boolean = false
+    ): Double {
+        return if (modelSettings != null) {
+            EnergyCalculator.getEnergyLevelFromSettings(
+                h, wakeHour, sleepDebt, sleepDuration, bathyphaseHour,
+                modelSettings, useBathyphase, clamp, sleepEfficiency
+            )
+        } else {
+            EnergyCalculator.getEnergyLevel(
+                h, wakeHour, sleepDebt, sleepDuration,
+                if (useBathyphase) bathyphaseHour else null,
+                clamp, tauWake, tauSleep, tauInertia, debtFactor,
+                if (useBathyphase) null else circadianOffset
+            )
+        }
+    }
 
     /** Last countdown bounds from a full [draw] pass; used by the wallpaper 1 Hz dirty path. */
     var lastCountdownDrawResult: CountdownDrawResult? = null
@@ -205,7 +237,8 @@ class ClockRenderer {
         showWindDown: Boolean = false,
         showBedtimeCountdown: Boolean = false,
         isPreview: Boolean = false,
-        previewIsLockScreen: Boolean = false
+        previewIsLockScreen: Boolean = false,
+        modelSettings: ModelSettings? = null
     ) {
         // Clear background to OLED black
         canvas.drawColor(Color.BLACK)
@@ -272,6 +305,9 @@ class ClockRenderer {
 
         // 5. Draw Energy Curve
         val mainSleep = activeLogs.find { it.isMainSleep } ?: activeLogs.maxByOrNull { it.endTime }
+        val sleepEfficiency = mainSleep?.let {
+            if (it.timeInBed > 0) it.minutesAsleep.toDouble() / it.timeInBed else 0.92
+        } ?: 0.92
         
         var wakeHour: Double? = mainSleep?.let {
             try {
@@ -296,7 +332,8 @@ class ClockRenderer {
             val totalAsleep = if (includeNaps) activeLogs.sumOf { it.minutesAsleep / 60.0 } else (mainSleep?.minutesAsleep ?: 0) / 60.0
             drawEnergyCurve(
                 canvas, centerX, centerY, radius, wakeHour, sleepDebt, totalAsleep, 
-                bathyphaseHour, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset, useBathyphase, normalizeEnergy, bedtimeGoal
+                bathyphaseHour, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset, useBathyphase, normalizeEnergy, bedtimeGoal,
+                modelSettings, sleepEfficiency
             )
         }
 
@@ -356,11 +393,9 @@ class ClockRenderer {
             var bathyEnergy: Double? = null
             if (wakeHour != null) {
                 val totalAsleep = if (includeNaps) activeLogs.sumOf { it.minutesAsleep / 60.0 } else (mainSleep?.minutesAsleep ?: 0) / 60.0
-                bathyEnergy = EnergyCalculator.getEnergyLevel(
-                    bathyphaseHour, wakeHour, sleepDebt, totalAsleep,
-                    if (useBathyphase) bathyphaseHour else null,
-                    false, tauWake, tauSleep, tauInertia, debtFactor,
-                    if (useBathyphase) null else circadianOffset
+                bathyEnergy = energyAt(
+                    bathyphaseHour, wakeHour, sleepDebt, totalAsleep, bathyphaseHour,
+                    modelSettings, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset, useBathyphase, sleepEfficiency
                 )
             }
             drawBathyphaseIndicator(canvas, centerX, centerY, radius, bathyphaseHour, bathyEnergy)
@@ -378,11 +413,9 @@ class ClockRenderer {
                 val h = (i.toDouble() / 144) * 24.0
 
                 // Today's curve (with debt and actual sleep)
-                val eToday = EnergyCalculator.getEnergyLevel(
-                    h, wakeHour, sleepDebt, totalAsleep,
-                    if (useBathyphase) bathyphaseHour else null,
-                    false, tauWake, tauSleep, tauInertia, debtFactor,
-                    if (useBathyphase) null else circadianOffset
+                val eToday = energyAt(
+                    h, wakeHour, sleepDebt, totalAsleep, bathyphaseHour,
+                    modelSettings, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset, useBathyphase, sleepEfficiency
                 )
                 if (eToday > peakEnergyToday) {
                     peakEnergyToday = eToday
@@ -390,11 +423,9 @@ class ClockRenderer {
                 }
 
                 // Perfection curve (0 debt, goal sleep)
-                val ePerf = EnergyCalculator.getEnergyLevel(
-                    h, wakeHour, 0.0, bedtimeGoal,
-                    if (useBathyphase) bathyphaseHour else null,
-                    false, tauWake, tauSleep, tauInertia, debtFactor,
-                    if (useBathyphase) null else circadianOffset
+                val ePerf = energyAt(
+                    h, wakeHour, 0.0, bedtimeGoal, bathyphaseHour,
+                    modelSettings, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset, useBathyphase, sleepEfficiency
                 )
                 if (ePerf > maxEPerfection) {
                     maxEPerfection = ePerf
@@ -455,7 +486,7 @@ class ClockRenderer {
             val mainSleep = activeLogs.find { it.isMainSleep } ?: activeLogs.maxByOrNull { it.endTime }
             val totalAsleep = if (includeNaps) activeLogs.sumOf { it.minutesAsleep / 60.0 } else (mainSleep?.minutesAsleep ?: 0) / 60.0
 
-            drawEnergyPct(canvas, centerX, centerY, radius, exactHour, handRad, wakeHour, sleepDebt, totalAsleep, bathyphaseHour, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset, useBathyphase, maxEPerfection)
+            drawEnergyPct(canvas, centerX, centerY, radius, exactHour, handRad, wakeHour, sleepDebt, totalAsleep, bathyphaseHour, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset, useBathyphase, peakEnergyToday, modelSettings, sleepEfficiency)
         }
 
         // 11.5 Timezone equirectangular map — fixed lock-screen (large centered) anchor
@@ -597,16 +628,20 @@ class ClockRenderer {
         debtFactor: Double,
         circadianOffset: Double,
         useBathyphase: Boolean,
-        maxEPerfection: Double
+        todayPeakEnergy: Double,
+        modelSettings: ModelSettings?,
+        sleepEfficiency: Double
     ) {
-        val currentE = EnergyCalculator.getEnergyLevel(
-            exactHour, wakeHour, sleepDebt, sleepDuration,
-            if (useBathyphase) bathyphaseHour else null,
-            false, tauWake, tauSleep, tauInertia, debtFactor,
-            if (useBathyphase) null else circadianOffset
+        val currentE = energyAt(
+            exactHour, wakeHour, sleepDebt, sleepDuration, bathyphaseHour,
+            modelSettings, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset, useBathyphase, sleepEfficiency
         )
 
-        val pct = if (maxEPerfection > 0) (currentE / maxEPerfection * 100).roundToInt().coerceAtLeast(0) else 0
+        val pct = if (todayPeakEnergy > 0) {
+            (currentE / todayPeakEnergy * 100).roundToInt().coerceIn(0, 100)
+        } else {
+            0
+        }
         
         val textRadius = radius + 60f
         val tx = cx + textRadius * cos(handRad).toFloat()
@@ -680,7 +715,9 @@ class ClockRenderer {
         circadianOffset: Double,
         useBathyphase: Boolean,
         normalize: Boolean,
-        bedtimeGoal: Double
+        bedtimeGoal: Double,
+        modelSettings: ModelSettings?,
+        sleepEfficiency: Double
     ) {
         val steps = 72
         var lastX = 0f
@@ -690,11 +727,9 @@ class ClockRenderer {
         val levels = mutableListOf<Double>()
         for (i in 0..steps) {
             val h = (i.toDouble() / steps) * 24.0
-            levels.add(EnergyCalculator.getEnergyLevel(
-                h, wakeHour, sleepDebt, sleepDuration, 
-                if (useBathyphase) bathyphaseHour else null, 
-                false, tauWake, tauSleep, tauInertia, debtFactor, 
-                if (useBathyphase) null else circadianOffset
+            levels.add(energyAt(
+                h, wakeHour, sleepDebt, sleepDuration, bathyphaseHour,
+                modelSettings, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset, useBathyphase, sleepEfficiency
             ))
         }
         val eMin = levels.minOrNull() ?: 0.0

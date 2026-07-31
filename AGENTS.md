@@ -18,4 +18,6 @@ After every agent change, update the affected active handoff and index before fi
 
 Before every PR, propose automated/manual checks and ask the owner to approve or revise them.
 
-After merge and pull, follow the master protocol: append closure history, archive the branch handoff and history, update the global ledger and active index, then delete merged git branches. Never delete branch documentation.
+After merge and pull, append closure history, archive the branch handoff/history, update the global ledger/index, and delete merged git branches only after reachability verification. Never delete branch documentation.
+
+Further agent-guide documentation: [docs/ai_agent_guides/README.md](docs/ai_agent_guides/README.md).

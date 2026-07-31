@@ -34,6 +34,34 @@ class EnergyCalculatorTest {
     }
 
     @Test
+    fun testPersonalM4EnergyRange() {
+        for (t in 0..23) {
+            val energy = EnergyCalculator.personalM4Energy(
+                t = t.toDouble(),
+                sleepDuration = 7.5,
+                sleepDebtHours = 3.0,
+                sleepEfficiency = 0.9
+            )
+            assertTrue("M4 energy at t=$t should be 0-1, was $energy", energy in 0.0..1.0)
+        }
+    }
+
+    @Test
+    fun testPersonalModelViaSettings() {
+        val settings = ModelSettings(usePersonalModel = true, personalModelId = "M4_circadian_daily_baseline")
+        val e = EnergyCalculator.getEnergyLevelFromSettings(
+            hClock = 14.0,
+            wakeHour = 10.0,
+            sleepDebtHours = 2.0,
+            sleepDuration = 7.0,
+            bathyphaseHour = null,
+            settings = settings,
+            useBathyphase = false
+        )
+        assertTrue(e in 0.0..1.0)
+    }
+
+    @Test
     fun testSleepDebtStabilityWhenTodayExcluded() {
         val today = java.time.LocalDate.now().toString()
         val yesterday = java.time.LocalDate.now().minusDays(1).toString()
