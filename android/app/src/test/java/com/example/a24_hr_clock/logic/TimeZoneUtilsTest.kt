@@ -58,8 +58,8 @@ class TimeZoneUtilsTest {
     }
 
     @Test
-    fun testTimezoneOffsetForWakeSunriseOffset() {
-        assertEquals(-1.0, TimeZoneUtils.timezoneOffsetForWakeSunriseOffset(7.0, 6.0), 0.001)
-        assertEquals(1.0, TimeZoneUtils.timezoneOffsetForWakeSunriseOffset(6.0, 7.0), 0.001)
+    fun testCorrelatedTimezoneOffsetHoursPrecise() {
+        val currentOffset = ZoneId.systemDefault().rules.getOffset(java.time.Instant.now()).totalSeconds / 3600.0
+        assertEquals(currentOffset - 1.25, TimeZoneUtils.correlatedTimezoneOffsetHoursPrecise(7.0, 5.75), 0.001)
     }
 }

@@ -153,9 +153,15 @@ object TimeZoneUtils {
         return normalizedOffset
     }
 
-    /** Signed timezone offset represented by the displayed wake/sunrise offset value. */
-    fun timezoneOffsetForWakeSunriseOffset(wakeHour: Double, sunriseHour: Double): Double {
-        return sunriseHour - wakeHour
+    /** Unrounded correlated timezone offset used for precise map longitude placement. */
+    fun correlatedTimezoneOffsetHoursPrecise(wakeHour: Double, sunriseHour: Double): Double {
+        val offset = wakeHour - sunriseHour
+        val currentOffsetSeconds = ZoneId.systemDefault().rules.getOffset(java.time.Instant.now()).totalSeconds
+        val currentOffsetHours = currentOffsetSeconds / 3600.0
+        var normalizedOffset = currentOffsetHours - offset
+        while (normalizedOffset < -12.0) normalizedOffset += 24.0
+        while (normalizedOffset > 14.0) normalizedOffset -= 24.0
+        return normalizedOffset
     }
 
     /** Approximate central meridian longitude for a UTC offset (15° per hour), in [-180, 180]. */

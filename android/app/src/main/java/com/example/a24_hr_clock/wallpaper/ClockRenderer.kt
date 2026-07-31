@@ -599,7 +599,7 @@ class ClockRenderer {
         val dst = RectF(left, top, left + drawW, top + drawH)
         canvas.drawBitmap(bitmap, null, dst, mapPaint)
 
-        val offsetHours = TimeZoneUtils.timezoneOffsetForWakeSunriseOffset(wakeHour, sunriseHour)
+        val offsetHours = TimeZoneUtils.correlatedTimezoneOffsetHoursPrecise(wakeHour, sunriseHour)
         val lon = TimeZoneUtils.longitudeForUtcOffsetHours(offsetHours)
         val meridianX = left + ((lon + 180.0) / 360.0).toFloat() * drawW
         meridianPaint.strokeWidth = max(3f, drawW * 0.004f)
@@ -1059,7 +1059,7 @@ class ClockRenderer {
         val prefix = if (offset > 0) "-" else "+"
         val offsetVal = String.format(Locale.US, "%s%.1f hrs", prefix, abs(offset))
 
-        val timezoneOffset = TimeZoneUtils.timezoneOffsetForWakeSunriseOffset(wakeHour, sunriseHour)
+        val timezoneOffset = TimeZoneUtils.correlatedTimezoneOffsetHours(wakeHour, sunriseHour)
 
         val utcZone = TimeZoneUtils.getUtcTimeZoneStringForOffset(timezoneOffset)
         val tzName = TimeZoneUtils.getTimeZoneNameForOffset(timezoneOffset)
