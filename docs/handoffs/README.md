@@ -9,7 +9,6 @@ Last verified: 2026-07-31
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
 | `main` | `62adb6d` (synced with `origin/main`) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
-| `chore/finalize-energy-refit-cleanup` | active | Record final branch/worktree disposition | [handoff](chore/finalize-energy-refit-cleanup.md) | [history](chore/finalize-energy-refit-cleanup.history.md) |
 
 ## Current merge order
 
