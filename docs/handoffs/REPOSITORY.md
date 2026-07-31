@@ -25,17 +25,23 @@ When Cursor and/or Google Antigravity (or multiple Cursor agents) work on this r
 4. Prefer a new worktree over stashing to free the primary clone.
 5. Android Studio: open each worktree as its own project; copy `local.properties`; see [MULTI_AGENT.md](MULTI_AGENT.md) (Android Studio section).
 
+## Execution defaults
+
+- Formal plan: not required for routine, localized, or clearly specified work, including ordinary Android Studio prompts. Use one only when requested or when work is ambiguous, high-risk, multi-phase, dependency-ordered, cross-system, or multi-session.
+- Context: inspect relevant files first; use `python scripts/context_probe.py scan <paths>` for unknown or potentially large files. Use recent chunks for logs/history and ask before optional broad expansion.
+- Closed loop: use `python scripts/compact_check.py --name <label> -- <command>` for noisy checks; allow at most two automatic diagnose/fix/retest cycles for the same failure before asking to expand.
+
 ## Required PR-check process
 
-The agent must propose checks before each PR and ask the owner to approve or revise them. Baseline candidates:
+Run the standing baseline without asking for approval before every PR. Ask only when checks are unusually expensive, require owner participation, are unavailable, or may be deferred. Baseline candidates:
 
-- `python scripts/validate_handoffs.py`
+- `python scripts/validate_handoffs.py --quiet`
 - Python changes: `python -m compileall python` and `python python/test_debt_logic.py`
 - Android changes: compile/test with the available Android/Gradle environment; if no wrapper/toolchain is available, record that limitation
 - UI/rendering changes: targeted manual visual check on affected platform(s)
 - Sync/storage changes: targeted conflict, import/export, and failure-path checks
 
-Only owner-approved checks become required for a particular PR. Record commands, results, and deferrals in the active branch handoff.
+Record meaningful commands, results, and deferrals in the active branch handoff.
 
 ## Handoff locations
 

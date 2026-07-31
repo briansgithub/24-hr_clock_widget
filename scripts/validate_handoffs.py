@@ -11,7 +11,20 @@ import sys
 from pathlib import Path
 from urllib.parse import unquote
 
-MAX_CHARACTERS = 42_000
+POLICY_MAX_CHARACTERS = 20_000
+HANDOFF_MAX_CHARACTERS = 6_000
+HISTORY_MAX_CHARACTERS = 12_000
+ENTRYPOINT_LIMITS = {
+    "AGENTS.md": 3_500,
+    "GEMINI.md": 400,
+    ".cursor/rules/handoff-maintenance.mdc": 600,
+}
+POLICY_FILES = {
+    "MASTER_HANDOFF.md",
+    "REPOSITORY.md",
+    "MULTI_AGENT.md",
+    "README.md",
+}
 INDEX_ROW = re.compile(
     r"^\|\s*`(?P<branch>[^`]+)`\s*\|.*"
     r"\[(?:handoff|main\.md)\]\((?P<handoff>[^)]+)\)\s*\|"
@@ -43,13 +56,40 @@ def read_text(path: Path, errors: list[str]) -> str:
         return ""
 
 
-def validate_sizes(markdown_files: list[Path], errors: list[str]) -> None:
+def size_limit(path: Path, handoffs: Path) -> int:
+    relative = path.relative_to(handoffs)
+    if path.name == "HISTORY.md" or path.name.endswith(".history.md"):
+        return HISTORY_MAX_CHARACTERS
+    if path.name in POLICY_FILES and len(relative.parts) == 1:
+        return POLICY_MAX_CHARACTERS
+    if relative.parts[:1] == ("templates",):
+        return POLICY_MAX_CHARACTERS
+    if relative.as_posix() == "archive/README.md":
+        return POLICY_MAX_CHARACTERS
+    return HANDOFF_MAX_CHARACTERS
+
+
+def validate_sizes(handoffs: Path, markdown_files: list[Path], errors: list[str]) -> None:
     for path in markdown_files:
         text = read_text(path, errors)
-        if len(text) >= MAX_CHARACTERS:
+        limit = size_limit(path, handoffs)
+        if len(text) >= limit:
             errors.append(
                 f"{path}: {len(text):,} characters; must be strictly below "
-                f"{MAX_CHARACTERS:,}"
+                f"{limit:,}"
+            )
+
+
+def validate_entrypoint_sizes(root: Path, errors: list[str]) -> None:
+    for relative, limit in ENTRYPOINT_LIMITS.items():
+        path = root / relative
+        if not path.is_file():
+            continue
+        text = read_text(path, errors)
+        if len(text) >= limit:
+            errors.append(
+                f"{path}: {len(text):,} characters; always-loaded entry point "
+                f"must be strictly below {limit:,}"
             )
 
 
@@ -93,6 +133,7 @@ def validate_active_pairs(
     handoffs: Path,
     entries: dict[str, tuple[Path, Path]],
     errors: list[str],
+    verbose: bool,
 ) -> None:
     """Require handoffs for indexed branches and the current checkout only.
 
@@ -136,7 +177,7 @@ def validate_active_pairs(
         if history.resolve() != expected_history.resolve():
             errors.append(f"{branch}: index history does not mirror branch path")
 
-    if in_repo:
+    if in_repo and verbose:
         for branch in sorted(local_branches - required):
             print(
                 f"note: local branch `{branch}` not required in this worktree's "
@@ -295,6 +336,16 @@ def main() -> int:
         "--base-ref",
         help="Git ref used to verify append-only histories (default: origin/$GITHUB_BASE_REF)",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="print worktree, branch-tracking, and stash diagnostics",
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="emit nothing when validation passes",
+    )
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parents[1]
@@ -303,6 +354,10 @@ def main() -> int:
 
     required = [
         root / "AGENTS.md",
+        root / "GEMINI.md",
+        root / ".cursor" / "rules" / "handoff-maintenance.mdc",
+        root / "scripts" / "context_probe.py",
+        root / "scripts" / "compact_check.py",
         handoffs / "MASTER_HANDOFF.md",
         handoffs / "REPOSITORY.md",
         handoffs / "MULTI_AGENT.md",
@@ -317,15 +372,17 @@ def main() -> int:
             errors.append(f"required file missing: {path.relative_to(root)}")
 
     markdown_files = sorted(handoffs.rglob("*.md"))
-    validate_sizes(markdown_files, errors)
+    validate_entrypoint_sizes(root, errors)
+    validate_sizes(handoffs, markdown_files, errors)
     validate_links(markdown_files + [root / "AGENTS.md"], errors)
     entries = parse_index(handoffs, errors)
-    validate_active_pairs(root, handoffs, entries, errors)
+    validate_active_pairs(root, handoffs, entries, errors, args.verbose)
     validate_archive_pairs(root, handoffs, errors)
     validate_append_only(
         root, markdown_files, resolve_base_ref(root, args.base_ref), errors
     )
-    report_parallel_state(root, handoffs, entries)
+    if args.verbose:
+        report_parallel_state(root, handoffs, entries)
 
     if errors:
         print("Handoff validation failed:")
@@ -333,10 +390,12 @@ def main() -> int:
             print(f"- {error}")
         return 1
 
-    print(
-        f"Handoff validation passed: {len(markdown_files)} Markdown files, "
-        f"{len(entries)} active branches."
-    )
+    if not args.quiet:
+        branch_label = "branch" if len(entries) == 1 else "branches"
+        print(
+            f"Handoff validation passed: {len(markdown_files)} Markdown files, "
+            f"{len(entries)} active {branch_label}."
+        )
     return 0
 
 

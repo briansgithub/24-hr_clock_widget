@@ -1,16 +1,14 @@
 # AI Agent Guides (installed)
 
-This repository uses the portable **Git Handoff System** from the external guide kit at `H:\Desktop\ai_agent_guides\git-handoff-system`.
+This repository uses the portable Git Handoff System from `H:\Desktop\ai_agent_guides\git-handoff-system`.
 
-## Agent entry points
+## Entry points
 
-| File | Audience |
-|---|---|
-| [AGENTS.md](../../AGENTS.md) | Vendor-neutral entry for all agents and IDEs |
-| [GEMINI.md](../../GEMINI.md) | Google/Gemini agents (handoff protocol + coding directives) |
-| [.cursor/rules/handoff-maintenance.mdc](../../.cursor/rules/handoff-maintenance.mdc) | Cursor always-applied handoff rule |
+- [AGENTS.md](../../AGENTS.md): authoritative compact procedure
+- [GEMINI.md](../../GEMINI.md): Gemini entry point
+- [.cursor/rules/handoff-maintenance.mdc](../../.cursor/rules/handoff-maintenance.mdc): Cursor shim
 
-## Handoff system (installed paths)
+## Installed support
 
 ```text
 AGENTS.md
@@ -18,24 +16,13 @@ GEMINI.md
 .cursor/rules/handoff-maintenance.mdc
 .github/workflows/handoff-validation.yml
 docs/handoffs/
+scripts/context_probe.py
+scripts/compact_check.py
 scripts/validate_handoffs.py
 ```
 
-## Startup checklist (every agent session)
-
-1. Read `AGENTS.md` → `docs/handoffs/MASTER_HANDOFF.md` → `REPOSITORY.md` → `README.md` (index).
-2. Read current branch handoff + `.history.md`.
-3. If parallel agents may run: read `docs/handoffs/MULTI_AGENT.md`; confirm dedicated worktree.
-4. Verify handoff claims against `git status`, branch tips, and diff.
-5. After changes: update handoff/index, append meaningful history, run `python scripts/validate_handoffs.py`.
-
-## Upstream kit
-
-To refresh templates or protocol from the source kit, compare:
-
-- External: `H:\Desktop\ai_agent_guides\git-handoff-system\`
-- This repo: project root (paths above)
+Follow `AGENTS.md`. Load handoff/lifecycle documents only when resuming work, scope is unclear, branch/worktree state changes, a PR is being prepared, or agents are actually concurrent. Use `context_probe.py` for large candidates and `compact_check.py` for noisy commands.
 
 Preserve repository-specific content in `docs/handoffs/REPOSITORY.md`, `docs/handoffs/README.md`, and active branch handoffs. Do not copy another repository's archive data.
 
-See [file_purposes.md](file_purposes.md) for a file-by-file map of the installed framework.
+Upstream reference: `H:\Desktop\ai_agent_guides\git-handoff-system\`.
