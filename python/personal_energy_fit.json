@@ -1,0 +1,90 @@
+{
+  "model_id": "M8_adaptive_sleep",
+  "params": {
+    "circadian_coefs": [
+      51.760499671310974,
+      -7.1539665570855036,
+      -20.1182843432549,
+      5.748481363814623,
+      -6.102330290654
+    ],
+    "reference_sleep_hours": 8.0,
+    "reference_peak_clock": 20.0,
+    "max_phase_shift_hours": 3.0,
+    "tau_wake": 23.0,
+    "tau_sleep": 4.0,
+    "inertia_tau": 0.75,
+    "homeostatic_scale": 25.0,
+    "debt_scale": 2.0,
+    "debt_saturation_hours": 12.0,
+    "inertia_scale": 12.0,
+    "process_s_min": 0.05,
+    "process_s_max": 1.0,
+    "homeostatic_delta_min": -0.15,
+    "homeostatic_delta_max": 0.35
+  },
+  "training": {
+    "csv": "H:\\Desktop\\widgets\\24-hr_clock_widget\\Alertness_Master_Log (2).csv",
+    "min_logged_per_day": 20,
+    "max_interpolated_gap_slots": 2,
+    "included_dates": [
+      "2026-07-16",
+      "2026-07-17",
+      "2026-07-18",
+      "2026-07-19",
+      "2026-07-20",
+      "2026-07-21",
+      "2026-07-22",
+      "2026-07-23",
+      "2026-07-24",
+      "2026-07-25",
+      "2026-07-26"
+    ],
+    "excluded_dates": [
+      "2026-07-27",
+      "2026-07-28",
+      "2026-07-29"
+    ],
+    "logged_counts": {
+      "2026-07-16": 26,
+      "2026-07-17": 27,
+      "2026-07-18": 20,
+      "2026-07-19": 20,
+      "2026-07-20": 28,
+      "2026-07-21": 27,
+      "2026-07-22": 28,
+      "2026-07-23": 30,
+      "2026-07-24": 27,
+      "2026-07-25": 35,
+      "2026-07-26": 34,
+      "2026-07-27": 16,
+      "2026-07-28": 0,
+      "2026-07-29": 0
+    },
+    "interpolated_counts": {
+      "2026-07-16": 2,
+      "2026-07-17": 1,
+      "2026-07-18": 2,
+      "2026-07-19": 3,
+      "2026-07-20": 1,
+      "2026-07-21": 4,
+      "2026-07-22": 1,
+      "2026-07-23": 0,
+      "2026-07-24": 0,
+      "2026-07-25": 0,
+      "2026-07-26": 0
+    },
+    "n_days": 11,
+    "n_logged_points": 302,
+    "n_contextual_logged_points": 294,
+    "n_interpolated_points": 14,
+    "n_training_points": 308,
+    "validation": "leave-one-day-out; scored on logged points only",
+    "cv_mae": 16.098370629166702,
+    "cv_rmse": 19.60443611813237,
+    "cv_n": 294,
+    "clock_only_cv_mae": 16.24912772314904,
+    "clock_only_cv_rmse": 19.766263058296573,
+    "selection": "Conservative nonzero sleep-debt penalty selected from a constrained Process-S/debt/inertia grid."
+  }
+}

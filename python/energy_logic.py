@@ -131,11 +131,36 @@ def two_process_energy(
 
 
 # -----------------------------------------------------------------------------
-# PERSONAL EMPIRICAL MODEL (M4 — circadian + daily baseline)
-# Loaded from python/personal_energy_fit.json after analyze_energy_fit.py runs.
+# PERSONAL EMPIRICAL MODELS
+# Loaded from python/personal_energy_fit.json after fitting.
 # -----------------------------------------------------------------------------
 
 _personal_fit_cache: dict | None = None
+
+ADAPTIVE_MODEL_ID = "M8_adaptive_sleep"
+ADAPTIVE_MODEL_DEFAULTS = {
+    "circadian_coefs": [
+        51.760499671310974,
+        -7.1539665570855036,
+        -20.1182843432549,
+        5.748481363814623,
+        -6.102330290654,
+    ],
+    "reference_sleep_hours": 8.0,
+    "reference_peak_clock": 20.0,
+    "max_phase_shift_hours": 3.0,
+    "tau_wake": 23.0,
+    "tau_sleep": 4.0,
+    "inertia_tau": 0.75,
+    "homeostatic_scale": 25.0,
+    "debt_scale": 2.0,
+    "debt_saturation_hours": 12.0,
+    "inertia_scale": 12.0,
+    "process_s_min": 0.05,
+    "process_s_max": 1.0,
+    "homeostatic_delta_min": -0.15,
+    "homeostatic_delta_max": 0.35,
+}
 
 
 def load_personal_fit(path: str | None = None) -> dict | None:
@@ -196,6 +221,222 @@ def personal_m4_energy(
     return alertness
 
 
+def personal_clock_fourier_energy(
+    clock_hour: float,
+    params: dict | None = None,
+    clamp: bool = True,
+) -> float | None:
+    """Data-fitted two-harmonic energy curve on local clock time.
+
+    The fitted coefficients are on the 0–100 scale and are intentionally
+    independent of wake-time estimates: the empirical log contains large
+    wake-time variation, while the observed ratings align more reliably to
+    the local clock hour.  Returns alertness on the 0.0–1.0 scale.
+    """
+    params = params or {}
+    coefs = params.get("fourier_coefs", [])
+    if len(coefs) < 5:
+        return None
+
+    omega = 2.0 * math.pi / 24.0
+    theta = omega * (clock_hour % 24.0)
+    energy_pct = (
+        float(coefs[0])
+        + float(coefs[1]) * math.cos(theta)
+        + float(coefs[2]) * math.sin(theta)
+        + float(coefs[3]) * math.cos(2.0 * theta)
+        + float(coefs[4]) * math.sin(2.0 * theta)
+    )
+    energy_pct = max(0.0, min(100.0, energy_pct))
+    alertness = energy_pct / 100.0
+    if clamp:
+        return max(0.0, min(1.0, alertness))
+    return alertness
+
+
+def _adaptive_params(params: dict | None) -> dict:
+    merged = dict(ADAPTIVE_MODEL_DEFAULTS)
+    if params:
+        merged.update(params)
+    return merged
+
+
+def _process_s_after_sleep(
+    sleep_duration: float,
+    tau_wake: float,
+    tau_sleep: float,
+    s_min: float,
+    s_max: float,
+) -> float:
+    """Return Process S at wake after a repeating wake/sleep cycle."""
+    duration = max(0.0, min(24.0, float(sleep_duration)))
+    tau_wake = max(0.001, float(tau_wake))
+    tau_sleep = max(0.001, float(tau_sleep))
+    awake_duration = 24.0 - duration
+    e_wake = math.exp(-awake_duration / tau_wake)
+    e_sleep = math.exp(-duration / tau_sleep)
+    divisor = max(0.0001, 1.0 - e_wake * e_sleep)
+    state = (
+        s_max * e_sleep * (1.0 - e_wake)
+        + s_min * (1.0 - e_sleep)
+    ) / divisor
+    return max(s_min, min(s_max, state))
+
+
+def _process_s_awake(state: float, hours: float, tau_wake: float, s_max: float) -> float:
+    duration = max(0.0, hours)
+    return state + (s_max - state) * (1.0 - math.exp(-duration / max(0.001, tau_wake)))
+
+
+def _process_s_asleep(state: float, hours: float, tau_sleep: float, s_min: float) -> float:
+    duration = max(0.0, hours)
+    return s_min + (state - s_min) * math.exp(-duration / max(0.001, tau_sleep))
+
+
+def _normalise_nap_intervals(
+    nap_intervals: list[tuple[float, float]] | tuple[tuple[float, float], ...] | None,
+) -> tuple[tuple[float, float], ...]:
+    """Clip, sort, and merge nap intervals expressed as hours after main wake."""
+    ordered: list[tuple[float, float]] = []
+    for interval in nap_intervals or ():
+        try:
+            start, end = float(interval[0]), float(interval[1])
+        except (IndexError, TypeError, ValueError):
+            continue
+        start = max(0.0, min(24.0, start))
+        end = max(0.0, min(24.0, end))
+        if end > start:
+            ordered.append((start, end))
+    ordered.sort()
+
+    merged: list[tuple[float, float]] = []
+    for start, end in ordered:
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return tuple(merged)
+
+
+def _adaptive_process_s_context(
+    hours_since_main_wake: float,
+    sleep_duration: float,
+    nap_intervals: list[tuple[float, float]] | tuple[tuple[float, float], ...] | None,
+    params: dict,
+) -> tuple[float, float, bool]:
+    """Return (actual-minus-rested Process S, hours since last wake, asleep)."""
+    tau_wake = float(params["tau_wake"])
+    tau_sleep = float(params["tau_sleep"])
+    s_min = float(params["process_s_min"])
+    s_max = float(params["process_s_max"])
+    reference_sleep = float(params["reference_sleep_hours"])
+
+    actual = _process_s_after_sleep(sleep_duration, tau_wake, tau_sleep, s_min, s_max)
+    rested = _process_s_after_sleep(reference_sleep, tau_wake, tau_sleep, s_min, s_max)
+    target = max(0.0, min(24.0, hours_since_main_wake))
+    cursor = 0.0
+    last_wake = 0.0
+
+    for start, end in _normalise_nap_intervals(nap_intervals):
+        if start >= target:
+            break
+        awake_hours = max(0.0, start - cursor)
+        actual = _process_s_awake(actual, awake_hours, tau_wake, s_max)
+        rested = _process_s_awake(rested, awake_hours, tau_wake, s_max)
+
+        sleep_end = min(target, end)
+        actual = _process_s_asleep(actual, sleep_end - start, tau_sleep, s_min)
+        rested = _process_s_asleep(rested, sleep_end - start, tau_sleep, s_min)
+        if target < end:
+            return actual - rested, 0.0, True
+        cursor = end
+        last_wake = end
+
+    awake_hours = max(0.0, target - cursor)
+    actual = _process_s_awake(actual, awake_hours, tau_wake, s_max)
+    rested = _process_s_awake(rested, awake_hours, tau_wake, s_max)
+    return actual - rested, max(0.0, target - last_wake), False
+
+
+def _circular_hour_difference(target: float, reference: float) -> float:
+    return ((target - reference + 12.0) % 24.0) - 12.0
+
+
+def adaptive_sleep_energy(
+    clock_hour: float,
+    wake_hour: float,
+    sleep_duration: float,
+    sleep_debt_hours: float,
+    bathyphase_hour: float | None = None,
+    circadian_peak_offset: float | None = None,
+    nap_intervals: list[tuple[float, float]] | tuple[tuple[float, float], ...] | None = None,
+    params: dict | None = None,
+    clamp: bool = True,
+) -> float:
+    """M8: empirical circadian baseline with sleep-driven state corrections.
+
+    The baseline is a personal two-harmonic local-clock fit. Process S changes
+    continuously from the main wake through any naps, while sleep debt and
+    sleep inertia can only reduce predicted alertness. Fitbit minutesAsleep is
+    already an effective-sleep measure, so efficiency is deliberately not
+    applied a second time.
+    """
+    model = _adaptive_params(params)
+    t = (clock_hour - wake_hour) % 24.0
+    process_delta, hours_since_last_wake, asleep = _adaptive_process_s_context(
+        t, sleep_duration, nap_intervals, model
+    )
+    if asleep:
+        return 0.0
+
+    reference_peak = float(model["reference_peak_clock"])
+    desired_peak = None
+    if bathyphase_hour is not None:
+        desired_peak = (float(bathyphase_hour) + 15.0) % 24.0
+    elif circadian_peak_offset is not None:
+        desired_peak = (float(wake_hour) + float(circadian_peak_offset)) % 24.0
+
+    phase_shift = 0.0
+    if desired_peak is not None:
+        max_shift = max(0.0, float(model["max_phase_shift_hours"]))
+        phase_shift = max(
+            -max_shift,
+            min(max_shift, _circular_hour_difference(desired_peak, reference_peak)),
+        )
+
+    coefs = model.get("circadian_coefs", ADAPTIVE_MODEL_DEFAULTS["circadian_coefs"])
+    if len(coefs) < 5:
+        coefs = ADAPTIVE_MODEL_DEFAULTS["circadian_coefs"]
+    theta = 2.0 * math.pi * ((clock_hour - phase_shift) % 24.0) / 24.0
+    baseline = (
+        float(coefs[0])
+        + float(coefs[1]) * math.cos(theta)
+        + float(coefs[2]) * math.sin(theta)
+        + float(coefs[3]) * math.cos(2.0 * theta)
+        + float(coefs[4]) * math.sin(2.0 * theta)
+    )
+
+    process_delta = max(
+        float(model["homeostatic_delta_min"]),
+        min(float(model["homeostatic_delta_max"]), process_delta),
+    )
+    debt_hours = max(0.0, float(sleep_debt_hours))
+    debt_load = 1.0 - math.exp(
+        -debt_hours / max(0.001, float(model["debt_saturation_hours"]))
+    )
+    inertia_load = math.exp(
+        -hours_since_last_wake / max(0.001, float(model["inertia_tau"]))
+    )
+    energy_pct = (
+        baseline
+        - float(model["homeostatic_scale"]) * process_delta
+        - float(model["debt_scale"]) * debt_load
+        - float(model["inertia_scale"]) * inertia_load
+    )
+    alertness = energy_pct / 100.0
+    return max(0.0, min(1.0, alertness)) if clamp else alertness
+
+
 def personal_scaled_s_energy(
     t: float,
     sleep_debt_hours: float = 0.0,
@@ -240,6 +481,11 @@ def get_personal_energy(
     sleep_debt_hours: float,
     sleep_efficiency: float = 0.9,
     clamp: bool = True,
+    clock_hour: float | None = None,
+    wake_hour: float | None = None,
+    bathyphase_hour: float | None = None,
+    circadian_peak_offset: float | None = None,
+    nap_intervals: list[tuple[float, float]] | tuple[tuple[float, float], ...] | None = None,
 ) -> float | None:
     """Returns personal-model energy if configured, else None."""
     fit = load_personal_fit()
@@ -247,6 +493,20 @@ def get_personal_energy(
         return None
     model_id = fit.get("model_id", "")
     params = fit.get("params", {})
+    if model_id == ADAPTIVE_MODEL_ID and clock_hour is not None and wake_hour is not None:
+        return adaptive_sleep_energy(
+            clock_hour=clock_hour,
+            wake_hour=wake_hour,
+            sleep_duration=sleep_duration,
+            sleep_debt_hours=sleep_debt_hours,
+            bathyphase_hour=bathyphase_hour,
+            circadian_peak_offset=circadian_peak_offset,
+            nap_intervals=nap_intervals,
+            params=params,
+            clamp=clamp,
+        )
+    if model_id == "M7_empirical_clock_fourier" and clock_hour is not None:
+        return personal_clock_fourier_energy(clock_hour, params, clamp)
     if model_id == "M4_circadian_daily_baseline":
         return personal_m4_energy(t, sleep_duration, sleep_debt_hours, sleep_efficiency, params, clamp)
     if model_id == "M3_scaled_process_s":
@@ -278,17 +538,29 @@ def get_energy_level(
     circadian_peak_offset: float = None,
     sleep_efficiency: float = 0.9,
     use_personal_model: bool = True,
+    nap_intervals: list[tuple[float, float]] | tuple[tuple[float, float], ...] | None = None,
 ) -> float:
     """
     Wrapper for UI that maps wall-clock time to hours-since-wake.
-    Uses personal empirical model (M4) when personal_energy_fit.json exists.
+    Uses the configured personal empirical model when available.
     """
     global _energy_summary_printed
     
     t = (h_clock - wake_hour) % 24.0
 
     if use_personal_model:
-        personal = get_personal_energy(t, sleep_duration, sleep_debt_hours, sleep_efficiency, clamp)
+        personal = get_personal_energy(
+            t,
+            sleep_duration,
+            sleep_debt_hours,
+            sleep_efficiency,
+            clamp,
+            clock_hour=h_clock,
+            wake_hour=wake_hour,
+            bathyphase_hour=bathyphase_hour,
+            circadian_peak_offset=circadian_peak_offset,
+            nap_intervals=nap_intervals,
+        )
         if personal is not None:
             return personal
 
@@ -378,18 +650,64 @@ def sleep_table_sessions(
     return rows
 
 
+def sleep_model_context(
+    raw_logs: list[dict],
+    active_sleep_date: str | None,
+    include_naps: bool = True,
+) -> tuple[float | None, tuple[tuple[float, float], ...]]:
+    """Extract main-sleep duration and wake-relative nap intervals for M8."""
+    if not active_sleep_date:
+        return None, ()
+
+    logs = [log for log in raw_logs if log.get("dateOfSleep") == active_sleep_date]
+    main_sleep = next((log for log in logs if log.get("isMainSleep")), None)
+    if not main_sleep:
+        return None, ()
+
+    try:
+        from datetime import datetime
+
+        def parse_local(value: str) -> datetime:
+            parsed = datetime.fromisoformat(value.strip().removesuffix("Z"))
+            return parsed.replace(tzinfo=None)
+
+        wake_time = parse_local(main_sleep["endTime"])
+    except (KeyError, TypeError, ValueError):
+        return None, ()
+
+    main_duration = max(0.0, float(main_sleep.get("minutesAsleep", 0)) / 60.0)
+    if not include_naps:
+        return main_duration, ()
+
+    naps: list[tuple[float, float]] = []
+    for nap in logs:
+        if nap.get("isMainSleep"):
+            continue
+        try:
+            start = parse_local(nap["startTime"])
+            end = parse_local(nap["endTime"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        start_after_wake = (start - wake_time).total_seconds() / 3600.0
+        end_after_wake = (end - wake_time).total_seconds() / 3600.0
+        if end_after_wake <= 0.0 or start_after_wake >= 24.0:
+            continue
+        naps.append((max(0.0, start_after_wake), min(24.0, end_after_wake)))
+
+    return main_duration, _normalise_nap_intervals(naps)
+
+
 def compute_sleep_debt(
     sleep_logs: list[dict], 
     sleep_need_hours: float,
     include_naps: bool = True,
     excluded_dates: list[str] = None
 ) -> float:
-    """
-    Computes a weighted 14-night sleep debt.
-    Recent nights have a higher impact on the final score.
+    """Compute adaptive debt from observed nights in the T-0 through T-14 window.
 
-    If a date is in excluded_dates, it is skipped entirely.
-    If a date is NOT in excluded_dates but has no log, it is treated as 0.0h sleep.
+    Missing and explicitly excluded dates carry the prior state unchanged rather
+    than fabricating a zero-sleep night. Each observed night discounts prior debt
+    by 10%; oversleep can repay debt, but the state never becomes negative.
     """
     if excluded_dates is None:
         excluded_dates = []
@@ -404,37 +722,19 @@ def compute_sleep_debt(
 
     from datetime import datetime, timedelta
     today = datetime.now()
-    
-    # We look at the last 14 nights (T-0 to T-14)
-    # Note: T-0 is usually excluded by default in the UI, but we process it if not excluded.
-    weighted_debt = 0.0
-    decay_factor = 0.9  # Each day back is 90% as impactful as the day after it
-    
-    print(f"\n[compute_sleep_debt] Calculating Weighted Debt (Decay={decay_factor}):")
-    print(f"  Excluding dates: {excluded_dates}")
+    excluded = set(excluded_dates)
+    debt = 0.0
+    decay_factor = 0.9
 
-    # Process T-0 down to T-14
-    for i in range(15):
-        date_obj = today - timedelta(days=i)
-        date_str = date_obj.strftime("%Y-%m-%d")
-
-        if date_str in excluded_dates:
-            print(f"  {date_str} (t-{i}): EXCLUDED")
+    # Oldest to newest makes this a state update rather than a weighted sum.
+    for i in range(14, -1, -1):
+        date_str = (today - timedelta(days=i)).strftime("%Y-%m-%d")
+        if date_str in excluded or date_str not in daily_sleep:
             continue
+        deficit = float(sleep_need_hours) - daily_sleep[date_str]
+        debt = max(0.0, debt * decay_factor + deficit)
 
-        actual = daily_sleep.get(date_str, 0.0)
-        nightly_debt = sleep_need_hours - actual
-        
-        # Apply weight: i=0 (today/last night) has weight 0.9^0 = 1.0
-        weight = math.pow(decay_factor, i)
-        contribution = nightly_debt * weight
-        weighted_debt += contribution
-        
-        log_status = "logged" if date_str in daily_sleep else "MISSING (0h)"
-        print(f"  {date_str} (t-{i}): {actual:.2f}h sleep ({log_status}) | Debt: {nightly_debt:.2f}h | Weight: {weight:.2f}")
-
-    print(f"[compute_sleep_debt] FINAL WEIGHTED DEBT = {weighted_debt:.2f} h")
-    return weighted_debt
+    return debt
 
 def find_bathyphase(intraday_hr: list[dict]) -> float | None:
     """
@@ -496,6 +796,7 @@ class EnergyCurve:
         self.sleep_debt_hours  = 0.0
         self.sleep_duration    = 7.5
         self.bathyphase_hour   = None
+        self.nap_intervals     = ()
         self.normalize         = True
         
         # Model Parameters
@@ -522,7 +823,8 @@ class EnergyCurve:
         """Returns the energy level at hour `h` using a precomputed cache."""
         args = (
             self.wake_hour, self.sleep_debt_hours, self.sleep_duration, self.bathyphase_hour,
-            self.tau_wake, self.tau_sleep, self.tau_inertia, self.debt_factor, self.circadian_peak_offset
+            tuple(self.nap_intervals), self.tau_wake, self.tau_sleep, self.tau_inertia,
+            self.debt_factor, self.circadian_peak_offset
         )
         if self._cached_args != args or not self._cached_levels or len(self._cached_levels) != steps + 1:
             self._recompute_cache(steps)
@@ -548,6 +850,7 @@ class EnergyCurve:
                 tau_inertia=self.tau_inertia,
                 debt_factor=self.debt_factor,
                 circadian_peak_offset=self.circadian_peak_offset,
+                nap_intervals=self.nap_intervals,
             )
             levels.append(e)
         self._cached_levels = levels
@@ -555,7 +858,8 @@ class EnergyCurve:
         self._cached_e_max = max(levels)
         self._cached_args = (
             self.wake_hour, self.sleep_debt_hours, self.sleep_duration, self.bathyphase_hour,
-            self.tau_wake, self.tau_sleep, self.tau_inertia, self.debt_factor, self.circadian_peak_offset
+            tuple(self.nap_intervals), self.tau_wake, self.tau_sleep, self.tau_inertia,
+            self.debt_factor, self.circadian_peak_offset
         )
 
     def get_display_radius(self, energy: float, radius: float) -> float:

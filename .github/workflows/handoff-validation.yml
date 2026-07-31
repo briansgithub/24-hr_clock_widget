@@ -13,16 +13,12 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
-
-      - name: Validate handoff structure
-        run: python scripts/validate_handoffs.py
+      - run: python -m py_compile scripts/context_probe.py scripts/compact_check.py scripts/validate_handoffs.py
+      - run: python scripts/validate_handoffs.py --quiet
 
