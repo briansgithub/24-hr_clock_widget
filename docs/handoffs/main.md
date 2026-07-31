@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Tip: `aec4184` — Merge adaptive energy model refinements.
+- Tip: `62adb6d` — Merge git history cleanup.
 - Upstream: `origin/main` (ahead; verify before push)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
@@ -19,14 +19,14 @@ Maintain the stable integration branch for feature work, with permanent handoff 
 
 ## Current status
 
-- Clean at tip `aec4184`; local `main` is ahead of `origin/main`.
-- `feature/energy-refit-jul29` remains checked out in a separate dirty worktree and is not ready for closure.
+- Clean at tip `62adb6d`; synchronized with `origin/main` before this bookkeeping branch.
+- The `feature/energy-refit-jul29` branch label is deleted; its dirty files remain preserved in a detached worktree at `3a13b4b`.
 
 ## Next actions
 
 1. Validate the merged Python and Android head.
 2. Owner push `main` when validation and history review are complete.
-3. Preserve and review the dirty `feature/energy-refit-jul29` worktree before advancing or deleting it.
+3. Review the preserved detached worktree and two historical stashes before discarding their unique files.
 
 ## Merge and cleanup
 

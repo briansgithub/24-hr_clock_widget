@@ -8,11 +8,12 @@ Last verified: 2026-07-31
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | `aec4184` (ahead of `origin/main`) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `main` | `62adb6d` (synced with `origin/main`) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `chore/finalize-energy-refit-cleanup` | active | Record final branch/worktree disposition | [handoff](chore/finalize-energy-refit-cleanup.md) | [history](chore/finalize-energy-refit-cleanup.history.md) |
 
 ## Current merge order
 
-No feature branches are currently queued for merge. The dirty `feature/energy-refit-jul29` worktree remains open pending owner review and preservation of its uncommitted files.
+No feature branches are currently queued for merge. The former `feature/energy-refit-jul29` files remain preserved in a detached worktree at `3a13b4b`; the branch label has been deleted.
 
 Parallel agents must use separate Git worktrees — see [MULTI_AGENT.md](MULTI_AGENT.md).
 
