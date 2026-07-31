@@ -135,3 +135,9 @@ Disposition phrases: `merged into main`, `superseded` (commits landed via descen
 - Merge / PR: `43f0872`
 - Summary: Calendar bottom-nav folded into Display accordion picker with sync/auth in CALENDAR section.
 - Archive: `archive/feature/fold-calendar-into-display.md`
+
+### 2026-07-31 — `feature/personal-energy-model-m4` → merged into `main`
+- Final tip: `456f56a`
+- Merge / PR: `62cb343` (local merge; not pushed)
+- Summary: Personal M4 energy retrofit, fitting and diagnostics tools, Android energy integration, and Python Display parity including the standalone bedtime countdown.
+- Archive: `archive/feature/personal-energy-model-m4.md`

@@ -1,17 +1,17 @@
-# Branch: `feature/personal-energy-model-m4`
+# Archived branch: `feature/personal-energy-model-m4`
 
 ## Identity
 
-- Tip: `aa398ca`
+- Final tip: `456f56a`
 - Parent/base: `main` at `43f0872` (includes fold-calendar merge)
 - Upstream: none
 - Role: feature â€” empirical energy model retrofit (M4 personal fit)
 - History: [personal-energy-model-m4.history.md](personal-energy-model-m4.history.md)
-- Last verified: `2026-07-26`
+- Closed: `2026-07-31`
 
 ## Goal and scope
 
-Abbreviation definitions: [energy_model_glossary.md](../../energy_model_glossary.md).
+Abbreviation definitions: [energy_model_glossary.md](../../../energy_model_glossary.md).
 
 - Goal: Retro-fit the energy curve to empirical alertness logs; adopt CV-winning M4 model in Python and Android; align Python display settings with Android Display tab.
 - Included: fit harness (M1–M6), personal M4 in `energy_logic.py` / `EnergyCalculator.kt`, `INTERPOLATED` log status, agent-guides docs sync, Python Display UI alignment.
@@ -35,9 +35,9 @@ Abbreviation definitions: [energy_model_glossary.md](../../energy_model_glossary
 - `docs/ai_agent_guides/` — installed guide-kit index
 - `python/clock_widget.py` — added Bathyphase, Acrophase, Grogginess, Wind-down Wedge UI toggles & rendering; standalone draggable Bedtime Countdown window with 1-second live ticker, default-ON state, transparent key background integration, and global pointer bounding-box hover delay (`hover_delay_var`) & timeout (`timeout_delay_var`) tracking across transparent window regions (Android Display tab parity)
 
-## Current status
+## Final status
 
-- Working tree: modified `python/clock_widget.py`
+- Merged into `main` at `62cb343`; subsequent adaptive refinements merged at `aec4184`.
 - Validation: `python -m compileall python`, 27 tests passed, `python scripts/validate_handoffs.py` passed (2026-07-26)
 - **Sleep grouping:** wake-episode is now the harness default (`grouping="wake_episode"`); `--calendar-grouping` for legacy comparison
 - Re-fit (2026-07-22 post wake-episode): LOO winner **M3** (19.3); **M4** LOO MAE 21.1 / RÂ² âˆ’0.24; in-sample MAE **15.5** / RÂ² **0.39**
@@ -46,15 +46,7 @@ Abbreviation definitions: [energy_model_glossary.md](../../energy_model_glossary
 - Production: `personal_energy_fit.json` on **M4** with k_s=0.2 (restored after CV harness write)
 - Outliers (|err|â‰¥12): model_limit 62, wake_variation 10, data_suspect 8
 
-## Next actions
-
-1. Continue logging toward Jul 25 day-10 bi-weekly re-fit (â‰¥10 days)
-2. Review Jul 20 evening model_limit cluster (not alignment â€” sleep inputs now correct)
-3. Owner review diff; exclude `Alertness_Master_Log.csv` from commits
-4. Open PR to `main` when metrics stabilize on â‰¥10 days
-
 ## Merge and cleanup
 
-- PR base: `main`
-- Readiness: in progress (committed on branch; PR pending)
-- Proposed PR checks: `python python/test_energy_fit.py`, `python scripts/validate_handoffs.py`, Android `EnergyCalculatorTest`
+- Disposition: merged into `main`; local branch deleted after reachability verification.
+- Remaining work: the separate dirty `feature/energy-refit-jul29` worktree and two historical stashes require owner review.
