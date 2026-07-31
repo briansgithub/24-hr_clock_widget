@@ -147,3 +147,9 @@ Disposition phrases: `merged into main`, `superseded` (commits landed via descen
 - Merge / PR: local explicit merge; not pushed
 - Summary: Removed fully merged local branch labels, archived stale handoffs, and preserved the dirty worktree and unique stashes for owner review.
 - Archive: `archive/chore/git-history-cleanup.md`
+
+### 2026-07-31 — `chore/finalize-energy-refit-cleanup` → merged into `main`
+- Final tip: cleanup documentation commits on `chore/finalize-energy-refit-cleanup`
+- Merge / PR: local explicit merge
+- Summary: Deleted the fully merged energy-refit branch label while preserving its dirty worktree at detached `3a13b4b`.
+- Archive: `archive/chore/finalize-energy-refit-cleanup.md`
