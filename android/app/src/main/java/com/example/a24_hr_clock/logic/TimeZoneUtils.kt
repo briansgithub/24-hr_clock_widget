@@ -153,6 +153,11 @@ object TimeZoneUtils {
         return normalizedOffset
     }
 
+    /** Signed timezone offset represented by the displayed wake/sunrise offset value. */
+    fun timezoneOffsetForWakeSunriseOffset(wakeHour: Double, sunriseHour: Double): Double {
+        return sunriseHour - wakeHour
+    }
+
     /** Approximate central meridian longitude for a UTC offset (15° per hour), in [-180, 180]. */
     fun longitudeForUtcOffsetHours(offsetHours: Double): Double {
         var lon = offsetHours * 15.0

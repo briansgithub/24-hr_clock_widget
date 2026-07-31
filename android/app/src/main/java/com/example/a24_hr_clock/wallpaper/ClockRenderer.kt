@@ -546,7 +546,7 @@ class ClockRenderer {
         val dst = RectF(left, top, left + drawW, top + drawH)
         canvas.drawBitmap(bitmap, null, dst, mapPaint)
 
-        val offsetHours = TimeZoneUtils.correlatedTimezoneOffsetHours(wakeHour, sunriseHour)
+        val offsetHours = TimeZoneUtils.timezoneOffsetForWakeSunriseOffset(wakeHour, sunriseHour)
         val lon = TimeZoneUtils.longitudeForUtcOffsetHours(offsetHours)
         val meridianX = left + ((lon + 180.0) / 360.0).toFloat() * drawW
         meridianPaint.strokeWidth = max(3f, drawW * 0.004f)
@@ -998,10 +998,10 @@ class ClockRenderer {
         val prefix = if (offset > 0) "-" else "+"
         val offsetVal = String.format(Locale.US, "%s%.1f hrs", prefix, abs(offset))
 
-        val clampedOffset = TimeZoneUtils.correlatedTimezoneOffsetHours(wakeHour, sunriseHour)
+        val timezoneOffset = TimeZoneUtils.timezoneOffsetForWakeSunriseOffset(wakeHour, sunriseHour)
 
-        val utcZone = TimeZoneUtils.getUtcTimeZoneStringForOffset(clampedOffset)
-        val tzName = TimeZoneUtils.getTimeZoneNameForOffset(clampedOffset)
+        val utcZone = TimeZoneUtils.getUtcTimeZoneStringForOffset(timezoneOffset)
+        val tzName = TimeZoneUtils.getTimeZoneNameForOffset(timezoneOffset)
         val tzVal = "$utcZone, '$tzName'"
 
         val timeFormatter = java.time.format.DateTimeFormatter.ofPattern("h:mm a", Locale.US)
@@ -1016,7 +1016,7 @@ class ClockRenderer {
         val sunsetTime = java.time.LocalTime.of(sunsetH % 24, sunsetM)
         val sunsetVal = sunsetTime.format(timeFormatter).lowercase()
 
-        val location = TimeZoneUtils.getMostPopulousLocationForOffset(clampedOffset)
+        val location = TimeZoneUtils.getMostPopulousLocationForOffset(timezoneOffset)
 
         val infoPaint = TextPaint().apply {
             color = Color.WHITE

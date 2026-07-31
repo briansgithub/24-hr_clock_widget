@@ -56,4 +56,10 @@ class TimeZoneUtilsTest {
         assertEquals(180.0, TimeZoneUtils.longitudeForUtcOffsetHours(12.0), 0.001)
         assertEquals(-180.0, TimeZoneUtils.longitudeForUtcOffsetHours(-12.0), 0.001)
     }
+
+    @Test
+    fun testTimezoneOffsetForWakeSunriseOffset() {
+        assertEquals(-1.0, TimeZoneUtils.timezoneOffsetForWakeSunriseOffset(7.0, 6.0), 0.001)
+        assertEquals(1.0, TimeZoneUtils.timezoneOffsetForWakeSunriseOffset(6.0, 7.0), 0.001)
+    }
 }
