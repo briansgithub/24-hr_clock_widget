@@ -196,6 +196,39 @@ def personal_m4_energy(
     return alertness
 
 
+def personal_clock_fourier_energy(
+    clock_hour: float,
+    params: dict | None = None,
+    clamp: bool = True,
+) -> float | None:
+    """Data-fitted two-harmonic energy curve on local clock time.
+
+    The fitted coefficients are on the 0–100 scale and are intentionally
+    independent of wake-time estimates: the empirical log contains large
+    wake-time variation, while the observed ratings align more reliably to
+    the local clock hour.  Returns alertness on the 0.0–1.0 scale.
+    """
+    params = params or {}
+    coefs = params.get("fourier_coefs", [])
+    if len(coefs) < 5:
+        return None
+
+    omega = 2.0 * math.pi / 24.0
+    theta = omega * (clock_hour % 24.0)
+    energy_pct = (
+        float(coefs[0])
+        + float(coefs[1]) * math.cos(theta)
+        + float(coefs[2]) * math.sin(theta)
+        + float(coefs[3]) * math.cos(2.0 * theta)
+        + float(coefs[4]) * math.sin(2.0 * theta)
+    )
+    energy_pct = max(0.0, min(100.0, energy_pct))
+    alertness = energy_pct / 100.0
+    if clamp:
+        return max(0.0, min(1.0, alertness))
+    return alertness
+
+
 def personal_scaled_s_energy(
     t: float,
     sleep_debt_hours: float = 0.0,
@@ -240,6 +273,7 @@ def get_personal_energy(
     sleep_debt_hours: float,
     sleep_efficiency: float = 0.9,
     clamp: bool = True,
+    clock_hour: float | None = None,
 ) -> float | None:
     """Returns personal-model energy if configured, else None."""
     fit = load_personal_fit()
@@ -247,6 +281,8 @@ def get_personal_energy(
         return None
     model_id = fit.get("model_id", "")
     params = fit.get("params", {})
+    if model_id == "M7_empirical_clock_fourier" and clock_hour is not None:
+        return personal_clock_fourier_energy(clock_hour, params, clamp)
     if model_id == "M4_circadian_daily_baseline":
         return personal_m4_energy(t, sleep_duration, sleep_debt_hours, sleep_efficiency, params, clamp)
     if model_id == "M3_scaled_process_s":
@@ -288,7 +324,14 @@ def get_energy_level(
     t = (h_clock - wake_hour) % 24.0
 
     if use_personal_model:
-        personal = get_personal_energy(t, sleep_duration, sleep_debt_hours, sleep_efficiency, clamp)
+        personal = get_personal_energy(
+            t,
+            sleep_duration,
+            sleep_debt_hours,
+            sleep_efficiency,
+            clamp,
+            clock_hour=h_clock,
+        )
         if personal is not None:
             return personal
 

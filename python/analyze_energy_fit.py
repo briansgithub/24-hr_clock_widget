@@ -207,6 +207,10 @@ def interpolate_gaps(df: pd.DataFrame) -> pd.DataFrame:
             if (between["Status"] == STATUS_SLEEP).any():
                 continue
             n_gap = len(between)
+            # Only infer isolated one- or two-slot gaps. Longer missing runs
+            # are too weakly constrained to represent empirical ratings.
+            if n_gap > 2:
+                continue
             for j, (idx, row) in enumerate(between.iterrows(), start=1):
                 if row["Status"] != STATUS_MISSED:
                     continue
