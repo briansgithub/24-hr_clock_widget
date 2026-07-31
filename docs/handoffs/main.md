@@ -2,11 +2,11 @@
 
 ## Identity
 
-- Tip: `43f0872` — Merge fold-calendar into Display settings.
+- Tip: `aec4184` — Merge adaptive energy model refinements.
 - Upstream: `origin/main` (ahead; verify before push)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
-- Last verified: `2026-07-22`
+- Last verified: `2026-07-31`
 
 ## Goal and scope
 
@@ -14,18 +14,19 @@ Maintain the stable integration branch for feature work, with permanent handoff 
 
 ## Changes since previous published tip
 
-- Merged `feature/fold-calendar-into-display` (`a45246e`): Calendar bottom-nav folded into Display accordion picker; `DisplayElementGlyphs.kt` calendar glyph; handoff docs for fold-calendar.
+- Merged `feature/personal-energy-model-m4` at `62cb343` and its adaptive refinements at `aec4184`.
+- Applied Python hover timing and bedtime countdown startup fixes at `343ec00`.
 
 ## Current status
 
-- Clean at tip `43f0872` (fold-calendar merged locally; not pushed)
-- Active feature: [feature/personal-energy-model-m4.md](feature/personal-energy-model-m4.md) at `c61cb3f`
+- Clean at tip `aec4184`; local `main` is ahead of `origin/main`.
+- `feature/energy-refit-jul29` remains checked out in a separate dirty worktree and is not ready for closure.
 
 ## Next actions
 
-1. Owner push `main` when ready (includes fold-calendar merge at `43f0872`)
-2. Open PR for `feature/personal-energy-model-m4` when ready
-3. Merge `feature/personal-energy-model-m4` when owner approves PR checks
+1. Validate the merged Python and Android head.
+2. Owner push `main` when validation and history review are complete.
+3. Preserve and review the dirty `feature/energy-refit-jul29` worktree before advancing or deleting it.
 
 ## Merge and cleanup
 

@@ -1,4 +1,4 @@
-# History: `feature/personal-energy-model-m4`
+# Archived history: `feature/personal-energy-model-m4`
 
 Append-only milestones. Current state: [personal-energy-model-m4.md](personal-energy-model-m4.md).
 
@@ -49,3 +49,7 @@ Append-only milestones. Current state: [personal-energy-model-m4.md](personal-en
 ### 2026-07-26 — Python Display UI alignment: Bedtime Countdown standalone window
 - Change: Added standalone draggable `bedtime_countdown_window` Toplevel with `_build_bedtime_countdown()`, `_resolve_bedtime_target()` (mirrors Android's `BedtimeNotificationManager.resolveBedtimeMillis`: fall-asleep − 90 min, rounded to 5 min, 10 PM clamp for 22:00–23:30), `update_bedtime_countdown_visibility()`, and `_update_bedtime_countdown_tick()` (1-second live ticker). Defaulted to ON (`show_bedtime_countdown = True`). Unified `check_nearby()` time-window tracking (`in_time_window`), using screen mouse pointer coordinates (`winfo_pointerx/y`) across transparent background regions to trigger `hover_delay_var` solid transition (`make_solid()`) and `timeout_delay_var` transparent transition (`make_clock_transparent()`).
 - Validation: `python -m compileall python`, 27 tests passed, `python scripts/validate_handoffs.py` passed.
+
+### 2026-07-31 — Merged and archived
+- Merge: `62cb343` merged the feature history into `main`; `aec4184` merged subsequent adaptive refinements.
+- Cleanup: verified the feature tip is reachable from `main`, deleted the local feature branch, and archived this handoff.
