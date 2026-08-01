@@ -382,6 +382,7 @@ class ClockWidget:
         if recalculate_debt and self.raw_sleep_logs:
             self._recalculate_debt()
         else:
+            self.update_metric_labels()
             self._schedule_clock_redraw()
 
     def _schedule_clock_redraw(self, layers=None):
@@ -633,6 +634,11 @@ class ClockWidget:
             font=("Segoe UI", 10, "bold"), anchor=tk.W, padx=6, pady=4,
         )
         self.bathyphase_label.pack(fill=tk.X)
+        self.acrophase_label = tk.Label(
+            metrics, text="Predicted acrophase  ·  --:-- --", bg=self.UI_SURFACE, fg=self.UI_TEXT,
+            font=("Segoe UI", 10, "bold"), anchor=tk.W, padx=6, pady=4,
+        )
+        self.acrophase_label.pack(fill=tk.X)
         self.efficiency_label = tk.Label(
             metrics, text="Sleep efficiency  ·  --.-%", bg=self.UI_SURFACE, fg=self.UI_TEXT,
             font=("Segoe UI", 10, "bold"), anchor=tk.W, padx=6, pady=4,
@@ -2787,9 +2793,31 @@ class ClockWidget:
         self._sleep_table_needs_refresh = False
         self._log_timing("sleep log refresh", started_at)
 
+    @staticmethod
+    def _format_clock_time(hour):
+        h = int(hour) % 24
+        m = int((hour % 1) * 60)
+        am_pm = "AM" if h < 12 else "PM"
+        h_display = h % 12 or 12
+        return f"{h_display}:{m:02d} {am_pm}"
+
+    def _predicted_acrophase_hour(self):
+        """Return the clock hour of today's highest predicted energy level."""
+        if self.wake_hour is None:
+            return None
+        self._apply_energy_curve_params()
+        self.energy_curve.get_cached_energy(0)
+        levels = self.energy_curve._cached_levels
+        if not levels:
+            return None
+        peak_index = levels.index(self.energy_curve._cached_e_max)
+        return (peak_index / (len(levels) - 1)) * 24.0
+
     def update_metric_labels(self):
-        """Update the Bathyphase and Efficiency labels in the controls window."""
-        if not hasattr(self, 'bathyphase_label') or not hasattr(self, 'efficiency_label'):
+        """Update the Bathyphase, Acrophase, and Efficiency labels in the controls window."""
+        if not all(hasattr(self, name) for name in (
+            'bathyphase_label', 'acrophase_label', 'efficiency_label',
+        )):
             return
         if self.bathyphase_hour is not None:
             h = int(self.bathyphase_hour)
@@ -2801,6 +2829,14 @@ class ClockWidget:
         else:
             self.bathyphase_label.config(text="Bathyphase  ·  --:-- --")
             
+        acrophase_hour = self._predicted_acrophase_hour()
+        if acrophase_hour is not None:
+            self.acrophase_label.config(
+                text=f"Predicted acrophase  ·  {self._format_clock_time(acrophase_hour)}"
+            )
+        else:
+            self.acrophase_label.config(text="Predicted acrophase  ·  --:-- --")
+
         if self.sleep_efficiency is not None:
             self.efficiency_label.config(text=f"Sleep efficiency  ·  {self.sleep_efficiency*100:.1f}%")
         else:
@@ -3709,13 +3745,11 @@ class ClockWidget:
                     self.energy_curve.draw_bathyphase_indicator(center_x, center_y, radius, self.bathyphase_hour, bathy_e)
 
                 if self.show_acrophase.get():
-                    max_e = getattr(self.energy_curve, '_cached_e_max', None)
-                    if max_e is not None:
-                        try:
-                            idx = self.energy_curve._cached_levels.index(max_e)
-                            acro_h = (idx / (len(self.energy_curve._cached_levels) - 1)) * 24.0
-                            self.energy_curve.draw_acrophase_indicator(center_x, center_y, radius, acro_h, max_e)
-                        except: pass
+                    acro_h = self._predicted_acrophase_hour()
+                    if acro_h is not None:
+                        self.energy_curve.draw_acrophase_indicator(
+                            center_x, center_y, radius, acro_h, self.energy_curve._cached_e_max
+                        )
 
         def draw_perimeter_line():
             self.canvas.create_oval(

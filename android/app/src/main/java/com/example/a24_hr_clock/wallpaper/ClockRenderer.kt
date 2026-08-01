@@ -419,14 +419,11 @@ class ClockRenderer {
             drawBathyphaseIndicator(canvas, centerX, centerY, radius, bathyphaseHour)
         }
 
-        // 9.6 Draw Acrophase Indicator & Calculate Peak for %
-        var peakEnergyToday = -1.0
+        // 9.6 Draw Acrophase Indicator
         var peakHourToday = 0.0
-        var maxEPerfection = -1.0
 
         if (wakeHour != null) {
             var peakEnergyToday = -Double.MAX_VALUE
-            var maxEPerfection = -Double.MAX_VALUE
             for (i in 0..144) {
                 val h = (i.toDouble() / 144) * 24.0
 
@@ -439,16 +436,6 @@ class ClockRenderer {
                 if (eToday > peakEnergyToday) {
                     peakEnergyToday = eToday
                     peakHourToday = h
-                }
-
-                // Perfection curve (0 debt, goal sleep)
-                val ePerf = energyAt(
-                    h, wakeHour, 0.0, bedtimeGoal, bathyphaseHour,
-                    modelSettings, tauWake, tauSleep, tauInertia, debtFactor, circadianOffset,
-                    useBathyphase, sleepEfficiency, emptyList()
-                )
-                if (ePerf > maxEPerfection) {
-                    maxEPerfection = ePerf
                 }
             }
 
