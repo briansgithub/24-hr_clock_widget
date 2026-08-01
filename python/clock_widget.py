@@ -181,6 +181,7 @@ class ClockWidget:
         self._canvas_control_gesture = False
         self._canvas_control_gesture_token = 0
         self._closing = False
+        self._bedtime_countdown_positioned_once = False
 
         # A small, long-lived worker pool avoids creating a thread for every
         # refresh. Workers publish immutable results to this queue; only the Tk
@@ -1196,7 +1197,11 @@ class ClockWidget:
         return target
 
     def _reposition_bedtime_countdown(self):
-        """Robustly center the bedtime countdown window below the clock face."""
+        """Robustly center the bedtime countdown window below the clock face.
+        Once positioned, it will not be automatically repositioned again.
+        """
+        if getattr(self, '_bedtime_countdown_positioned_once', False):
+            return
         if not (hasattr(self, 'bedtime_countdown_window') and self.bedtime_countdown_window.winfo_viewable()):
             return
 
@@ -1222,6 +1227,7 @@ class ClockWidget:
             
             self.bedtime_countdown_window.geometry(f"+{new_x}+{new_y}")
             self._refresh_window_rect("countdown", self.bedtime_countdown_window)
+            self._bedtime_countdown_positioned_once = True # Mark as positioned
         except tk.TclError:
             # This can happen if a window is destroyed during the update
             pass
@@ -1242,8 +1248,7 @@ class ClockWidget:
 
             if not self.bedtime_countdown_window.winfo_viewable():
                 # Positioning is now handled by a dedicated method.
-                # Defer the call slightly to ensure the window is mapped and measurable.
-                self.root.after(50, self._reposition_bedtime_countdown)
+                self._reposition_bedtime_countdown()
             self.bedtime_countdown_window.deiconify()
             self.bedtime_countdown_window.lift()
             self._refresh_window_rect("countdown", self.bedtime_countdown_window)
