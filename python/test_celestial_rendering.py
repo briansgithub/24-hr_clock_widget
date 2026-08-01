@@ -180,6 +180,8 @@ class CelestialRenderingTests(unittest.TestCase):
 
         self.widget.lat = 40.7128
         self.widget.lon = -74.0060
+        # Location refresh explicitly invalidates this cache with None.
+        self.widget._extremes_cache = None
         dependencies = (
             FakeObserver,
             None,
@@ -197,6 +199,29 @@ class CelestialRenderingTests(unittest.TestCase):
         self.assertEqual(phase_days, 10.0)
         self.assertTrue(math.isfinite(sun_elevation))
         self.assertIn("obs", self.widget._extremes_cache)
+
+    def test_solar_irradiance_rebuilds_explicitly_invalidated_peak_cache(self):
+        class FakeObserver:
+            def __init__(self, latitude, longitude):
+                self.latitude = latitude
+                self.longitude = longitude
+
+        self.widget.lat = 40.7128
+        self.widget.lon = -74.0060
+        self.widget._solar_peak_cache = None
+        dependencies = (
+            FakeObserver,
+            None,
+            lambda _observer, _moment: 30.0,
+            None,
+            None,
+        )
+
+        with patch("clock_widget._load_astral_dependencies", return_value=dependencies):
+            brightness = self.widget._get_solar_irradiance()
+
+        self.assertEqual(brightness, 255)
+        self.assertEqual(self.widget._solar_peak_cache["peak"], 30.0)
 
 
 if __name__ == "__main__":

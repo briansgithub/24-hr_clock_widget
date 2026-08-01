@@ -3198,7 +3198,8 @@ class ClockWidget:
         now_utc = datetime.datetime.now(datetime.timezone.utc)
         
         # 1. Update extremes cache if needed (every 5 minutes)
-        if not hasattr(self, '_extremes_cache') or (now - self._extremes_cache['ts']).total_seconds() >= 300:
+        extremes_cache = getattr(self, '_extremes_cache', None)
+        if extremes_cache is None or (now - extremes_cache['ts']).total_seconds() >= 300:
             try:
                 user_lat = getattr(self, 'lat', None)
                 user_lon = getattr(self, 'lon', None)
@@ -3382,8 +3383,9 @@ class ClockWidget:
 
             if elev >= 0:
                 # Theoretical peak elevation for today (sample every 30 min)
-                if not hasattr(self, '_solar_peak_cache') or \
-                   (datetime.datetime.now() - self._solar_peak_cache['ts']).total_seconds() >= 3600:
+                solar_peak_cache = getattr(self, '_solar_peak_cache', None)
+                if solar_peak_cache is None or \
+                   (datetime.datetime.now() - solar_peak_cache['ts']).total_seconds() >= 3600:
                     times = [now_utc + datetime.timedelta(minutes=30 * i) for i in range(48)]
                     elevs = [sun_elevation(obs, t) for t in times]
                     peak = max(elevs)
