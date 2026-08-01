@@ -12,6 +12,9 @@ from concurrent.futures import ThreadPoolExecutor
 from energy_logic import EnergyCurve, sleep_model_context
 
 _ASTRAL_DEPENDENCIES = None
+SYNODIC_MONTH_DAYS = 29.530588
+MOON_SHADOW_COLOR = "#444444"
+MOON_LIT_COLOR = "#E0E0E0"
 
 
 def _load_astral_dependencies():
@@ -65,6 +68,7 @@ class Tooltip:
 
 class ClockWidget:
     FACE_PADDING = 52
+    DRAG_FRAME_MS = 12
     UI_BG = "#181b21"
     UI_SURFACE = "#22262f"
     UI_SURFACE_ALT = "#292e39"
@@ -167,16 +171,15 @@ class ClockWidget:
         self._settings_refresh_id = None
         self._settings_refresh_needs_debt = False
         self._resize_redraw_id = None
+        self._drag_flush_id = None
+        self._pending_drag_geometry = None
+        self._drag_in_progress = False
         self._window_rects = {}
         self._settings_realized = False
         self._settings_prewarm_pending = False
         self._controls_open_grace_until = 0.0
         self._canvas_control_gesture = False
         self._canvas_control_gesture_token = 0
-        self._last_interaction_debug_state = None
-        self._interaction_debug_path = os.path.join(
-            os.path.dirname(__file__), "clock_widget_interaction.log"
-        )
         self._closing = False
 
         # A small, long-lived worker pool avoids creating a thread for every
@@ -310,34 +313,14 @@ class ClockWidget:
         self.update_clock()
         self.root.after(25, self._drain_ui_queue)
         self.root.after_idle(self.show_initial)
-        self._debug_interaction("session_start")
 
     def _log_timing(self, label, started_at):
         elapsed_ms = (time.perf_counter() - started_at) * 1000
         print(f"[ClockWidget:timing] {label}: {elapsed_ms:.1f} ms")
 
-    def _debug_interaction(self, event_name, **details):
-        """Write sparse UI-event diagnostics usable without a console window."""
-        record = {
-            "time": datetime.datetime.now().isoformat(timespec="milliseconds"),
-            "event": event_name,
-            "controls_visible": bool(getattr(self, "is_controls_visible", False)),
-            "clock_transparent": bool(getattr(self, "is_clock_transparent", False)),
-            **details,
-        }
-        line = json.dumps(record, default=str, sort_keys=True)
-        print(f"[ClockWidget:interaction] {line}")
-        try:
-            with open(self._interaction_debug_path, "a", encoding="utf-8") as debug_file:
-                debug_file.write(line + "\n")
-        except OSError as exc:
-            print(f"[ClockWidget:interaction] log write failed: {exc}")
-
     def _expire_canvas_control_gesture(self, token):
         if token != self._canvas_control_gesture_token:
             return
-        if self._canvas_control_gesture:
-            self._debug_interaction("control_gesture_expired_without_release", token=token)
         self._canvas_control_gesture = False
 
     def _submit_background(self, callback):
@@ -871,46 +854,25 @@ class ClockWidget:
             self._bc_target.configure(bg=bg_color)
 
     def toggle_controls(self):
-        was_visible = self.is_controls_visible
-        self._debug_interaction("toggle_controls_begin", was_visible=was_visible)
         if self.is_controls_visible:
             self.make_controls_hidden(reason="toggle")
         else:
             self.make_clock_solid()
             self._request_hover_refresh()
             self.make_controls_visible()
-        self._debug_interaction(
-            "toggle_controls_end",
-            was_visible=was_visible,
-            now_visible=self.is_controls_visible,
-        )
 
     def _clear_hover_controls(self):
         """Remove the canvas-native settings/exit affordances."""
         if getattr(self, "canvas", None) is not None:
             self.canvas.delete(self._hover_controls_tag)
 
-    def _on_hover_control_press(self, event, action):
+    def _on_hover_control_press(self, _event, action):
         """Run a canvas button action without starting a window drag."""
         self._drag_data = None
         self._resize_data = None
-        action_name = getattr(action, "__name__", repr(action))
         self._canvas_control_gesture_token += 1
         gesture_token = self._canvas_control_gesture_token
         self._canvas_control_gesture = True
-        try:
-            current = self.canvas.find_withtag("current")
-            current_tags = self.canvas.gettags(current[0]) if current else ()
-        except tk.TclError:
-            current_tags = ()
-        self._debug_interaction(
-            "canvas_control_press",
-            action=action_name,
-            token=gesture_token,
-            x_root=getattr(event, "x_root", None),
-            y_root=getattr(event, "y_root", None),
-            current_tags=current_tags,
-        )
         action()
         self.root.after(1500, lambda token=gesture_token: self._expire_canvas_control_gesture(token))
         return "break"
@@ -1043,10 +1005,8 @@ class ClockWidget:
 
     def make_controls_visible(self, select_page=None):
         if getattr(self, 'is_controls_visible', False):
-            self._debug_interaction("controls_show_ignored_already_visible")
             return
         started_at = time.perf_counter()
-        self._debug_interaction("controls_show_begin")
         self._cancel_controls_hide_timer()
         self._ensure_controls_window()
         if self._settings_prewarm_pending:
@@ -1077,11 +1037,6 @@ class ClockWidget:
             self.settings_notebook.select(select_page)
         self._on_settings_tab_changed()
         self._draw_hover_controls()
-        self._debug_interaction(
-            "controls_show_end",
-            controls_rect=self._window_rects.get("controls"),
-            root_rect=self._window_rects.get("root"),
-        )
         self._controls_open_count += 1
         open_kind = "first settings open" if self._controls_open_count == 1 else "repeat settings open"
         self.root.after_idle(lambda: self._log_timing(open_kind, started_at))
@@ -1089,17 +1044,13 @@ class ClockWidget:
     def make_controls_hidden(self, reason="explicit"):
         self._controls_hide_timer_started = False
         self._controls_open_grace_until = 0.0
-        self._debug_interaction("controls_hide_requested", reason=reason)
         if not hasattr(self, 'controls_window'):
-            self._debug_interaction("controls_hide_ignored_no_window", reason=reason)
             return
         if not getattr(self, 'is_controls_visible', False):
-            self._debug_interaction("controls_hide_ignored_already_hidden", reason=reason)
             return
         self.is_controls_visible = False
         self.controls_window.withdraw()
         self._window_rects.pop("controls", None)
-        self._debug_interaction("controls_hidden", reason=reason)
         if not self.is_clock_transparent:
             self._draw_hover_controls()
 
@@ -1366,6 +1317,10 @@ class ClockWidget:
         self.make_controls_hidden(reason="make_transparent")
 
     def _cache_window_event(self, event):
+        # Drag frames update the cached rectangles from the geometry being
+        # applied. Avoid four synchronous winfo calls for every Configure event.
+        if getattr(self, '_drag_in_progress', False):
+            return
         widget = event.widget
         if widget == self.root:
             self._refresh_window_rect("root", self.root)
@@ -1459,34 +1414,6 @@ class ClockWidget:
             and time.monotonic() < self._controls_open_grace_until
         )
         interaction_active = in_clock_area or in_controls or controls_mapping
-        pointer_top_name = None
-        if pointer_top == self.root:
-            pointer_top_name = "root"
-        elif pointer_top == getattr(self, 'controls_window', None):
-            pointer_top_name = "controls"
-        elif pointer_top == getattr(self, 'bedtime_countdown_window', None):
-            pointer_top_name = "countdown"
-        elif pointer_top is not None:
-            pointer_top_name = str(pointer_top)
-        interaction_state = (
-            pointer_top_name, in_root, in_controls, in_bedtime_timer,
-            controls_mapping, interaction_active, self.is_controls_visible,
-            self.is_clock_transparent,
-        )
-        if interaction_state != self._last_interaction_debug_state:
-            self._last_interaction_debug_state = interaction_state
-            self._debug_interaction(
-                "pointer_state",
-                pointer=(mx, my),
-                pointer_top=pointer_top_name,
-                in_root=in_root,
-                in_controls=in_controls,
-                in_countdown=in_bedtime_timer,
-                controls_mapping_grace=controls_mapping,
-                interaction_active=interaction_active,
-                root_rect=self._window_rects.get("root"),
-                controls_rect=self._window_rects.get("controls"),
-            )
 
         def get_hover_ms():
             try:
@@ -1521,11 +1448,6 @@ class ClockWidget:
         if self.is_controls_visible and not interaction_active:
             if not getattr(self, '_controls_hide_timer_started', False):
                 self._controls_hide_timer_started = True
-                self._debug_interaction(
-                    "controls_hide_scheduled",
-                    delay_ms=get_timeout_ms(),
-                    pointer=(mx, my),
-                )
                 self._controls_hide_timer_id = self.root.after(
                     get_timeout_ms(),
                     lambda: self.make_controls_hidden(reason="pointer_timeout"),
@@ -1642,6 +1564,90 @@ class ClockWidget:
         except:
             pass
 
+    def _window_cache_name(self, window):
+        if window == self.root:
+            return "root"
+        if window == getattr(self, 'controls_window', None):
+            return "controls"
+        if window == getattr(self, 'bedtime_countdown_window', None):
+            return "countdown"
+        return None
+
+    def _queue_drag_geometry(
+            self, window, x, y, width, height, *, resize=False,
+            follow_controls=False, controls_size=None):
+        """Keep only the latest requested drag geometry for the next frame."""
+        self._pending_drag_geometry = {
+            "window": window,
+            "name": self._window_cache_name(window),
+            "x": int(x),
+            "y": int(y),
+            "width": int(width),
+            "height": int(height),
+            "resize": bool(resize),
+            "follow_controls": bool(follow_controls),
+            "controls_size": controls_size,
+        }
+        if self._drag_flush_id is None:
+            self._drag_flush_id = self.root.after(
+                self.DRAG_FRAME_MS, self._flush_pending_drag_geometry
+            )
+
+    def _apply_pending_drag_geometry(self):
+        pending = self._pending_drag_geometry
+        self._pending_drag_geometry = None
+        if not pending:
+            return
+
+        window = pending["window"]
+        x, y = pending["x"], pending["y"]
+        width, height = pending["width"], pending["height"]
+        try:
+            if pending["resize"]:
+                window.geometry(f"{width}x{height}+{x}+{y}")
+            else:
+                window.geometry(f"+{x}+{y}")
+        except tk.TclError:
+            return
+
+        cache_name = pending["name"]
+        if cache_name:
+            self._window_rects[cache_name] = (x, y, width, height)
+
+        if (pending["follow_controls"] and self.is_controls_visible
+                and getattr(self, 'controls_window', None)):
+            controls_x = x + width + 10
+            controls_y = y
+            try:
+                self.controls_window.geometry(f"+{controls_x}+{controls_y}")
+                controls_size = pending["controls_size"] or (560, 680)
+                self._window_rects["controls"] = (
+                    controls_x, controls_y,
+                    int(controls_size[0]), int(controls_size[1]),
+                )
+            except tk.TclError:
+                pass
+
+    def _flush_pending_drag_geometry(self):
+        self._drag_flush_id = None
+        self._apply_pending_drag_geometry()
+
+    def _flush_pending_drag_geometry_now(self):
+        if self._drag_flush_id is not None:
+            try:
+                self.root.after_cancel(self._drag_flush_id)
+            except tk.TclError:
+                pass
+            self._drag_flush_id = None
+        self._apply_pending_drag_geometry()
+
+    def _finalize_drag_rects(self):
+        self._refresh_window_rect("root", self.root)
+        if self.is_controls_visible and getattr(self, 'controls_window', None):
+            self._refresh_window_rect("controls", self.controls_window)
+        if getattr(self, 'bedtime_countdown_window', None):
+            self._refresh_window_rect("countdown", self.bedtime_countdown_window)
+
     def on_drag_start(self, event, target_window=None):
         if target_window is None:
             target_window = self.root
@@ -1649,12 +1655,6 @@ class ClockWidget:
         if self._canvas_control_gesture:
             self._drag_data = None
             self._resize_data = None
-            self._debug_interaction(
-                "drag_start_suppressed_control_gesture",
-                token=self._canvas_control_gesture_token,
-                x_root=getattr(event, "x_root", None),
-                y_root=getattr(event, "y_root", None),
-            )
             return
 
         # Canvas-native settings/exit buttons own their click; do not let the
@@ -1664,10 +1664,6 @@ class ClockWidget:
             if current and self._hover_controls_tag in self.canvas.gettags(current[0]):
                 self._drag_data = None
                 self._resize_data = None
-                self._debug_interaction(
-                    "drag_start_suppressed_current_control",
-                    current_tags=self.canvas.gettags(current[0]),
-                )
                 return
             
         # Don't start a window drag if clicking on interactive widgets
@@ -1693,6 +1689,7 @@ class ClockWidget:
             bottom = ry >= h - margin
             if left or right or top or bottom:
                 self._drag_data = None
+                self._drag_in_progress = True
                 self._resize_data = {
                     'x': event.x_root, 'y': event.y_root,
                     'wx': target_window.winfo_x(), 'wy': target_window.winfo_y(),
@@ -1700,19 +1697,38 @@ class ClockWidget:
                     'left': left, 'right': right, 'top': top, 'bottom': bottom,
                 }
                 return
-        else:
+        elif target_window == getattr(self, 'controls_window', None):
             self._controls_detached = True
 
+        follow_controls = False
+        controls_size = None
+        if (
+                target_window == self.root
+                and self.is_controls_visible
+                and getattr(self, 'controls_window', None)
+                and not getattr(self, '_controls_detached', False)):
+            try:
+                follow_controls = bool(self.controls_window.winfo_viewable())
+                if follow_controls:
+                    controls_rect = self._window_rects.get("controls")
+                    if controls_rect:
+                        controls_size = (controls_rect[2], controls_rect[3])
+                    else:
+                        controls_size = (
+                            self.controls_window.winfo_width(),
+                            self.controls_window.winfo_height(),
+                        )
+            except tk.TclError:
+                follow_controls = False
+
         self._resize_data = None
+        self._drag_in_progress = True
         self._drag_data = {'x': event.x_root, 'y': event.y_root,
                            'wx': target_window.winfo_x(), 'wy': target_window.winfo_y(),
-                           'window': target_window, 'moved': False}
-        self._debug_interaction(
-            "drag_started",
-            target="root" if target_window == self.root else str(target_window),
-            x_root=event.x_root,
-            y_root=event.y_root,
-        )
+                           'width': w, 'height': h,
+                           'window': target_window, 'moved': False,
+                           'follow_controls': follow_controls,
+                           'controls_size': controls_size}
 
     def on_drag_motion(self, event):
         resize = getattr(self, '_resize_data', None)
@@ -1740,56 +1756,44 @@ class ClockWidget:
                 if resize['top']:
                     new_y -= min_h - new_h
                 new_h = min_h
-            self.root.geometry(f"{int(new_w)}x{int(new_h)}+{int(new_x)}+{int(new_y)}")
+            self._queue_drag_geometry(
+                self.root, new_x, new_y, new_w, new_h, resize=True
+            )
             return
 
-        if getattr(self, '_drag_data', None):
-            target_window = self._drag_data['window']
-            dx = event.x_root - self._drag_data['x']
-            dy = event.y_root - self._drag_data['y']
+        drag = getattr(self, '_drag_data', None)
+        if drag:
+            target_window = drag['window']
+            dx = event.x_root - drag['x']
+            dy = event.y_root - drag['y']
             if abs(dx) > 3 or abs(dy) > 3:
-                if not self._drag_data.get('moved'):
-                    self._debug_interaction(
-                        "drag_marked_moved",
-                        dx=dx,
-                        dy=dy,
-                        target="root" if target_window == self.root else str(target_window),
-                    )
-                self._drag_data['moved'] = True
-            new_x = self._drag_data['wx'] + dx
-            new_y = self._drag_data['wy'] + dy
-            target_window.geometry(f"+{new_x}+{new_y}")
-            
-            if target_window == self.root and hasattr(self, 'controls_window') and self.controls_window.winfo_viewable():
-                if not getattr(self, '_controls_detached', False):
-                    rw = self.root.winfo_width()
-                    self.controls_window.geometry(f"+{new_x + rw + 10}+{new_y}")
+                drag['moved'] = True
+            new_x = drag['wx'] + dx
+            new_y = drag['wy'] + dy
+            self._queue_drag_geometry(
+                target_window,
+                new_x,
+                new_y,
+                drag['width'],
+                drag['height'],
+                follow_controls=drag['follow_controls'],
+                controls_size=drag['controls_size'],
+            )
 
     def on_drag_end(self, _event=None):
+        # Apply the newest pointer position even when release happens before
+        # the next scheduled drag frame.
+        self._flush_pending_drag_geometry_now()
         resize = getattr(self, '_resize_data', None)
         drag = getattr(self, '_drag_data', None)
         control_gesture = self._canvas_control_gesture
-        gesture_token = self._canvas_control_gesture_token
         self._resize_data = None
         self._drag_data = None
+        self._drag_in_progress = False
         self._canvas_control_gesture = False
-        self._debug_interaction(
-            "drag_end",
-            control_gesture=control_gesture,
-            token=gesture_token,
-            had_resize=bool(resize),
-            had_drag=bool(drag),
-            drag_moved=bool(drag and drag.get('moved')),
-            drag_target=(
-                "root" if drag and drag.get('window') == self.root
-                else str(drag.get('window')) if drag else None
-            ),
-        )
+        if resize or drag:
+            self.root.after_idle(self._finalize_drag_rects)
         if control_gesture:
-            self._debug_interaction(
-                "drag_end_suppressed_duplicate_toggle",
-                token=gesture_token,
-            )
             return
         if resize:
             if self._resize_redraw_id is not None:
@@ -1798,7 +1802,6 @@ class ClockWidget:
             self._schedule_clock_redraw()
             return
         if drag and drag.get('window') == self.root and not drag.get('moved'):
-            self._debug_interaction("drag_end_clock_click_toggle")
             self.toggle_controls()
 
     def on_leave(self, event):
@@ -3140,12 +3143,7 @@ class ClockWidget:
                     'obs': obs
                 }
             except Exception:
-                # Fallback to simple time-based approximation
-                s_rad = math.radians((18 - current_hour) * 15)
-                m_phase_val = 0
-                moon_hour = (current_hour - (m_phase_val / 29.53) * 24) % 24
-                m_rad = math.radians((18 - moon_hour) * 15)
-                return s_rad, m_rad, m_phase_val, 0
+                return self._fallback_celestial_positions(current_hour, now_utc)
 
         # 2. Calculate current positions every minute using cached extremes
         _, _, sun_elevation, _, moon_elevation = _load_astral_dependencies()
@@ -3180,6 +3178,109 @@ class ClockWidget:
         sun_elev = sun_elevation(obs, now_utc)
         
         return s_rad, m_rad, m_phase_val, sun_elev
+
+    @staticmethod
+    def _fallback_celestial_positions(current_hour, now_utc=None):
+        """Return a stable time/phase approximation until location data is ready."""
+        if now_utc is None:
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
+        elif now_utc.tzinfo is None:
+            now_utc = now_utc.replace(tzinfo=datetime.timezone.utc)
+
+        # A well-known new-moon epoch keeps the fallback moon phase moving
+        # instead of permanently stacking an invisible new moon under the sun.
+        new_moon_epoch = datetime.datetime(
+            2000, 1, 6, 18, 14, tzinfo=datetime.timezone.utc
+        )
+        elapsed_days = (now_utc - new_moon_epoch).total_seconds() / 86400.0
+        phase_days = elapsed_days % SYNODIC_MONTH_DAYS
+        phase_fraction = phase_days / SYNODIC_MONTH_DAYS
+
+        sun_rad = math.radians((18 - current_hour) * 15)
+        moon_hour = (current_hour - phase_fraction * 24.0) % 24.0
+        moon_rad = math.radians((18 - moon_hour) * 15)
+        # Approximate elevation only controls marker color in fallback mode:
+        # 0 at 06:00/18:00, positive by day, negative by night.
+        sun_elev = 60.0 * math.sin(math.radians((current_hour - 6.0) * 15.0))
+        return sun_rad, moon_rad, phase_days, sun_elev
+
+    @staticmethod
+    def _celestial_marker_geometry(center_x, center_y, radius, sun_rad, moon_rad):
+        """Calculate the outer-orbit geometry shared by rendering and tests."""
+        icon_size = max(12, int(radius / 7))
+        orbit_radius = radius + icon_size + 2
+        marker_radius = icon_size / 1.6
+        return {
+            "icon_size": icon_size,
+            "orbit_radius": orbit_radius,
+            "marker_radius": marker_radius,
+            "sun_center": (
+                center_x + orbit_radius * math.cos(sun_rad),
+                center_y - orbit_radius * math.sin(sun_rad),
+            ),
+            "moon_center": (
+                center_x + orbit_radius * math.cos(moon_rad),
+                center_y - orbit_radius * math.sin(moon_rad),
+            ),
+        }
+
+    def _draw_celestial_markers(
+            self, center_x, center_y, radius,
+            sun_rad, moon_rad, moon_phase_value, sun_elevation):
+        """Draw visible sun and moon markers using the shared outer orbit."""
+        geometry = self._celestial_marker_geometry(
+            center_x, center_y, radius, sun_rad, moon_rad
+        )
+        marker_radius = geometry["marker_radius"]
+        sx, sy = geometry["sun_center"]
+        mx, my = geometry["moon_center"]
+
+        sun_fill, _sun_alpha, sun_outline = self._interpolate_sun_color(sun_elevation)
+        self.canvas.create_oval(
+            sx - marker_radius, sy - marker_radius,
+            sx + marker_radius, sy + marker_radius,
+            fill=sun_fill, outline=sun_outline, width=2,
+            tags="sun_and_moon",
+        )
+
+        moon_bounds = (
+            mx - marker_radius, my - marker_radius,
+            mx + marker_radius, my + marker_radius,
+        )
+        self.canvas.create_oval(
+            *moon_bounds, fill=MOON_SHADOW_COLOR, outline="", tags="sun_and_moon"
+        )
+
+        phase_fraction = (moon_phase_value / SYNODIC_MONTH_DAYS) % 1.0
+        if 0.01 < phase_fraction < 0.99:
+            if phase_fraction <= 0.5:
+                self.canvas.create_arc(
+                    *moon_bounds, start=-90, extent=180,
+                    fill=MOON_LIT_COLOR, outline="", style=tk.PIESLICE,
+                    tags="sun_and_moon",
+                )
+                mid_phase = phase_fraction * 4.0 - 1.0
+                ellipse_color = (
+                    MOON_SHADOW_COLOR if mid_phase < 0 else MOON_LIT_COLOR
+                )
+            else:
+                self.canvas.create_arc(
+                    *moon_bounds, start=90, extent=180,
+                    fill=MOON_LIT_COLOR, outline="", style=tk.PIESLICE,
+                    tags="sun_and_moon",
+                )
+                mid_phase = (phase_fraction - 0.5) * 4.0 - 1.0
+                ellipse_color = (
+                    MOON_LIT_COLOR if mid_phase < 0 else MOON_SHADOW_COLOR
+                )
+            ellipse_half_width = abs(mid_phase) * marker_radius
+            self.canvas.create_oval(
+                mx - ellipse_half_width, my - marker_radius,
+                mx + ellipse_half_width, my + marker_radius,
+                fill=ellipse_color, outline="", tags="sun_and_moon",
+            )
+
+        return geometry
 
     def _get_solar_irradiance(self):
         """Return solar irradiance brightness 0-255 based on current sun elevation.
@@ -3783,83 +3884,13 @@ class ClockWidget:
                     sun_rad, moon_rad, m_phase_val, sun_elev = self._get_celestial_positions(current_hour)
                 except Exception as exc:
                     print(f"[ClockWidget] Celestial marker fallback: {exc}")
-                    sun_rad = math.radians((18 - current_hour) * 15)
-                    moon_hour = (current_hour + 12.0) % 24.0
-                    moon_rad = math.radians((18 - moon_hour) * 15)
-                    m_phase_val = 14.765
-                    sun_elev = 0.0
-                icon_size = max(14, int(radius / 7))
-                # Keep markers inside the face. This avoids them being lost
-                # against the transparent window key on borderless Windows
-                # windows while preserving their orbital relationship.
-                orbit_radius = max(20, radius - icon_size * 1.25)
-
-                sx = center_x + orbit_radius * math.cos(sun_rad)
-                sy = center_y - orbit_radius * math.sin(sun_rad)
-                sun_r = icon_size / 1.6
-                
-                # Dynamic sun color and alpha
-                sun_fill, sun_alpha, sun_outline = self._interpolate_sun_color(sun_elev)
-                
-                # TKinter doesn't support alpha in create_oval directly easily, 
-                # but we can use a transparent color if the OS supports it or just use the color.
-                # Since we are using a transparent background, we can simulate alpha by blending with background or just using the hex.
-                # Actually, for the sun icon, let's just use the interpolated color.
-                
-                self.canvas.create_oval(
-                    sx - sun_r, sy - sun_r, sx + sun_r, sy + sun_r,
-                    fill=sun_fill, outline=sun_outline, width=2,
-                    tags="sun_and_moon"
-                )
-
-                mx = center_x + orbit_radius * math.cos(moon_rad)
-                my = center_y - orbit_radius * math.sin(moon_rad)
-                
-                # Manual drawing of the moon phase to fix rendering/coloring issues.
-                # This ensures the lit part is always light and the unlit part is dark,
-                # regardless of how the OS/font renders moon emojis.
-                p = (m_phase_val / 29.530588) % 1.0
-                m_r = icon_size / 1.6
-                
-                # Base unlit moon (shadow)
-                self.canvas.create_oval(
-                    mx - m_r, my - m_r, mx + m_r, my + m_r,
-                    fill="#444444", outline="#222222", width=1, tags="sun_and_moon"
-                )
-                
-                # Lit part calculation
-                if 0.01 < p < 0.99: # Not a New Moon
-                    if p <= 0.5: # Waxing (lit on the right)
-                        self.canvas.create_arc(
-                            mx - m_r, my - m_r, mx + m_r, my + m_r,
-                            start=-90, extent=180,
-                            fill="#E0E0E0", outline="", style=tk.PIESLICE, tags="sun_and_moon"
-                        )
-                        mid_p = (p * 4) - 1
-                        e_width = abs(mid_p) * m_r
-                        e_color = "#444444" if mid_p < 0 else "#E0E0E0"
-                        self.canvas.create_oval(
-                            mx - e_width, my - m_r, mx + e_width, my + m_r,
-                            fill=e_color, outline="#777777", width=1, tags="sun_and_moon"
-                        )
-                    else: # Waning (lit on the left)
-                        self.canvas.create_arc(
-                            mx - m_r, my - m_r, mx + m_r, my + m_r,
-                            start=90, extent=180,
-                            fill="#E0E0E0", outline="", style=tk.PIESLICE, tags="sun_and_moon"
-                        )
-                        mid_p = ((p - 0.5) * 4) - 1
-                        e_width = abs(mid_p) * m_r
-                        e_color = "#E0E0E0" if mid_p < 0 else "#444444"
-                        self.canvas.create_oval(
-                            mx - e_width, my - m_r, mx + e_width, my + m_r,
-                            fill=e_color, outline="#777777", width=1, tags="sun_and_moon"
-                        )
-                elif 0.49 <= p <= 0.51: # Full Moon fallback
-                    self.canvas.create_oval(
-                        mx - m_r, my - m_r, mx + m_r, my + m_r,
-                        fill="#E0E0E0", outline="#777777", width=1, tags="sun_and_moon"
+                    sun_rad, moon_rad, m_phase_val, sun_elev = (
+                        self._fallback_celestial_positions(current_hour)
                     )
+                self._draw_celestial_markers(
+                    center_x, center_y, radius,
+                    sun_rad, moon_rad, m_phase_val, sun_elev,
+                )
 
         def draw_sleep_debt_text():
             if self.show_sleep_debt_text.get() and self.sleep_debt_hours is not None:
