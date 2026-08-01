@@ -392,6 +392,9 @@ fun MainScreen(
                 )
                 Screen.ENERGY -> ModelSettingsScreen(
                     modelSettings = modelSettings,
+                    sleepLogs = sleepLogs,
+                    metrics = metrics,
+                    sleepDebt = sleepDebt,
                     onUpdate = { scope.launch { settingsManager.updateModelSettings(it) } },
                     onReset = { scope.launch { settingsManager.resetModelSettings() } },
                     onNavigateToLogHistory = { currentScreen = Screen.LOG_HISTORY }
@@ -823,9 +826,78 @@ private fun DisplaySectionHeader(text: String) {
     )
 }
 
+private fun parseEnergySleepDateTime(value: String): java.time.LocalDateTime? =
+    runCatching {
+        java.time.LocalDateTime.parse(value.removeSuffix("Z"))
+    }.getOrNull() ?: runCatching {
+        java.time.OffsetDateTime.parse(value).toLocalDateTime()
+    }.getOrNull()
+
+private fun energyTabTimings(
+    sleepLogs: List<SleepLogEntry>,
+    bathyphaseHour: Double?,
+    sleepDebt: Double,
+    modelSettings: ModelSettings
+): Pair<Double?, Double?> {
+    val mainSleep = sleepLogs.find { it.isMainSleep } ?: sleepLogs.maxByOrNull { it.endTime }
+    val mainWake = mainSleep?.let { parseEnergySleepDateTime(it.endTime) }
+        ?: return bathyphaseHour to null
+    val wakeHour = mainWake.hour + mainWake.minute / 60.0 + mainWake.second / 3600.0
+    val sleepDuration = (mainSleep?.minutesAsleep ?: 0) / 60.0
+    val sleepEfficiency = mainSleep?.let {
+        if (it.timeInBed > 0) it.minutesAsleep.toDouble() / it.timeInBed else 0.92
+    } ?: 0.92
+    val napIntervals = if (modelSettings.includeNaps) {
+        sleepLogs.mapNotNull { log ->
+            if (log.isMainSleep) return@mapNotNull null
+            val start = parseEnergySleepDateTime(log.startTime) ?: return@mapNotNull null
+            val end = parseEnergySleepDateTime(log.endTime) ?: return@mapNotNull null
+            val startHours = java.time.Duration.between(mainWake, start).toMillis() / 3_600_000.0
+            val endHours = java.time.Duration.between(mainWake, end).toMillis() / 3_600_000.0
+            if (endHours <= 0.0 || startHours >= 24.0) null
+            else SleepInterval(max(0.0, startHours), min(24.0, endHours))
+        }
+    } else emptyList()
+
+    var peakEnergy = -Double.MAX_VALUE
+    var acrophaseHour = 0.0
+    for (i in 0..144) {
+        val hour = (i.toDouble() / 144) * 24.0
+        val energy = EnergyCalculator.getEnergyLevelFromSettings(
+            hClock = hour,
+            wakeHour = wakeHour,
+            sleepDebtHours = sleepDebt,
+            sleepDuration = sleepDuration,
+            bathyphaseHour = bathyphaseHour,
+            settings = modelSettings,
+            useBathyphase = modelSettings.useBathyphase,
+            sleepEfficiency = sleepEfficiency,
+            napIntervals = napIntervals
+        )
+        if (energy > peakEnergy) {
+            peakEnergy = energy
+            acrophaseHour = hour
+        }
+    }
+    return bathyphaseHour to acrophaseHour
+}
+
+private fun formatEnergyClockHour(hour: Double?): String {
+    if (hour == null) return "--:-- --"
+    val normalizedHour = hour.mod(24.0)
+    val wholeHour = normalizedHour.toInt()
+    val minute = ((normalizedHour - wholeHour) * 60).toInt()
+    val amPm = if (wholeHour < 12) "AM" else "PM"
+    val displayHour = wholeHour % 12
+    return String.format("%d:%02d %s", if (displayHour == 0) 12 else displayHour, minute, amPm)
+}
+
 @Composable
 fun ModelSettingsScreen(
     modelSettings: ModelSettings,
+    sleepLogs: List<SleepLogEntry>,
+    metrics: Triple<Double?, Double, Double>,
+    sleepDebt: Double,
     onUpdate: (ModelSettings) -> Unit,
     onReset: () -> Unit,
     onNavigateToLogHistory: () -> Unit
@@ -837,6 +909,25 @@ fun ModelSettingsScreen(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
+        val timings = remember(sleepLogs, metrics, sleepDebt, modelSettings) {
+            energyTabTimings(sleepLogs, metrics.first, sleepDebt, modelSettings)
+        }
+        Text(
+            text = "Current metrics",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Bathyphase", modifier = Modifier.weight(1f))
+            Text(formatEnergyClockHour(timings.first), fontWeight = FontWeight.Bold)
+        }
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Predicted acrophase", modifier = Modifier.weight(1f))
+            Text(formatEnergyClockHour(timings.second), fontWeight = FontWeight.Bold)
+        }
+        Spacer(modifier = Modifier.height(20.dp))
+
         Button(onClick = onReset, modifier = Modifier.fillMaxWidth()) {
             Text("Reset Model Defaults")
         }
