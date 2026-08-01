@@ -419,7 +419,7 @@ class ClockRenderer {
             drawBathyphaseIndicator(canvas, centerX, centerY, radius, bathyphaseHour)
         }
 
-        // 9.6 Draw Acrophase Indicator & Calculate Peak for %
+        // 9.6 Draw Acrophase Indicator
         var peakHourToday = 0.0
 
         if (wakeHour != null) {

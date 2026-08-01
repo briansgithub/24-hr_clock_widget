@@ -1215,6 +1215,7 @@ def run_outlier_report(
 
     fitbit_daily = build_fitbit_daily_table(sleep_logs)
     raw = load_empirical_csv(csv_path)
+    excluded_dates = ["2026-07-27", "2026-07-28", "2026-07-29"]
     data = build_fitting_frame(
         raw,
         fitbit_daily,
@@ -1222,6 +1223,7 @@ def run_outlier_report(
         sleep_need_hours=sleep_need,
         use_interpolation=use_interpolation,
         grouping=grouping,
+        excluded_dates=excluded_dates,
     )
     if len(data) < 1:
         raise RuntimeError("No LOGGED points for outlier analysis")
@@ -1701,6 +1703,7 @@ def run_daily_comparison(
 
     fitbit_daily = build_fitbit_daily_table(sleep_logs)
     raw = load_empirical_csv(csv_path)
+    excluded_dates = ["2026-07-27", "2026-07-28", "2026-07-29"]
     data = build_fitting_frame(
         raw,
         fitbit_daily,
@@ -1708,6 +1711,7 @@ def run_daily_comparison(
         sleep_need_hours=sleep_need,
         use_interpolation=use_interpolation,
         grouping=grouping,
+        excluded_dates=excluded_dates,
     )
     if len(data) < 1:
         raise RuntimeError("No LOGGED points found for daily comparison plots")
@@ -1856,6 +1860,7 @@ def run_analysis(
     raw = load_empirical_csv(csv_path)
     overlap = fitbit_empirical_overlap(raw, sleep_logs)
     excluded_dates = load_excluded_dates()
+    excluded_dates.extend(["2026-07-27", "2026-07-28", "2026-07-29"])
     data = build_fitting_frame(
         raw,
         fitbit_daily,
