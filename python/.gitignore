@@ -19,5 +19,6 @@ credentials.json
 token.json
 
 performance_profile.log
+clock_widget_interaction.log
 /24_hr_clock_android
 24_hr_clock_android

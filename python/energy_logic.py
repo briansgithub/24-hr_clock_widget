@@ -811,6 +811,7 @@ class EnergyCurve:
         self._cached_levels = []
         self._cached_e_min = 0.0
         self._cached_e_max = 0.0
+        self._line_ids = []
 
     def interpolate_color(self, val: float) -> str:
         val = max(0.0, min(1.0, val))
@@ -886,6 +887,7 @@ class EnergyCurve:
         # 2. Draw the segments using a reduced visual resolution (e.g., 72 steps)
         steps = 72
         last_px = last_py = None
+        segment_index = 0
         for i in range(steps + 1):
             h = (i / float(steps)) * 24.0
             energy = self.get_cached_energy(h)
@@ -902,14 +904,36 @@ class EnergyCurve:
                 if draw_obj:
                     draw_obj.line([(last_px, last_py), (px, py)], fill=color, width=width)
                 else:
-                    self.canvas.create_line(
-                        last_px, last_py, px, py,
-                        fill=color,
-                        width=width,
-                        capstyle=tk.ROUND,
-                        tags="energy_curve",
-                    )
+                    item_id = self._line_ids[segment_index] if segment_index < len(self._line_ids) else None
+                    try:
+                        item_exists = item_id is not None and bool(self.canvas.type(item_id))
+                    except tk.TclError:
+                        item_exists = False
+                    if item_exists:
+                        self.canvas.coords(item_id, last_px, last_py, px, py)
+                        self.canvas.itemconfigure(item_id, fill=color, width=width)
+                    else:
+                        item_id = self.canvas.create_line(
+                            last_px, last_py, px, py,
+                            fill=color,
+                            width=width,
+                            capstyle=tk.ROUND,
+                            tags=("energy_curve", f"energy_curve_segment_{segment_index}"),
+                        )
+                        if segment_index < len(self._line_ids):
+                            self._line_ids[segment_index] = item_id
+                        else:
+                            self._line_ids.append(item_id)
+                    segment_index += 1
             last_px, last_py = px, py
+
+        if draw_obj is None and len(self._line_ids) > segment_index:
+            for item_id in self._line_ids[segment_index:]:
+                try:
+                    self.canvas.delete(item_id)
+                except tk.TclError:
+                    pass
+            del self._line_ids[segment_index:]
 
     def _draw_indicator(self, cx, cy, radius, hour, color):
         angle = (18 - hour) * 15
@@ -944,10 +968,14 @@ class EnergyCurve:
 
     def draw_bathyphase_indicator(self, cx, cy, radius, bathy_hour, energy_val=None):
         if bathy_hour is None: return
-        color = self.interpolate_color(energy_val) if energy_val is not None else "#1E6363"
+        # Bathyphase represents the lowest theoretical energy color, regardless
+        # of today's sleep/debt-adjusted curve.
+        color = self.interpolate_color(0.0)
         self._draw_indicator(cx, cy, radius, bathy_hour, color)
 
     def draw_acrophase_indicator(self, cx, cy, radius, acro_hour, energy_val):
         if acro_hour is None: return
-        color = self.interpolate_color(energy_val)
+        # Acrophase represents the highest theoretical energy color, regardless
+        # of today's sleep/debt-adjusted curve.
+        color = self.interpolate_color(1.0)
         self._draw_indicator(cx, cy, radius, acro_hour, color)

@@ -6,30 +6,48 @@ import datetime
 import threading
 import urllib.request
 import json
-from astral import Observer
-from astral.sun import sun, elevation as sun_elevation
-from astral.moon import phase, elevation as moon_elevation
-from PIL import Image, ImageDraw, ImageTk, ImageFont
-import pystray
-import pystray
-from pystray import MenuItem as item
-from fitbit_client import FitbitClient, ReauthRequiredError
-from google_calendar_client import get_calendar_service, get_calendar_events, ReauthRequiredError as CalReauthRequiredError
-from energy_logic import EnergyCurve, get_energy_level, sleep_model_context
+import time
+import queue
+from concurrent.futures import ThreadPoolExecutor
+from energy_logic import EnergyCurve, sleep_model_context
+
+_ASTRAL_DEPENDENCIES = None
+
+
+def _load_astral_dependencies():
+    global _ASTRAL_DEPENDENCIES
+    if _ASTRAL_DEPENDENCIES is None:
+        from astral import Observer
+        from astral.sun import sun, elevation as sun_elevation
+        from astral.moon import phase, elevation as moon_elevation
+        _ASTRAL_DEPENDENCIES = Observer, sun, sun_elevation, phase, moon_elevation
+    return _ASTRAL_DEPENDENCIES
 
 class Tooltip:
-    def __init__(self, widget, text):
+    def __init__(self, widget, text, tag=None):
         self.widget = widget
         self.text = text
+        self.tag = tag
         self.tip_window = None
-        self.widget.bind("<Enter>", self.show_tip)
-        self.widget.bind("<Leave>", self.hide_tip)
+        if tag is None:
+            self.widget.bind("<Enter>", self.show_tip)
+            self.widget.bind("<Leave>", self.hide_tip)
+        else:
+            self.widget.tag_bind(tag, "<Enter>", self.show_tip)
+            self.widget.tag_bind(tag, "<Leave>", self.hide_tip)
 
     def show_tip(self, event=None):
         if self.tip_window or not self.text:
             return
-        x = self.widget.winfo_rootx() + 20
-        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+        if self.tag is None:
+            x = self.widget.winfo_rootx() + 20
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+        else:
+            bounds = self.widget.bbox(self.tag)
+            if not bounds:
+                return
+            x = self.widget.winfo_rootx() + bounds[0] + 20
+            y = self.widget.winfo_rooty() + bounds[3] + 5
         self.tip_window = tw = tk.Toplevel(self.widget)
         tw.wm_overrideredirect(True)
         tw.wm_geometry(f"+{x}+{y}")
@@ -47,6 +65,15 @@ class Tooltip:
 
 class ClockWidget:
     FACE_PADDING = 52
+    UI_BG = "#181b21"
+    UI_SURFACE = "#22262f"
+    UI_SURFACE_ALT = "#292e39"
+    UI_BORDER = "#373e4b"
+    UI_TEXT = "#f3f5f7"
+    UI_MUTED = "#9ca6b5"
+    UI_ACCENT = "#55d6be"
+    UI_ACCENT_HOVER = "#73e2cc"
+    UI_DANGER = "#ff7b83"
     # -------------------------------------------------------------------------
     # Z-INDEX / DRAWING ORDER
     # -------------------------------------------------------------------------
@@ -87,6 +114,7 @@ class ClockWidget:
     # ----------------------------------------------
 
     def __init__(self, root):
+        self._launch_started = time.perf_counter()
         self.root = root
         self.root.title("24h Clock")
         self._control_widgets = []
@@ -134,6 +162,29 @@ class ClockWidget:
         self.circadian_offset = tk.DoubleVar(value=12.0)
         self.use_bathyphase = tk.BooleanVar(value=True)
         self.manual_wake_time = tk.StringVar(value="9:00")
+        self.hover_delay_var = tk.StringVar(value="0.2")
+        self.timeout_delay_var = tk.StringVar(value="0.3")
+        self._settings_refresh_id = None
+        self._settings_refresh_needs_debt = False
+        self._resize_redraw_id = None
+        self._window_rects = {}
+        self._settings_realized = False
+        self._settings_prewarm_pending = False
+        self._controls_open_grace_until = 0.0
+        self._canvas_control_gesture = False
+        self._canvas_control_gesture_token = 0
+        self._last_interaction_debug_state = None
+        self._interaction_debug_path = os.path.join(
+            os.path.dirname(__file__), "clock_widget_interaction.log"
+        )
+        self._closing = False
+
+        # A small, long-lived worker pool avoids creating a thread for every
+        # refresh. Workers publish immutable results to this queue; only the Tk
+        # thread applies UI state.
+        self._executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="clock-widget")
+        self._ui_queue = queue.SimpleQueue()
+        self._fitbit_operation_lock = threading.Lock()
 
         self.sleep_settings_file = os.path.join(os.path.dirname(__file__), "sleep_settings.json")
         self.excluded_dates = self._load_sleep_settings()
@@ -144,18 +195,17 @@ class ClockWidget:
 
         # Model parameters will redraw on slider release (handled in _add_slider)
         # except for boolean toggles which still trace or use command
-        self.use_bathyphase.trace_add("write", lambda *args: getattr(self, 'canvas', None) and self.draw_clock())
-        self.show_bathyphase.trace_add("write", lambda *args: getattr(self, 'canvas', None) and (self.draw_clock(), self._save_sleep_settings()))
-        self.show_acrophase.trace_add("write", lambda *args: getattr(self, 'canvas', None) and (self.draw_clock(), self._save_sleep_settings()))
-        self.show_grogginess.trace_add("write", lambda *args: getattr(self, 'canvas', None) and (self.draw_clock(), self._save_sleep_settings()))
-        self.show_wind_down.trace_add("write", lambda *args: getattr(self, 'canvas', None) and (self.draw_clock(), self._save_sleep_settings()))
-        self.manual_wake_time.trace_add("write", lambda *args: getattr(self, 'canvas', None) and (self.draw_clock(), self._save_sleep_settings()))
+        self.use_bathyphase.trace_add("write", lambda *args: self._schedule_settings_refresh())
+        self.show_bathyphase.trace_add("write", lambda *args: self._schedule_settings_refresh())
+        self.show_acrophase.trace_add("write", lambda *args: self._schedule_settings_refresh())
+        self.show_grogginess.trace_add("write", lambda *args: self._schedule_settings_refresh())
+        self.show_wind_down.trace_add("write", lambda *args: self._schedule_settings_refresh())
+        self.manual_wake_time.trace_add("write", lambda *args: self._schedule_settings_refresh())
 
         # ── Fitbit Integration ────────────────────────────────────────────────
-        self.fitbit = FitbitClient(
-            client_id=self.FITBIT_CLIENT_ID,
-            client_secret=self.FITBIT_CLIENT_SECRET
-        )
+        # The integration client is imported and created on its first worker
+        # request so importing OAuth/browser dependencies cannot delay the clock.
+        self.fitbit = None
         self.sleep_hour         = None
         self.wake_hour          = None
         self.sleep_duration     = 7.5   # hours; updated after first Fitbit fetch
@@ -168,6 +218,18 @@ class ClockWidget:
         self.active_sleep_date  = None  # the YYYY-MM-DD date we are currently displaying
         self._sleep_table_needs_refresh = True
         self._sleep_table_refresh_scheduled = False
+        self._fitbit_refreshing = False
+        self._fitbit_refresh_pending = False
+        self._fitbit_pending_force = False
+        self._fitbit_last_request_monotonic = 0.0
+        self._last_hover_refresh_check = 0.0
+        self._pending_fitbit_results = None
+        self._fitbit_apply_id = None
+        self._clock_redraw_id = None
+        self._clock_dirty_layers = set()
+        self._full_clock_redraw_pending = False
+        self._layout_retry_id = None
+        self._has_full_clock_draw = False
         
         self.reauth_needed_fitbit = False
         self.reauth_needed_calendar = False
@@ -188,11 +250,19 @@ class ClockWidget:
         self._celestial_cache = None
        
         self.root.attributes("-transparentcolor", self.transparent_key)
+        self.root.overrideredirect(True)
+        self.root.attributes('-topmost', self.always_on_top.get())
         
         # Tooltip state
         self._calendar_item_map = {}
         self._tooltip_id = None
         self._tooltip_bg_id = None
+        self._tooltip_event_item = None
+        self._last_tooltip_motion = 0.0
+        # Canvas-native controls are shown only while the clock is solid.
+        # Keeping them on the canvas avoids another child window and makes the
+        # settings action discoverable even when the tray icon is unavailable.
+        self._hover_controls_tag = "hover_controls"
        
         # Main Frame
         self.main_frame = tk.Frame(self.root, bg=self.solid_bg)
@@ -202,206 +272,11 @@ class ClockWidget:
         self.canvas = tk.Canvas(self.main_frame, bg=self.solid_bg, highlightthickness=0)
         self.canvas.pack(fill=tk.BOTH, expand=True)
        
-        self.controls_window = tk.Toplevel(self.root)
-        self.controls_window.title("Controls")
-        self.controls_window.configure(bg=self.solid_bg)
-        self.controls_window.overrideredirect(True)
-        self.controls_window.withdraw()
-
-        # ── Sleep Log Window ──────────────────────────────────────────────────
-        self.sleep_table_window = tk.Toplevel(self.root)
-        self.sleep_table_window.title("Sleep Log")
-        self.sleep_table_window.configure(bg=self.solid_bg)
-        self.sleep_table_window.overrideredirect(True)
-        self.sleep_table_window.withdraw()
-        self._build_sleep_table()
-
-        # ── Sleep Model Window ────────────────────────────────────────────────
-        self.sleep_model_window = tk.Toplevel(self.root)
-        self.sleep_model_window.title("Sleep Model")
-        self.sleep_model_window.configure(bg=self.solid_bg)
-        self.sleep_model_window.overrideredirect(True)
-        self.sleep_model_window.withdraw()
-        self._build_sleep_model()
-
-        # ── Bedtime Countdown Window ─────────────────────────────────────────
-        self.bedtime_countdown_window = tk.Toplevel(self.root)
-        self.bedtime_countdown_window.title("Bedtime Countdown")
-        self.bedtime_countdown_window.configure(bg="#1a1a1a")
-        self.bedtime_countdown_window.overrideredirect(True)
-        self.bedtime_countdown_window.withdraw()
-        self._build_bedtime_countdown()
-
-        self.controls_frame = tk.Frame(self.controls_window, bg=self.solid_bg)
-        self.controls_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-       
+        # Auxiliary windows are created only after the clock's first paint.
+        # The settings shell is prewarmed shortly afterward so its first hover
+        # remains fast without delaying the primary widget.
         self._control_widgets = []
-        self.inner_controls = tk.Frame(self.controls_frame, bg=self.solid_bg)
-        self.inner_controls.pack(anchor=tk.CENTER)
-        
-        self.left_col = tk.Frame(self.inner_controls, bg=self.solid_bg)
-        self.left_col.pack(side=tk.LEFT, anchor=tk.N, padx=(0, 10))
-        
-        self.right_col = tk.Frame(self.inner_controls, bg=self.solid_bg)
-        self.right_col.pack(side=tk.LEFT, anchor=tk.N, padx=(10, 0))
-
-        add_divider = self._add_divider
-        add_toggle = self._add_toggle
-
-        def on_toggle_change():
-            self.draw_clock()
-            self._save_sleep_settings()
-
-        add_divider("SETTINGS", self.left_col)
-        settings_frame = tk.Frame(self.left_col, bg=self.solid_bg)
-        settings_frame.pack(side=tk.TOP, fill=tk.X, pady=2)
-        
-        tk.Label(settings_frame, text="Hover Delay (s):", bg=self.solid_bg, fg="white", font=("Arial", 8)).pack(side=tk.LEFT)
-        
-        self.hover_delay_var = tk.StringVar(value="0.2")
-        
-        def validate_num(P):
-            if P == "": return True
-            try:
-                if P == ".": return True
-                float(P)
-                return True
-            except ValueError:
-                return False
-        
-        vcmd = (self.root.register(validate_num), '%P')
-        
-        self.hover_delay_entry = tk.Entry(
-            settings_frame, 
-            textvariable=self.hover_delay_var, 
-            width=5, 
-            validate='key', 
-            validatecommand=vcmd,
-            bg="#404040",
-            fg="white",
-            insertbackground="white",
-            relief=tk.FLAT
-        )
-        self.hover_delay_entry.pack(side=tk.LEFT, padx=5)
-
-        tk.Label(settings_frame, text="Timeout (s):", bg=self.solid_bg, fg="white", font=("Arial", 8)).pack(side=tk.LEFT, padx=(5, 0))
-        
-        self.timeout_delay_var = tk.StringVar(value="0.3")
-        
-        self.timeout_delay_entry = tk.Entry(
-            settings_frame, 
-            textvariable=self.timeout_delay_var, 
-            width=5, 
-            validate='key', 
-            validatecommand=vcmd,
-            bg="#404040",
-            fg="white",
-            insertbackground="white",
-            relief=tk.FLAT
-        )
-        self.timeout_delay_entry.pack(side=tk.LEFT, padx=5)
-
-
-        self.top_toggle = add_toggle("Always On Top", self.always_on_top, self.toggle_topmost, self.left_col)
-
-        add_divider("DISPLAY", self.left_col)
-        wake_frame = tk.Frame(self.left_col, bg=self.solid_bg)
-        wake_frame.pack(side=tk.TOP, fill=tk.X, pady=2)
-        
-        self.manual_wake_toggle = tk.Checkbutton(
-            wake_frame,
-            text="Wake up (HH:mm):",
-            variable=self.show_manual_wake,
-            command=on_toggle_change,
-            bg=self.solid_bg,
-            fg="white",
-            selectcolor="#3c3c3c",
-            activebackground=self.solid_bg,
-            activeforeground="white"
-        )
-        self.manual_wake_toggle.pack(side=tk.LEFT)
-        self._control_widgets.append(self.manual_wake_toggle)
-
-        self.manual_wake_entry = tk.Entry(
-            wake_frame, 
-            textvariable=self.manual_wake_time, 
-            width=6, 
-            bg="#404040",
-            fg="white",
-            insertbackground="white",
-            relief=tk.FLAT
-        )
-        self.manual_wake_entry.pack(side=tk.LEFT, padx=5)
-
-        self.numbers_toggle = add_toggle("Numbers", self.show_numbers, on_toggle_change, self.left_col)
-        self.sun_moon_toggle = add_toggle("Sun & Moon Icons", self.show_sun_moon, on_toggle_change, self.left_col)
-
-        add_divider("METRICS", self.right_col)
-        metrics_frame = tk.Frame(self.right_col, bg=self.solid_bg)
-        metrics_frame.pack(side=tk.TOP, fill=tk.X, pady=2)
-        
-        self.bathyphase_label = tk.Label(metrics_frame, text="Bathyphase: --:-- --", bg=self.solid_bg, fg="white", font=("Arial", 8, "bold"))
-        self.bathyphase_label.pack(side=tk.TOP, anchor=tk.W)
-        
-        self.efficiency_label = tk.Label(metrics_frame, text="Sleep Efficiency: --.-%", bg=self.solid_bg, fg="white", font=("Arial", 8, "bold"))
-        self.efficiency_label.pack(side=tk.TOP, anchor=tk.W)
-
-
-        add_divider("SLEEP", self.right_col)
-        self.sleep_toggle = add_toggle("Show Sleep on Clock", self.show_sleep, on_toggle_change, self.right_col)
-        self.bedtime_toggle = add_toggle("Time in Bed vs. Asleep Hrs.", self.show_total_bedtime, on_toggle_change, self.right_col)
-        self.debt_text_toggle = add_toggle("Show Sleep Debt Text", self.show_sleep_debt_text, on_toggle_change, self.right_col)
-        self.bathyphase_toggle = add_toggle("Bathyphase Indicator", self.show_bathyphase, on_toggle_change, self.right_col)
-        self.acrophase_toggle = add_toggle("Acrophase Indicator", self.show_acrophase, on_toggle_change, self.right_col)
-        self.grogginess_toggle = add_toggle("Grogginess Wedge", self.show_grogginess, on_toggle_change, self.right_col)
-        self.wind_down_toggle = add_toggle("Wind-down Wedge", self.show_wind_down, on_toggle_change, self.right_col)
-        self.bedtime_countdown_toggle = add_toggle("Bedtime Countdown", self.show_bedtime_countdown, self.update_bedtime_countdown_visibility, self.right_col)
-        self.table_toggle = add_toggle("Show Sleep Log Table", self.show_sleep_table, self.update_sleep_table_visibility, self.right_col)
-
-        add_divider("ENERGY", self.right_col)
-        self.energy_toggle = add_toggle("Show Energy Curve", self.show_energy, on_toggle_change, self.right_col)
-        self.energy_pct_toggle = add_toggle("Show Energy %", self.show_energy_pct, on_toggle_change, self.right_col)
-        self.normalize_toggle = add_toggle("Normalize Energy", self.normalize_energy, on_toggle_change, self.right_col)
-        self.debt_toggle = add_toggle("Factor in Sleep Debt", self.show_sleep_debt, on_toggle_change, self.right_col)
-        self.naps_toggle = add_toggle("Include Naps", self.include_naps, self.update_fitbit_data, self.right_col)
-        self.model_win_toggle = add_toggle("Advanced Model Settings", self.show_sleep_model, self.update_sleep_model_visibility, self.right_col)
-        
-        self.refresh_btn = tk.Button(
-            self.right_col,
-            text="Fitbit API Refresh",
-            command=lambda: self.update_fitbit_data(force=True),
-            bg="#404040",
-            fg="#00ffcc",
-            activebackground="#555555",
-            activeforeground="white",
-            relief=tk.FLAT,
-            padx=10,
-            pady=2,
-            font=("Arial", 8, "bold")
-        )
-        self.refresh_btn.pack(side=tk.TOP, anchor=tk.W, pady=(10, 0), padx=(20, 0))
-        self._control_widgets.append(self.refresh_btn)
-        
-
-        
-        add_divider("CALENDAR", self.left_col)
-        self.calendar_toggle = add_toggle("Show Calendar Events", self.show_calendar, self.draw_clock, self.left_col)
-        
-        self.calendar_refresh_btn = tk.Button(
-            self.left_col,
-            text="Calendar API Refresh",
-            command=self.update_calendar_data,
-            bg="#404040",
-            fg="#9370DB", 
-            activebackground="#555555",
-            activeforeground="white",
-            relief=tk.FLAT,
-            padx=10,
-            pady=2,
-            font=("Arial", 8, "bold")
-        )
-        self.calendar_refresh_btn.pack(side=tk.TOP, anchor=tk.W, pady=(5, 0), padx=(20, 0))
-        self._control_widgets.append(self.calendar_refresh_btn)
+        self._controls_open_count = 0
         
 
 
@@ -409,55 +284,548 @@ class ClockWidget:
         self.sunset_hour = None
        
         self.canvas.bind("<Configure>", self.on_resize)
+        self.root.bind("<Configure>", self._cache_window_event, add="+")
        
-        # Bind hover events
-        for widget in (self.root, self.controls_window, self.sleep_table_window, self.sleep_model_window, self.bedtime_countdown_window):
-            widget.bind("<Enter>", self.on_enter)
-            widget.bind("<Leave>", self.on_leave)
+        # Bind hover events. Lazily created windows bind themselves.
+        self.root.bind("<Enter>", self.on_enter)
+        self.root.bind("<Leave>", self.on_leave)
        
         # Bind drag events
         for widget in (self.main_frame, self.canvas):
             widget.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.root))
             widget.bind("<B1-Motion>", lambda e: self.on_drag_motion(e))
+            widget.bind("<ButtonRelease-1>", self.on_drag_end)
             widget.bind("<ButtonPress-3>", self.on_right_click_start)
             widget.bind("<B3-Motion>", self.on_right_click_motion)
             widget.bind("<ButtonRelease-3>", self.on_right_click_end)
         
         self.canvas.bind("<Motion>", self.on_canvas_motion)
 
-        for widget in (self.controls_frame, self.inner_controls):
-            widget.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.controls_window))
-            widget.bind("<B1-Motion>", lambda e: self.on_drag_motion(e))
-       
         # Initialize Energy Curve logic
         self.energy_curve = EnergyCurve(self.canvas)
 
-        # Start hidden and wait for sun times
+        # Paint from local/default state immediately. Network-backed data starts
+        # only after the first visible frame has been queued.
         self.root.withdraw()
-        self.fetch_sun_times()
         self.update_clock()
+        self.root.after(25, self._drain_ui_queue)
+        self.root.after_idle(self.show_initial)
+        self._debug_interaction("session_start")
+
+    def _log_timing(self, label, started_at):
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        print(f"[ClockWidget:timing] {label}: {elapsed_ms:.1f} ms")
+
+    def _debug_interaction(self, event_name, **details):
+        """Write sparse UI-event diagnostics usable without a console window."""
+        record = {
+            "time": datetime.datetime.now().isoformat(timespec="milliseconds"),
+            "event": event_name,
+            "controls_visible": bool(getattr(self, "is_controls_visible", False)),
+            "clock_transparent": bool(getattr(self, "is_clock_transparent", False)),
+            **details,
+        }
+        line = json.dumps(record, default=str, sort_keys=True)
+        print(f"[ClockWidget:interaction] {line}")
+        try:
+            with open(self._interaction_debug_path, "a", encoding="utf-8") as debug_file:
+                debug_file.write(line + "\n")
+        except OSError as exc:
+            print(f"[ClockWidget:interaction] log write failed: {exc}")
+
+    def _expire_canvas_control_gesture(self, token):
+        if token != self._canvas_control_gesture_token:
+            return
+        if self._canvas_control_gesture:
+            self._debug_interaction("control_gesture_expired_without_release", token=token)
+        self._canvas_control_gesture = False
+
+    def _submit_background(self, callback):
+        """Run non-Tk work on the shared bounded worker pool."""
+        if self._closing:
+            return None
+        try:
+            future = self._executor.submit(callback)
+            future.add_done_callback(self._report_background_failure)
+            return future
+        except RuntimeError:
+            return None
+
+    @staticmethod
+    def _report_background_failure(future):
+        if future.cancelled():
+            return
+        try:
+            future.result()
+        except Exception as exc:
+            print(f"[ClockWidget] Background task failed: {exc}")
+
+    def _post_ui(self, callback, *args, **kwargs):
+        """Publish a main-thread callback without calling Tk from a worker."""
+        if not self._closing:
+            self._ui_queue.put((callback, args, kwargs))
+
+    def _drain_ui_queue(self):
+        if self._closing:
+            return
+        for _ in range(64):
+            try:
+                callback, args, kwargs = self._ui_queue.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                callback(*args, **kwargs)
+            except tk.TclError:
+                if not self._closing:
+                    raise
+            except Exception as exc:
+                print(f"[ClockWidget] Main-thread callback failed: {exc}")
+        self.root.after(25, self._drain_ui_queue)
+
+    def _schedule_settings_refresh(self, *args, recalculate_debt=False):
+        """Debounce redraw/save work generated by settings interactions."""
+        if not hasattr(self, 'canvas'):
+            return
+        self._settings_refresh_needs_debt |= recalculate_debt
+        if self._settings_refresh_id is not None:
+            self.root.after_cancel(self._settings_refresh_id)
+        self._settings_refresh_id = self.root.after(150, self._flush_settings_refresh)
+
+    def _flush_settings_refresh(self):
+        self._settings_refresh_id = None
+        recalculate_debt = self._settings_refresh_needs_debt
+        self._settings_refresh_needs_debt = False
+        self._save_sleep_settings()
+        if recalculate_debt and self.raw_sleep_logs:
+            self._recalculate_debt()
+        else:
+            self._schedule_clock_redraw()
+
+    def _schedule_clock_redraw(self, layers=None):
+        """Coalesce data-driven redraws and retain unaffected canvas layers."""
+        if layers is None:
+            self._full_clock_redraw_pending = True
+            self._clock_dirty_layers.clear()
+        elif not self._full_clock_redraw_pending:
+            self._clock_dirty_layers.update(layers)
+        if getattr(self, '_clock_redraw_id', None) is None:
+            self._clock_redraw_id = self.root.after_idle(self._flush_clock_redraw)
+
+    def _flush_clock_redraw(self):
+        self._clock_redraw_id = None
+        if self.root.winfo_exists():
+            layers = None if self._full_clock_redraw_pending else set(self._clock_dirty_layers)
+            self._full_clock_redraw_pending = False
+            self._clock_dirty_layers.clear()
+            if layers is None or layers:
+                self.draw_clock(layers)
+
+    def _retry_full_clock_draw(self):
+        self._layout_retry_id = None
+        self._schedule_clock_redraw()
+
+    def _configure_settings_styles(self):
+        style = ttk.Style(self.root)
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+        style.configure(
+            "Clock.TNotebook",
+            background=self.UI_BG,
+            borderwidth=0,
+            tabmargins=(10, 8, 10, 0),
+        )
+        style.configure(
+            "Clock.TNotebook.Tab",
+            background=self.UI_SURFACE,
+            foreground=self.UI_MUTED,
+            borderwidth=0,
+            padding=(15, 8),
+            font=("Segoe UI", 9, "bold"),
+        )
+        style.map(
+            "Clock.TNotebook.Tab",
+            background=[("selected", self.UI_SURFACE_ALT), ("active", self.UI_SURFACE_ALT)],
+            foreground=[("selected", self.UI_TEXT), ("active", self.UI_TEXT)],
+        )
+
+    def _settings_section(self, parent, title, description=None):
+        card = tk.Frame(
+            parent,
+            bg=self.UI_SURFACE,
+            highlightthickness=1,
+            highlightbackground=self.UI_BORDER,
+        )
+        card.pack(fill=tk.X, pady=(0, 10))
+        header = tk.Frame(card, bg=self.UI_SURFACE)
+        header.pack(fill=tk.X, padx=12, pady=(10, 6 if description else 8))
+        tk.Label(
+            header,
+            text=title,
+            bg=self.UI_SURFACE,
+            fg=self.UI_TEXT,
+            font=("Segoe UI", 10, "bold"),
+            anchor=tk.W,
+        ).pack(fill=tk.X)
+        if description:
+            tk.Label(
+                header,
+                text=description,
+                bg=self.UI_SURFACE,
+                fg=self.UI_MUTED,
+                font=("Segoe UI", 8),
+                anchor=tk.W,
+                justify=tk.LEFT,
+                wraplength=370,
+            ).pack(fill=tk.X, pady=(2, 0))
+        body = tk.Frame(card, bg=self.UI_SURFACE)
+        body.pack(fill=tk.X, padx=8, pady=(0, 10))
+        return body
+
+    def _settings_entry(self, parent, variable, width=7, validatecommand=None):
+        entry = tk.Entry(
+            parent,
+            textvariable=variable,
+            width=width,
+            validate='key' if validatecommand else 'none',
+            validatecommand=validatecommand or None,
+            bg=self.UI_SURFACE_ALT,
+            fg=self.UI_TEXT,
+            insertbackground=self.UI_TEXT,
+            disabledbackground=self.UI_SURFACE,
+            disabledforeground=self.UI_MUTED,
+            relief=tk.FLAT,
+            highlightthickness=1,
+            highlightbackground=self.UI_BORDER,
+            highlightcolor=self.UI_ACCENT,
+            font=("Segoe UI", 9),
+            justify=tk.CENTER,
+        )
+        return entry
+
+    def _settings_button(self, parent, text, command, accent=False, danger=False):
+        fg = self.UI_DANGER if danger else self.UI_ACCENT if accent else self.UI_TEXT
+        button = tk.Button(
+            parent,
+            text=text,
+            command=command,
+            bg=self.UI_SURFACE_ALT,
+            fg=fg,
+            activebackground=self.UI_BORDER,
+            activeforeground=self.UI_TEXT,
+            relief=tk.FLAT,
+            bd=0,
+            padx=12,
+            pady=7,
+            cursor="hand2",
+            font=("Segoe UI", 9, "bold"),
+        )
+        return button
+
+    def _new_settings_tab(self, notebook, title):
+        tab = tk.Frame(notebook, bg=self.UI_BG, padx=12, pady=12)
+        notebook.add(tab, text=title)
+        return tab
+
+    def _ensure_controls_window(self):
+        if getattr(self, 'controls_window', None):
+            return self.controls_window
+
+        started_at = time.perf_counter()
+        self._configure_settings_styles()
+        win = self.controls_window = tk.Toplevel(self.root)
+        win.title("Clock Settings")
+        win.configure(bg=self.UI_BORDER)
+        win.overrideredirect(True)
+        win.withdraw()
+        win.geometry("560x680")
+        win.attributes('-topmost', self.always_on_top.get())
+
+        outer = self.controls_frame = tk.Frame(win, bg=self.UI_BG, bd=0)
+        outer.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
+
+        title_bar = tk.Frame(outer, bg=self.UI_SURFACE, height=48)
+        title_bar.pack(fill=tk.X)
+        title_bar.pack_propagate(False)
+        title_copy = tk.Frame(title_bar, bg=self.UI_SURFACE)
+        title_copy.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(14, 0), pady=7)
+        title_label = tk.Label(
+            title_copy, text="Clock settings", bg=self.UI_SURFACE, fg=self.UI_TEXT,
+            font=("Segoe UI", 11, "bold"), anchor=tk.W,
+        )
+        title_label.pack(fill=tk.X)
+        subtitle_label = tk.Label(
+            title_copy, text="Display, sleep, energy, and connected data",
+            bg=self.UI_SURFACE, fg=self.UI_MUTED, font=("Segoe UI", 8), anchor=tk.W,
+        )
+        subtitle_label.pack(fill=tk.X)
+        close_btn = tk.Button(
+            title_bar, text="×", command=self.make_controls_hidden,
+            bg=self.UI_SURFACE, fg=self.UI_MUTED,
+            activebackground=self.UI_DANGER, activeforeground="white",
+            relief=tk.FLAT, bd=0, padx=14, pady=5,
+            cursor="hand2", font=("Segoe UI", 16),
+        )
+        close_btn.pack(side=tk.RIGHT, fill=tk.Y)
+        close_btn.configure(text="X")
+        settings_btn = tk.Button(
+            title_bar, text=chr(0x2699), command=self.toggle_controls,
+            bg=self.UI_SURFACE, fg=self.UI_MUTED,
+            activebackground=self.UI_SURFACE_ALT, activeforeground=self.UI_ACCENT,
+            relief=tk.FLAT, bd=0, padx=10, pady=5,
+            cursor="hand2", font=("Segoe UI Symbol", 14),
+        )
+        settings_btn.pack(side=tk.RIGHT, fill=tk.Y)
+
+        for widget in (title_bar, title_copy, title_label, subtitle_label):
+            widget.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.controls_window))
+            widget.bind("<B1-Motion>", self.on_drag_motion)
+            widget.bind("<ButtonRelease-1>", self.on_drag_end)
+
+        notebook = self.settings_notebook = ttk.Notebook(outer, style="Clock.TNotebook")
+        notebook.pack(fill=tk.BOTH, expand=True)
+        display_tab = self._new_settings_tab(notebook, "Display")
+        sleep_tab = self._new_settings_tab(notebook, "Sleep")
+        energy_tab = self._new_settings_tab(notebook, "Energy")
+        integrations_tab = self._new_settings_tab(notebook, "Data")
+
+        def on_visual_change():
+            self._schedule_settings_refresh()
+
+        def on_naps_change():
+            self._schedule_settings_refresh(recalculate_debt=True)
+            self.update_fitbit_data()
+
+        def validate_num(value):
+            if value in ("", "."):
+                return True
+            try:
+                float(value)
+                return True
+            except ValueError:
+                return False
+
+        number_validation = (self.root.register(validate_num), '%P')
+
+        appearance = self._settings_section(
+            display_tab, "Clock face", "Choose the information drawn directly on the 24-hour dial."
+        )
+        self.numbers_toggle = self._add_toggle("Hour numbers", self.show_numbers, on_visual_change, appearance)
+        self.sun_moon_toggle = self._add_toggle("Sun and moon markers", self.show_sun_moon, on_visual_change, appearance)
+        self.calendar_toggle = self._add_toggle("Calendar events", self.show_calendar, on_visual_change, appearance)
+
+        wake = self._settings_section(display_tab, "Wake marker")
+        wake_row = tk.Frame(wake, bg=self.UI_SURFACE)
+        wake_row.pack(fill=tk.X)
+        self.manual_wake_toggle = self._add_toggle(
+            "Show manual wake time", self.show_manual_wake, on_visual_change, wake_row
+        )
+        self.manual_wake_toggle.pack_configure(side=tk.LEFT, fill=tk.X, expand=True)
+        self.manual_wake_entry = self._settings_entry(wake_row, self.manual_wake_time, width=8)
+        self.manual_wake_entry.pack(side=tk.RIGHT, padx=(8, 6), pady=4)
+
+        behavior = self._settings_section(
+            display_tab, "Window behavior", "Tune how quickly the widget reveals and hides its controls."
+        )
+        self.top_toggle = self._add_toggle("Always on top", self.always_on_top, self.toggle_topmost, behavior)
+        delay_row = tk.Frame(behavior, bg=self.UI_SURFACE)
+        delay_row.pack(fill=tk.X, padx=6, pady=(5, 2))
+        tk.Label(
+            delay_row, text="Hover delay", bg=self.UI_SURFACE, fg=self.UI_MUTED,
+            font=("Segoe UI", 9), anchor=tk.W,
+        ).grid(row=0, column=0, sticky="w")
+        self.hover_delay_entry = self._settings_entry(delay_row, self.hover_delay_var, validatecommand=number_validation)
+        self.hover_delay_entry.grid(row=0, column=1, padx=(10, 18))
+        tk.Label(
+            delay_row, text="Hide delay", bg=self.UI_SURFACE, fg=self.UI_MUTED,
+            font=("Segoe UI", 9), anchor=tk.W,
+        ).grid(row=0, column=2, sticky="w")
+        self.timeout_delay_entry = self._settings_entry(delay_row, self.timeout_delay_var, validatecommand=number_validation)
+        self.timeout_delay_entry.grid(row=0, column=3, padx=(10, 0))
+
+        metrics = self._settings_section(sleep_tab, "Current metrics")
+        self.bathyphase_label = tk.Label(
+            metrics, text="Bathyphase  ·  --:-- --", bg=self.UI_SURFACE, fg=self.UI_TEXT,
+            font=("Segoe UI", 10, "bold"), anchor=tk.W, padx=6, pady=4,
+        )
+        self.bathyphase_label.pack(fill=tk.X)
+        self.efficiency_label = tk.Label(
+            metrics, text="Sleep efficiency  ·  --.-%", bg=self.UI_SURFACE, fg=self.UI_TEXT,
+            font=("Segoe UI", 10, "bold"), anchor=tk.W, padx=6, pady=4,
+        )
+        self.efficiency_label.pack(fill=tk.X)
+
+        sleep_display = self._settings_section(sleep_tab, "Sleep display")
+        self.sleep_toggle = self._add_toggle("Sleep arc", self.show_sleep, on_visual_change, sleep_display)
+        self.bedtime_toggle = self._add_toggle("Use time in bed", self.show_total_bedtime, on_visual_change, sleep_display)
+        self.debt_text_toggle = self._add_toggle("Sleep debt label", self.show_sleep_debt_text, on_visual_change, sleep_display)
+        self.bathyphase_toggle = self._add_toggle("Bathyphase marker", self.show_bathyphase, on_visual_change, sleep_display)
+        self.acrophase_toggle = self._add_toggle("Acrophase marker", self.show_acrophase, on_visual_change, sleep_display)
+        self.grogginess_toggle = self._add_toggle("Grogginess wedge", self.show_grogginess, on_visual_change, sleep_display)
+        self.wind_down_toggle = self._add_toggle("Wind-down wedge", self.show_wind_down, on_visual_change, sleep_display)
+
+        sleep_windows = self._settings_section(sleep_tab, "Related views")
+        self.bedtime_countdown_toggle = self._add_toggle(
+            "Bedtime countdown", self.show_bedtime_countdown, self.update_bedtime_countdown_visibility, sleep_windows
+        )
+        self.table_toggle = self._add_toggle(
+            "Sleep log tab", self.show_sleep_table, self.update_sleep_table_visibility, sleep_windows
+        )
+        self.model_win_toggle = self._add_toggle(
+            "Advanced model tab", self.show_sleep_model, self.update_sleep_model_visibility, sleep_windows
+        )
+        self.naps_toggle = self._add_toggle("Include naps", self.include_naps, on_naps_change, sleep_windows)
+
+        energy_display = self._settings_section(
+            energy_tab, "Energy curve", "Control how the predicted alertness curve is calculated and displayed."
+        )
+        self.energy_toggle = self._add_toggle("Show energy curve", self.show_energy, on_visual_change, energy_display)
+        self.energy_pct_toggle = self._add_toggle("Show current percentage", self.show_energy_pct, on_visual_change, energy_display)
+        self.normalize_toggle = self._add_toggle("Normalize daily range", self.normalize_energy, on_visual_change, energy_display)
+        self.debt_toggle = self._add_toggle("Factor in sleep debt", self.show_sleep_debt, on_visual_change, energy_display)
+
+        energy_actions = self._settings_section(energy_tab, "Refresh data")
+        self.refresh_btn = self._settings_button(
+            energy_actions, "Refresh Fitbit now", lambda: self.update_fitbit_data(force=True), accent=True
+        )
+        self.refresh_btn.pack(anchor=tk.W, padx=6, pady=4)
+
+        fitbit = self._settings_section(
+            integrations_tab, "Fitbit", "Sleep, heart-rate, and recovery data used by the energy model."
+        )
+        fitbit_btn = self._settings_button(
+            fitbit, "Refresh Fitbit", lambda: self.update_fitbit_data(force=True), accent=True
+        )
+        fitbit_btn.pack(anchor=tk.W, padx=6, pady=4)
+        calendar = self._settings_section(
+            integrations_tab, "Google Calendar", "Events are rendered as colored arcs on the clock face."
+        )
+        self.calendar_refresh_btn = self._settings_button(calendar, "Refresh calendar", self.update_calendar_data)
+        self.calendar_refresh_btn.pack(anchor=tk.W, padx=6, pady=4)
+
+        # Sleep log and model are retained pages in this same native window.
+        # Avoiding additional Toplevel mappings is considerably faster on Windows.
+        self.sleep_table_page = tk.Frame(notebook, bg=self.UI_BG, padx=8, pady=8)
+        self.sleep_model_page = tk.Frame(notebook, bg=self.UI_BG, padx=8, pady=8)
+        self.sleep_table_window = self.sleep_table_page
+        self.sleep_model_window = self.sleep_model_page
+        self._sleep_table_built = False
+        self._sleep_model_built = False
+        if self.show_sleep_table.get():
+            notebook.add(self.sleep_table_page, text="Sleep log")
+        if self.show_sleep_model.get():
+            notebook.add(self.sleep_model_page, text="Model")
+        notebook.bind("<<NotebookTabChanged>>", self._on_settings_tab_changed, add="+")
+
+        for widget in (win, outer, notebook):
+            widget.bind("<Enter>", self.on_enter)
+            widget.bind("<Leave>", self.on_leave)
+        win.bind("<Configure>", self._cache_window_event, add="+")
+        win.bind("<Map>", self._cache_window_event, add="+")
+        win.bind("<Escape>", lambda event: self.make_controls_hidden())
+        self.update_metric_labels()
+        self.root.after(60, self._prewarm_settings_pages)
+        self.root.after(120, self._prewarm_controls_window)
+        self._log_timing("settings shell build", started_at)
+        return win
+
+    def _ensure_sleep_table_window(self):
+        if not getattr(self, 'controls_window', None):
+            self._ensure_controls_window()
+        if getattr(self, '_sleep_table_built', False):
+            return self.sleep_table_page
+        started_at = time.perf_counter()
+        self.sleep_table_window = self.sleep_table_page
+        self._build_sleep_table()
+        self._sleep_table_built = True
+        self._log_timing("sleep log page build", started_at)
+        return self.sleep_table_page
+
+    def _ensure_sleep_model_window(self):
+        if not getattr(self, 'controls_window', None):
+            self._ensure_controls_window()
+        if getattr(self, '_sleep_model_built', False):
+            return self.sleep_model_page
+        started_at = time.perf_counter()
+        self.sleep_model_window = self.sleep_model_page
+        self._build_sleep_model()
+        self._sleep_model_built = True
+        self._log_timing("advanced model page build", started_at)
+        return self.sleep_model_page
+
+    def _settings_tab_present(self, page):
+        return bool(getattr(self, 'settings_notebook', None)) and str(page) in self.settings_notebook.tabs()
+
+    def _settings_page_selected(self, page):
+        if not self._settings_tab_present(page) or not self.is_controls_visible:
+            return False
+        return self.settings_notebook.select() == str(page)
+
+    def _on_settings_tab_changed(self, _event=None):
+        if getattr(self, 'sleep_table_page', None) and self._settings_page_selected(self.sleep_table_page):
+            self._ensure_sleep_table_window()
+            if self._sleep_table_needs_refresh and not self._sleep_table_refresh_scheduled:
+                self._sleep_table_refresh_scheduled = True
+                self.root.after_idle(self._refresh_sleep_table_if_visible)
+        elif getattr(self, 'sleep_model_page', None) and self._settings_page_selected(self.sleep_model_page):
+            self._ensure_sleep_model_window()
+
+    def _prewarm_settings_pages(self):
+        if self._closing or not getattr(self, 'controls_window', None):
+            return
+        self._ensure_sleep_table_window()
+        self.root.after(40, self._ensure_sleep_model_window)
+
+    def _prewarm_controls_window(self):
+        """Realize the native settings HWND once without flashing it onscreen."""
+        if (self._closing or self._settings_realized or self.is_controls_visible
+                or not getattr(self, 'controls_window', None)):
+            return
+        self._settings_prewarm_pending = True
+        try:
+            self.controls_window.attributes('-alpha', 0.0)
+        except tk.TclError:
+            pass
+        offscreen_x = self.root.winfo_screenwidth() + 200
+        self.controls_window.geometry(f"560x680+{offscreen_x}+0")
+        self.controls_window.deiconify()
+        self.controls_window.update_idletasks()
+        self.root.after_idle(self._finish_controls_prewarm)
+
+    def _finish_controls_prewarm(self):
+        if not getattr(self, 'controls_window', None):
+            return
+        self._settings_prewarm_pending = False
+        self._settings_realized = True
+        if not self.is_controls_visible:
+            self.controls_window.withdraw()
+        try:
+            self.controls_window.attributes('-alpha', 1.0)
+        except tk.TclError:
+            pass
+
+    def _ensure_bedtime_countdown_window(self):
+        if getattr(self, 'bedtime_countdown_window', None):
+            return self.bedtime_countdown_window
+        win = self.bedtime_countdown_window = tk.Toplevel(self.root)
+        win.title("Bedtime Countdown")
+        win.configure(bg="#1a1a1a")
+        win.overrideredirect(True)
+        win.withdraw()
+        win.attributes('-topmost', self.always_on_top.get())
+        win.bind("<Enter>", self.on_enter)
+        win.bind("<Leave>", self.on_leave)
+        win.bind("<Configure>", self._cache_window_event, add="+")
+        self._build_bedtime_countdown()
+        return win
 
     def toggle_topmost(self):
         self.root.attributes('-topmost', self.always_on_top.get())
         if hasattr(self, 'controls_window'):
             self.controls_window.attributes('-topmost', self.always_on_top.get())
-        if hasattr(self, 'sleep_model_window'):
-            self.sleep_model_window.attributes('-topmost', self.always_on_top.get())
         if hasattr(self, 'bedtime_countdown_window'):
             self.bedtime_countdown_window.attributes('-topmost', self.always_on_top.get())
-
-
-    def get_borders(self):
-        if hasattr(self, '_bx'): return self._bx, self._by
-        try:
-            import ctypes
-            user32 = ctypes.windll.user32
-            pad = user32.GetSystemMetrics(92)
-            self._bx = user32.GetSystemMetrics(32) + pad
-            self._by = user32.GetSystemMetrics(33) + pad + user32.GetSystemMetrics(4)
-        except Exception:
-            self._bx, self._by = 8, 31
-        return self._bx, self._by
 
     def make_clock_solid(self):
         if not self.is_clock_transparent: return
@@ -473,19 +841,23 @@ class ClockWidget:
             self._bc_label.configure(bg=bg_color)
             self._bc_countdown.configure(bg=bg_color)
             self._bc_target.configure(bg=bg_color)
-        
-        rx = self.root.winfo_rootx()
-        ry = self.root.winfo_rooty()
-        bx, by = self.get_borders()
-        
-        if self.root.winfo_viewable():
-            self.root.geometry(f"+{rx - bx}+{ry - by}")
-        self.root.overrideredirect(False)
-        self.root.attributes('-topmost', self.always_on_top.get())
+
+        # Keep the native window style fixed. Toggling decorations on every
+        # hover forces Windows to rebuild the HWND and emits resize events.
+        self._draw_hover_controls()
+        if getattr(self, 'show_bedtime_countdown', None) and self.show_bedtime_countdown.get():
+            self.update_bedtime_countdown_visibility(persist=False)
 
     def make_clock_transparent(self):
+        self._clock_hide_timer_started = False
         if self.is_clock_transparent: return
         self.is_clock_transparent = True
+
+        # The auxiliary countdown follows the same timeout as the clock.
+        if hasattr(self, 'bedtime_countdown_window') and self.bedtime_countdown_window.winfo_viewable():
+            self.bedtime_countdown_window.withdraw()
+        self._stop_bedtime_countdown_timer()
+        self._clear_hover_controls()
         
         bg_color = self.transparent_key
         self.root.configure(bg=bg_color)
@@ -497,109 +869,276 @@ class ClockWidget:
             self._bc_label.configure(bg=bg_color)
             self._bc_countdown.configure(bg=bg_color)
             self._bc_target.configure(bg=bg_color)
-        
-        rx = self.root.winfo_rootx()
-        ry = self.root.winfo_rooty()
-        
-        if self.root.winfo_viewable():
-            self.root.geometry(f"+{rx}+{ry}")
-        self.root.overrideredirect(True)
-        self.root.attributes('-topmost', self.always_on_top.get())
 
-    def make_controls_visible(self):
-        if not hasattr(self, 'controls_window'): return
-        if getattr(self, 'is_controls_visible', False): return
+    def toggle_controls(self):
+        was_visible = self.is_controls_visible
+        self._debug_interaction("toggle_controls_begin", was_visible=was_visible)
+        if self.is_controls_visible:
+            self.make_controls_hidden(reason="toggle")
+        else:
+            self.make_clock_solid()
+            self._request_hover_refresh()
+            self.make_controls_visible()
+        self._debug_interaction(
+            "toggle_controls_end",
+            was_visible=was_visible,
+            now_visible=self.is_controls_visible,
+        )
+
+    def _clear_hover_controls(self):
+        """Remove the canvas-native settings/exit affordances."""
+        if getattr(self, "canvas", None) is not None:
+            self.canvas.delete(self._hover_controls_tag)
+
+    def _on_hover_control_press(self, event, action):
+        """Run a canvas button action without starting a window drag."""
+        self._drag_data = None
+        self._resize_data = None
+        action_name = getattr(action, "__name__", repr(action))
+        self._canvas_control_gesture_token += 1
+        gesture_token = self._canvas_control_gesture_token
+        self._canvas_control_gesture = True
+        try:
+            current = self.canvas.find_withtag("current")
+            current_tags = self.canvas.gettags(current[0]) if current else ()
+        except tk.TclError:
+            current_tags = ()
+        self._debug_interaction(
+            "canvas_control_press",
+            action=action_name,
+            token=gesture_token,
+            x_root=getattr(event, "x_root", None),
+            y_root=getattr(event, "y_root", None),
+            current_tags=current_tags,
+        )
+        action()
+        self.root.after(1500, lambda token=gesture_token: self._expire_canvas_control_gesture(token))
+        return "break"
+
+    def _draw_hover_controls(self):
+        """Draw compact settings and exit buttons over the solid clock face."""
+        if getattr(self, "is_clock_transparent", True):
+            self._clear_hover_controls()
+            return
+        try:
+            w, h = self.canvas.winfo_width(), self.canvas.winfo_height()
+        except tk.TclError:
+            return
+        if min(w, h) < 40:
+            return
+        center_x, center_y = w / 2, h / 2
+        radius = min(w, h) / 2 - self.FACE_PADDING
+        if radius < 20:
+            return
+
+        self._clear_hover_controls()
+        button_r = max(9, min(13, radius * 0.14))
+        # Anchor the pair to the upper-right of the whole borderless window.
+        exit_x = w - button_r - 8
+        settings_x = exit_x - button_r * 2.6
+        settings_y = exit_y = max(button_r + 5, 10)
+        tag = self._hover_controls_tag
+
+        for x, y, item_tag, label in (
+            (settings_x, settings_y, "settings_button", "Settings"),
+            (exit_x, exit_y, "exit_button", "Exit"),
+        ):
+            self.canvas.create_oval(
+                x - button_r, y - button_r, x + button_r, y + button_r,
+                fill=self.UI_SURFACE, outline=self.UI_ACCENT, width=2,
+                tags=(tag, item_tag),
+            )
+            self.canvas.tag_bind(
+                item_tag, "<Enter>",
+                lambda _event: self.canvas.configure(cursor="hand2"),
+            )
+            self.canvas.tag_bind(
+                item_tag, "<Leave>",
+                lambda _event: self.canvas.configure(cursor="fleur"),
+            )
+            self.canvas.tag_bind(
+                item_tag, "<Button-1>",
+                lambda event, action=(self.toggle_controls if item_tag == "settings_button" else self.on_close):
+                    self._on_hover_control_press(event, action),
+            )
+
+        # Draw a real gear glyph plus a vector fallback. The fallback keeps
+        # the control recognizable on systems whose symbol font is incomplete.
+        for angle in range(0, 360, 45):
+            rad = math.radians(angle)
+            inner = button_r * 0.42
+            outer = button_r * 0.82
+            self.canvas.create_line(
+                settings_x + inner * math.cos(rad), settings_y + inner * math.sin(rad),
+                settings_x + outer * math.cos(rad), settings_y + outer * math.sin(rad),
+                fill=self.UI_ACCENT, width=2, capstyle=tk.ROUND,
+                tags=(tag, "settings_button"),
+            )
+        self.canvas.create_oval(
+            settings_x - button_r * 0.34, settings_y - button_r * 0.34,
+            settings_x + button_r * 0.34, settings_y + button_r * 0.34,
+            fill=self.UI_ACCENT, outline="", tags=(tag, "settings_button"),
+        )
+        self.canvas.create_text(
+            settings_x, settings_y, text=chr(0x2699), fill=self.UI_SURFACE,
+            font=("Segoe UI Symbol", max(8, int(button_r * 0.9)), "bold"),
+            tags=(tag, "settings_button"),
+        )
+        self.canvas.create_text(
+            settings_x, settings_y - 0.5, text="⚙", fill=self.UI_SURFACE,
+            font=("Segoe UI Symbol", max(8, int(button_r * 0.9)), "bold"),
+            tags=(tag, "settings_button"),
+        )
+        # Overlay a deterministic cog shape so the control remains a cog even
+        # when the platform's symbol font renders Unicode gear glyphs poorly.
+        # Remove the earlier font/fallback pieces and redraw one canonical
+        # button so no oversized spokes show beyond the requested cog radius.
+        self.canvas.delete("settings_button")
+        self.canvas.create_oval(
+            settings_x - button_r, settings_y - button_r,
+            settings_x + button_r, settings_y + button_r,
+            fill=self.UI_SURFACE, outline=self.UI_ACCENT, width=2,
+            tags=(tag, "settings_button"),
+        )
+        cog_points = []
+        for index in range(32):
+            angle = (2 * math.pi * index) / 32
+            phase = index % 4
+            tooth_radius = button_r * (0.36 if phase in (0, 3) else 0.50)
+            cog_points.extend((
+                settings_x + tooth_radius * math.cos(angle),
+                settings_y + tooth_radius * math.sin(angle),
+            ))
+        self.canvas.create_polygon(
+            cog_points, fill=self.UI_ACCENT, outline="",
+            tags=(tag, "settings_button"),
+        )
+        self.canvas.create_oval(
+            settings_x - button_r * 0.14, settings_y - button_r * 0.14,
+            settings_x + button_r * 0.14, settings_y + button_r * 0.14,
+            fill=self.UI_SURFACE, outline=self.UI_SURFACE,
+            tags=(tag, "settings_button"),
+        )
+        self.canvas.tag_bind(
+            "settings_button", "<Enter>",
+            lambda _event: self.canvas.configure(cursor="hand2"),
+        )
+        self.canvas.tag_bind(
+            "settings_button", "<Leave>",
+            lambda _event: self.canvas.configure(cursor="fleur"),
+        )
+        self.canvas.tag_bind(
+            "settings_button", "<Button-1>",
+            lambda event: self._on_hover_control_press(event, self.toggle_controls),
+        )
+        cross = button_r * 0.42
+        for x1, y1, x2, y2 in (
+            (exit_x - cross, exit_y - cross, exit_x + cross, exit_y + cross),
+            (exit_x - cross, exit_y + cross, exit_x + cross, exit_y - cross),
+        ):
+            self.canvas.create_line(
+                x1, y1, x2, y2, fill=self.UI_DANGER, width=2, capstyle=tk.ROUND,
+                tags=(tag, "exit_button"),
+            )
+
+    def make_controls_visible(self, select_page=None):
+        if getattr(self, 'is_controls_visible', False):
+            self._debug_interaction("controls_show_ignored_already_visible")
+            return
+        started_at = time.perf_counter()
+        self._debug_interaction("controls_show_begin")
+        self._cancel_controls_hide_timer()
+        self._ensure_controls_window()
+        if self._settings_prewarm_pending:
+            self._finish_controls_prewarm()
         self.is_controls_visible = True
         
         if not getattr(self, '_controls_detached', False):
-            rx = self.root.winfo_rootx()
-            ry = self.root.winfo_rooty()
-            rw = self.root.winfo_width()
+            rect = self._window_rects.get("root")
+            if rect is None:
+                self._refresh_window_rect("root", self.root)
+                rect = self._window_rects.get("root")
+            rx, ry, rw, _ = rect or (0, 0, self.root.winfo_width(), 0)
             self.controls_window.geometry(f"+{rx + rw + 10}+{ry}")
             
         self.controls_window.deiconify()
         self.controls_window.lift()
-        self.controls_window.attributes('-topmost', self.always_on_top.get())
+        self.controls_window.update_idletasks()
+        # Windows may report the prewarmed/off-screen rectangle briefly after
+        # mapping. Keep the click latched while the HWND settles, then sample
+        # its real bounds a few times without requiring a drag event.
+        self._controls_open_grace_until = time.monotonic() + 0.75
+        self._settings_realized = True
+        self._refresh_window_rect("controls", self.controls_window)
+        self.root.after_idle(self._refresh_controls_rect_if_visible)
+        self.root.after(40, self._refresh_controls_rect_if_visible)
+        self.root.after(140, self._refresh_controls_rect_if_visible)
+        if select_page and self._settings_tab_present(select_page):
+            self.settings_notebook.select(select_page)
+        self._on_settings_tab_changed()
+        self._draw_hover_controls()
+        self._debug_interaction(
+            "controls_show_end",
+            controls_rect=self._window_rects.get("controls"),
+            root_rect=self._window_rects.get("root"),
+        )
+        self._controls_open_count += 1
+        open_kind = "first settings open" if self._controls_open_count == 1 else "repeat settings open"
+        self.root.after_idle(lambda: self._log_timing(open_kind, started_at))
 
-        # Position windows to the right of controls
-        if getattr(self, 'is_controls_visible', False):
-            self.update_sleep_table_visibility()
-            self.update_sleep_model_visibility()
-        else:
-            if hasattr(self, 'sleep_table_window'):
-                self.sleep_table_window.withdraw()
-            if hasattr(self, 'sleep_model_window'):
-                self.sleep_model_window.withdraw()
-
-    def make_controls_hidden(self):
-        if not hasattr(self, 'controls_window'): return
-        if not getattr(self, 'is_controls_visible', False): return
+    def make_controls_hidden(self, reason="explicit"):
+        self._controls_hide_timer_started = False
+        self._controls_open_grace_until = 0.0
+        self._debug_interaction("controls_hide_requested", reason=reason)
+        if not hasattr(self, 'controls_window'):
+            self._debug_interaction("controls_hide_ignored_no_window", reason=reason)
+            return
+        if not getattr(self, 'is_controls_visible', False):
+            self._debug_interaction("controls_hide_ignored_already_hidden", reason=reason)
+            return
         self.is_controls_visible = False
         self.controls_window.withdraw()
-        if hasattr(self, 'sleep_table_window'):
-            self.sleep_table_window.withdraw()
-        if hasattr(self, 'sleep_model_window'):
-            self.sleep_model_window.withdraw()
+        self._window_rects.pop("controls", None)
+        self._debug_interaction("controls_hidden", reason=reason)
+        if not self.is_clock_transparent:
+            self._draw_hover_controls()
 
     def update_sleep_table_visibility(self):
-        """Explicitly show/hide and position the sleep table based on its toggle variable."""
-        if not hasattr(self, 'sleep_table_window'): return
-        
-        if self.show_sleep_table.get() and getattr(self, 'is_controls_visible', False):
-            # Position and show
-            self.controls_window.update_idletasks()
-            cx = self.controls_window.winfo_rootx()
-            cy = self.controls_window.winfo_rooty()
-            cw = self.controls_window.winfo_width()
-            self.sleep_table_window.geometry(f"+{cx + cw + 10}+{cy}")
-            self.sleep_table_window.deiconify()
-            self.sleep_table_window.lift()
-            self.sleep_table_window.attributes('-topmost', self.always_on_top.get())
-            if self._sleep_table_needs_refresh and not self._sleep_table_refresh_scheduled:
-                self._sleep_table_refresh_scheduled = True
-                self.sleep_table_window.after_idle(self._refresh_sleep_table_if_visible)
-            # If sleep model is also shown, it must move further right
-            if self.show_sleep_model.get():
-                self.update_sleep_model_visibility()
+        """Add or remove the retained sleep-log settings tab."""
+        self._ensure_controls_window()
+        if self.show_sleep_table.get():
+            self._ensure_sleep_table_window()
+            if not self._settings_tab_present(self.sleep_table_page):
+                self.settings_notebook.add(self.sleep_table_page, text="Sleep log")
+            if self.is_controls_visible:
+                self.settings_notebook.select(self.sleep_table_page)
+                self._on_settings_tab_changed()
         else:
-            self.sleep_table_window.withdraw()
-            # Re-position sleep model if it's shown
-            if self.show_sleep_model.get() and getattr(self, 'is_controls_visible', False):
-                self.update_sleep_model_visibility()
+            if self._settings_tab_present(self.sleep_table_page):
+                self.settings_notebook.hide(self.sleep_table_page)
+        self._save_sleep_settings()
 
     def _refresh_sleep_table_if_visible(self):
         self._sleep_table_refresh_scheduled = False
         if not self.show_sleep_table.get() or not getattr(self, 'is_controls_visible', False):
             return
-        if not hasattr(self, 'sleep_table_window') or not self.sleep_table_window.winfo_viewable():
+        if not getattr(self, 'sleep_table_page', None) or not self._settings_page_selected(self.sleep_table_page):
             return
         self.populate_sleep_table()
 
     def update_sleep_model_visibility(self):
-        """Explicitly show/hide and position the sleep model based on its toggle variable."""
-        if not hasattr(self, 'sleep_model_window'): return
-        
-        if self.show_sleep_model.get() and getattr(self, 'is_controls_visible', False):
-            # Position and show
-            self.controls_window.update_idletasks()
-            cx = self.controls_window.winfo_rootx()
-            cy = self.controls_window.winfo_rooty()
-            cw = self.controls_window.winfo_width()
-            
-            target_x = cx + cw + 10
-            
-            # If sleep table is ALSO visible, move further right
-            if self.show_sleep_table.get() and self.sleep_table_window.winfo_viewable():
-                self.sleep_table_window.update_idletasks()
-                tw = self.sleep_table_window.winfo_width()
-                target_x += tw + 10
-                
-            self.sleep_model_window.geometry(f"+{target_x}+{cy}")
-            self.sleep_model_window.deiconify()
-            self.sleep_model_window.lift()
-            self.sleep_model_window.attributes('-topmost', self.always_on_top.get())
+        """Add or remove the retained advanced-model settings tab."""
+        self._ensure_controls_window()
+        if self.show_sleep_model.get():
+            self._ensure_sleep_model_window()
+            if not self._settings_tab_present(self.sleep_model_page):
+                self.settings_notebook.add(self.sleep_model_page, text="Model")
+            if self.is_controls_visible:
+                self.settings_notebook.select(self.sleep_model_page)
         else:
-            self.sleep_model_window.withdraw()
+            if self._settings_tab_present(self.sleep_model_page):
+                self.settings_notebook.hide(self.sleep_model_page)
+        self._save_sleep_settings()
 
     # ── Bedtime Countdown Window ─────────────────────────────────────────
 
@@ -636,6 +1175,7 @@ class ClockWidget:
         for w in (win, frame, self._bc_label, self._bc_countdown, self._bc_target):
             w.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.bedtime_countdown_window))
             w.bind("<B1-Motion>", lambda e: self.on_drag_motion(e))
+            w.bind("<ButtonRelease-1>", self.on_drag_end)
             w.bind("<Enter>", self.on_enter)
             w.bind("<Leave>", self.on_leave)
 
@@ -695,13 +1235,13 @@ class ClockWidget:
 
         return target
 
-    def update_bedtime_countdown_visibility(self, *args):
+    def update_bedtime_countdown_visibility(self, *args, persist=True):
         """Show/hide the standalone bedtime countdown window and start/stop its timer."""
-        if not hasattr(self, 'bedtime_countdown_window'):
-            return
-        self._save_sleep_settings()
+        if persist:
+            self._save_sleep_settings()
 
-        if self.show_bedtime_countdown.get():
+        if self.show_bedtime_countdown.get() and not self.is_clock_transparent:
+            self._ensure_bedtime_countdown_window()
             bg_color = self.transparent_key if getattr(self, 'is_clock_transparent', False) else self.solid_bg
             self.bedtime_countdown_window.configure(bg=bg_color)
             if hasattr(self, '_bc_frame'): self._bc_frame.configure(bg=bg_color)
@@ -717,17 +1257,34 @@ class ClockWidget:
                 self.bedtime_countdown_window.geometry(f"+{rx}+{ry + rh + 10}")
             self.bedtime_countdown_window.deiconify()
             self.bedtime_countdown_window.lift()
-            self.bedtime_countdown_window.attributes('-topmost', self.always_on_top.get())
-            self._update_bedtime_countdown_tick()
+            self._refresh_window_rect("countdown", self.bedtime_countdown_window)
+            self._start_bedtime_countdown_timer()
         else:
-            if self._bc_timer_id is not None:
-                self.root.after_cancel(self._bc_timer_id)
-                self._bc_timer_id = None
-            self.bedtime_countdown_window.withdraw()
+            self._stop_bedtime_countdown_timer()
+            if hasattr(self, 'bedtime_countdown_window'):
+                self.bedtime_countdown_window.withdraw()
+            self._window_rects.pop("countdown", None)
+
+    def _start_bedtime_countdown_timer(self):
+        """Start exactly one visible countdown timer chain."""
+        if getattr(self, '_bc_timer_id', None) is None:
+            self._update_bedtime_countdown_tick()
+
+    def _stop_bedtime_countdown_timer(self):
+        timer_id = getattr(self, '_bc_timer_id', None)
+        if timer_id is not None:
+            try:
+                self.root.after_cancel(timer_id)
+            except tk.TclError:
+                pass
+        self._bc_timer_id = None
 
     def _update_bedtime_countdown_tick(self):
         """Tick the bedtime countdown display every second."""
-        if not self.show_bedtime_countdown.get():
+        self._bc_timer_id = None
+        if (not self.show_bedtime_countdown.get() or self.is_clock_transparent
+                or not getattr(self, 'bedtime_countdown_window', None)
+                or not self.bedtime_countdown_window.winfo_viewable()):
             return
 
         now = datetime.datetime.now()
@@ -770,26 +1327,32 @@ class ClockWidget:
 
     def make_solid(self):
         self.make_clock_solid()
-        self.make_controls_visible()
-        
-        # Trigger an opportunistic background refresh if data is stale (> 5 min)
-        now = datetime.datetime.now()
-        
-        # 1. Fitbit refresh
-        last_fitbit = getattr(self, 'last_fitbit_update', None)
-        if last_fitbit is None or (now - last_fitbit).total_seconds() > 300:
-            print("[ClockWidget] Opportunistic hover refresh: Fitbit.")
-            self.update_fitbit_data()
 
-        # 2. Calendar refresh
-        last_cal = getattr(self, '_last_calendar_refresh_time', None)
-        if last_cal is None or (now - last_cal).total_seconds() > 300:
-            print("[ClockWidget] Opportunistic hover refresh: Calendar.")
-            self.update_calendar_data()
-            
+        # Data freshness remains hover-driven, while the full settings window is
+        # opened deliberately by clicking the clock or using the tray menu.
+        self._request_hover_refresh()
+
         if not getattr(self, '_checking_nearby', False):
             self._checking_nearby = True
             self.check_nearby()
+
+    def _request_hover_refresh(self):
+        """Request stale integrations without coupling them to menu visibility."""
+        now_monotonic = time.monotonic()
+        if now_monotonic - self._last_hover_refresh_check < 1.0:
+            return
+        self._last_hover_refresh_check = now_monotonic
+        now = datetime.datetime.now()
+
+        last_fitbit = getattr(self, 'last_fitbit_update', None)
+        if last_fitbit is None or (now - last_fitbit).total_seconds() > 300:
+            print("[ClockWidget] Opportunistic hover refresh: Fitbit.")
+            self.update_fitbit_data(reason="hover")
+
+        last_cal = getattr(self, '_last_calendar_refresh_time', None)
+        if last_cal is None or (now - last_cal).total_seconds() > 300:
+            print("[ClockWidget] Opportunistic hover refresh: Calendar.")
+            self.update_calendar_data(reason="hover")
 
     def make_transparent(self):
         self._checking_nearby = False
@@ -800,7 +1363,65 @@ class ClockWidget:
             self.root.after_cancel(self._controls_hide_timer_id)
             self._controls_hide_timer_started = False
         self.make_clock_transparent()
-        self.make_controls_hidden()
+        self.make_controls_hidden(reason="make_transparent")
+
+    def _cache_window_event(self, event):
+        widget = event.widget
+        if widget == self.root:
+            self._refresh_window_rect("root", self.root)
+        elif widget == getattr(self, 'controls_window', None) and self.is_controls_visible:
+            self._refresh_window_rect("controls", widget)
+        elif widget == getattr(self, 'bedtime_countdown_window', None):
+            self._refresh_window_rect("countdown", widget)
+
+    def _refresh_window_rect(self, name, window):
+        try:
+            self._window_rects[name] = (
+                window.winfo_rootx(), window.winfo_rooty(),
+                window.winfo_width(), window.winfo_height(),
+            )
+        except tk.TclError:
+            self._window_rects.pop(name, None)
+
+    def _point_in_window(self, name, x, y, margin=0):
+        rect = self._window_rects.get(name)
+        if not rect:
+            return False
+        wx, wy, width, height = rect
+        return (wx - margin <= x <= wx + width + margin
+                and wy - margin <= y <= wy + height + margin)
+
+    def _pointer_toplevel(self, x, y):
+        """Return the actual Tk toplevel under the pointer, if any."""
+        try:
+            widget = self.root.winfo_containing(x, y)
+            return widget.winfo_toplevel() if widget is not None else None
+        except tk.TclError:
+            return None
+
+    def _refresh_controls_rect_if_visible(self):
+        if not self.is_controls_visible or not getattr(self, 'controls_window', None):
+            return
+        try:
+            self.controls_window.update_idletasks()
+            self._refresh_window_rect("controls", self.controls_window)
+        except tk.TclError:
+            pass
+
+    def _cancel_hover_timer(self):
+        if getattr(self, '_hover_timer_started', False):
+            self.root.after_cancel(self._hover_timer_id)
+            self._hover_timer_started = False
+
+    def _cancel_clock_hide_timer(self):
+        if getattr(self, '_clock_hide_timer_started', False):
+            self.root.after_cancel(self._clock_hide_timer_id)
+            self._clock_hide_timer_started = False
+
+    def _cancel_controls_hide_timer(self):
+        if getattr(self, '_controls_hide_timer_started', False):
+            self.root.after_cancel(self._controls_hide_timer_id)
+            self._controls_hide_timer_started = False
 
     def check_nearby(self):
         if not getattr(self, '_checking_nearby', False):
@@ -817,59 +1438,55 @@ class ClockWidget:
 
         mx = self.root.winfo_pointerx()
         my = self.root.winfo_pointery()
-       
-        rx = self.root.winfo_rootx()
-        ry = self.root.winfo_rooty()
-        rw = self.root.winfo_width()
-        rh = self.root.winfo_height()
-       
-        margin = 10
-        root_margin = 20 # More generous margin for resize handles
-        in_root = not (mx < rx - root_margin or mx > rx + rw + root_margin or my < ry - root_margin or my > ry + rh + root_margin)
-        
-        in_bedtime_timer = False
-        if getattr(self, 'bedtime_countdown_window', None) and self.bedtime_countdown_window.winfo_viewable():
-            bx = self.bedtime_countdown_window.winfo_rootx()
-            by = self.bedtime_countdown_window.winfo_rooty()
-            bw = self.bedtime_countdown_window.winfo_width()
-            bh = self.bedtime_countdown_window.winfo_height()
-            in_bedtime_timer = not (mx < bx - margin or mx > bx + bw + margin or my < by - margin or my > by + bh + margin)
-
-        in_time_window = in_root or in_bedtime_timer
-
-        in_controls = False
-        if getattr(self, 'controls_window', None) and self.controls_window.winfo_viewable():
-            cx = self.controls_window.winfo_rootx()
-            cy = self.controls_window.winfo_rooty()
-            cw = self.controls_window.winfo_width()
-            ch = self.controls_window.winfo_height()
-            in_controls = not (mx < cx - margin or mx > cx + cw + margin or my < cy - margin or my > cy + ch + margin)
-
-        if not in_controls and getattr(self, 'sleep_table_window', None) and self.sleep_table_window.winfo_viewable():
-            tx = self.sleep_table_window.winfo_rootx()
-            ty = self.sleep_table_window.winfo_rooty()
-            tw = self.sleep_table_window.winfo_width()
-            th = self.sleep_table_window.winfo_height()
-            in_controls = not (mx < tx - margin or mx > tx + tw + margin or my < ty - margin or my > ty + th + margin)
-
-        if not in_controls and getattr(self, 'sleep_model_window', None) and self.sleep_model_window.winfo_viewable():
-            sx = self.sleep_model_window.winfo_rootx()
-            sy = self.sleep_model_window.winfo_rooty()
-            sw = self.sleep_model_window.winfo_width()
-            sh = self.sleep_model_window.winfo_height()
-            in_controls = not (mx < sx - margin or mx > sx + sw + margin or my < sy - margin or my > sy + sh + margin)
-
-        if in_time_window and in_controls:
-            top_widget = self.root.winfo_containing(mx, my)
-            if top_widget is not None:
-                top_win = top_widget.winfo_toplevel()
-                if top_win in (self.root, getattr(self, 'bedtime_countdown_window', None)):
-                    in_controls = False
-                elif top_win in (getattr(self, 'controls_window', None), getattr(self, 'sleep_table_window', None), getattr(self, 'sleep_model_window', None)):
-                    in_time_window = False
-            else:
-                if in_time_window and not getattr(self, 'is_clock_transparent', False):
-                    in_controls = False
+        pointer_top = self._pointer_toplevel(mx, my)
+        if pointer_top is not None:
+            # Direct hit-testing does not depend on a Configure/drag event.
+            in_root = pointer_top == self.root
+            in_controls = (
+                self.is_controls_visible
+                and pointer_top == getattr(self, 'controls_window', None)
+            )
+            in_bedtime_timer = pointer_top == getattr(self, 'bedtime_countdown_window', None)
+        else:
+            # Transparent pixels can return no Tk window on Windows; cached
+            # bounds remain a useful fallback around those edges.
+            in_root = self._point_in_window("root", mx, my, margin=20)
+            in_bedtime_timer = self._point_in_window("countdown", mx, my, margin=10)
+            in_controls = self.is_controls_visible and self._point_in_window("controls", mx, my, margin=10)
+        in_clock_area = in_root or in_bedtime_timer
+        controls_mapping = (
+            self.is_controls_visible
+            and time.monotonic() < self._controls_open_grace_until
+        )
+        interaction_active = in_clock_area or in_controls or controls_mapping
+        pointer_top_name = None
+        if pointer_top == self.root:
+            pointer_top_name = "root"
+        elif pointer_top == getattr(self, 'controls_window', None):
+            pointer_top_name = "controls"
+        elif pointer_top == getattr(self, 'bedtime_countdown_window', None):
+            pointer_top_name = "countdown"
+        elif pointer_top is not None:
+            pointer_top_name = str(pointer_top)
+        interaction_state = (
+            pointer_top_name, in_root, in_controls, in_bedtime_timer,
+            controls_mapping, interaction_active, self.is_controls_visible,
+            self.is_clock_transparent,
+        )
+        if interaction_state != self._last_interaction_debug_state:
+            self._last_interaction_debug_state = interaction_state
+            self._debug_interaction(
+                "pointer_state",
+                pointer=(mx, my),
+                pointer_top=pointer_top_name,
+                in_root=in_root,
+                in_controls=in_controls,
+                in_countdown=in_bedtime_timer,
+                controls_mapping_grace=controls_mapping,
+                interaction_active=interaction_active,
+                root_rect=self._window_rects.get("root"),
+                controls_rect=self._window_rects.get("controls"),
+            )
 
         def get_hover_ms():
             try:
@@ -883,48 +1500,38 @@ class ClockWidget:
             except:
                 return 1000
 
-        # Time Windows (Clock & Bedtime Timer Window) Timeout & Hover Logic
-        if in_controls:
-            if getattr(self, '_clock_hide_timer_started', False):
-                self.root.after_cancel(self._clock_hide_timer_id)
-                self._clock_hide_timer_started = False
-            if getattr(self, '_hover_timer_started', False):
-                self.root.after_cancel(self._hover_timer_id)
-                self._hover_timer_started = False
-            self.make_clock_transparent()
-        elif not in_time_window:
-            if getattr(self, '_hover_timer_started', False):
-                self.root.after_cancel(self._hover_timer_id)
-                self._hover_timer_started = False
+        if not interaction_active:
+            self._cancel_hover_timer()
             if not getattr(self, '_clock_hide_timer_started', False):
                 self._clock_hide_timer_started = True
                 self._clock_hide_timer_id = self.root.after(get_timeout_ms(), self.make_clock_transparent)
         else:
-            # Mouse is hovering inside time window (clock or bedtime timer, even transparent part)
-            if getattr(self, '_clock_hide_timer_started', False):
-                self.root.after_cancel(self._clock_hide_timer_id)
-                self._clock_hide_timer_started = False
-
-            if getattr(self, 'is_clock_transparent', False):
+            self._cancel_clock_hide_timer()
+            if self.is_clock_transparent and in_clock_area:
                 if not getattr(self, '_hover_timer_started', False):
                     self._hover_timer_started = True
                     self._hover_timer_id = self.root.after(get_hover_ms(), self._on_hover_timeout)
             else:
-                if getattr(self, '_hover_timer_started', False):
-                    self.root.after_cancel(self._hover_timer_id)
-                    self._hover_timer_started = False
-                self.make_clock_solid()
+                self._cancel_hover_timer()
+                if in_controls:
+                    self.make_clock_solid()
 
-        # Controls Timeout Logic
-        if not in_controls and not in_time_window:
+        # Keep the settings window while the pointer is over either window;
+        # once the pointer leaves both, restore the idle transparent state.
+        if self.is_controls_visible and not interaction_active:
             if not getattr(self, '_controls_hide_timer_started', False):
                 self._controls_hide_timer_started = True
-                self._controls_hide_timer_id = self.root.after(get_timeout_ms(), self.make_controls_hidden)
+                self._debug_interaction(
+                    "controls_hide_scheduled",
+                    delay_ms=get_timeout_ms(),
+                    pointer=(mx, my),
+                )
+                self._controls_hide_timer_id = self.root.after(
+                    get_timeout_ms(),
+                    lambda: self.make_controls_hidden(reason="pointer_timeout"),
+                )
         else:
-            if getattr(self, '_controls_hide_timer_started', False):
-                self.root.after_cancel(self._controls_hide_timer_id)
-                self._controls_hide_timer_started = False
-            self.make_controls_visible()
+            self._cancel_controls_hide_timer()
 
         # Always continue polling mouse coordinates while windows are active
         self.root.after(250, self.check_nearby)
@@ -964,7 +1571,9 @@ class ClockWidget:
                         self.show_acrophase.set(p.get("show_acrophase", True))
                         self.show_grogginess.set(p.get("show_grogginess", True))
                         self.show_wind_down.set(p.get("show_wind_down", True))
-                        self.show_bedtime_countdown.set(p.get("show_bedtime_countdown", False))
+                        self.show_bedtime_countdown.set(p.get("show_bedtime_countdown", True))
+                        self.show_sleep_table.set(p.get("show_sleep_table", True))
+                        self.show_sleep_model.set(p.get("show_sleep_model", False))
 
                     return data.get("excluded_dates", [today_str])
             except:
@@ -1021,17 +1630,45 @@ class ClockWidget:
                     "show_acrophase": self.show_acrophase.get(),
                     "show_grogginess": self.show_grogginess.get(),
                     "show_wind_down": self.show_wind_down.get(),
-                    "show_bedtime_countdown": self.show_bedtime_countdown.get()
+                    "show_bedtime_countdown": self.show_bedtime_countdown.get(),
+                    "show_sleep_table": self.show_sleep_table.get(),
+                    "show_sleep_model": self.show_sleep_model.get(),
                 }
             }
-            with open(self.sleep_settings_file, 'w') as f:
+            temp_path = f"{self.sleep_settings_file}.tmp"
+            with open(temp_path, 'w') as f:
                 json.dump(data, f)
+            os.replace(temp_path, self.sleep_settings_file)
         except:
             pass
 
     def on_drag_start(self, event, target_window=None):
         if target_window is None:
             target_window = self.root
+
+        if self._canvas_control_gesture:
+            self._drag_data = None
+            self._resize_data = None
+            self._debug_interaction(
+                "drag_start_suppressed_control_gesture",
+                token=self._canvas_control_gesture_token,
+                x_root=getattr(event, "x_root", None),
+                y_root=getattr(event, "y_root", None),
+            )
+            return
+
+        # Canvas-native settings/exit buttons own their click; do not let the
+        # canvas drag binding toggle the window a second time on mouse-up.
+        if target_window == self.root and event.widget == self.canvas:
+            current = self.canvas.find_withtag("current")
+            if current and self._hover_controls_tag in self.canvas.gettags(current[0]):
+                self._drag_data = None
+                self._resize_data = None
+                self._debug_interaction(
+                    "drag_start_suppressed_current_control",
+                    current_tags=self.canvas.gettags(current[0]),
+                )
+                return
             
         # Don't start a window drag if clicking on interactive widgets
         if isinstance(event.widget, (tk.Scale, tk.Checkbutton, tk.Button, tk.Entry)):
@@ -1039,6 +1676,7 @@ class ClockWidget:
             
         if target_window == self.root and getattr(self, 'is_clock_transparent', False):
             self._drag_data = None
+            self._resize_data = None
             return
            
         w = target_window.winfo_width()
@@ -1048,22 +1686,76 @@ class ClockWidget:
         ry = event.y_root - target_window.winfo_rooty()
        
         if target_window == self.root:
-            margin = 20
-            if rx < margin or rx > w - margin or ry < margin or ry > h - margin:
+            margin = 14
+            left = rx <= margin
+            right = rx >= w - margin
+            top = ry <= margin
+            bottom = ry >= h - margin
+            if left or right or top or bottom:
                 self._drag_data = None
+                self._resize_data = {
+                    'x': event.x_root, 'y': event.y_root,
+                    'wx': target_window.winfo_x(), 'wy': target_window.winfo_y(),
+                    'width': w, 'height': h,
+                    'left': left, 'right': right, 'top': top, 'bottom': bottom,
+                }
                 return
         else:
             self._controls_detached = True
-           
+
+        self._resize_data = None
         self._drag_data = {'x': event.x_root, 'y': event.y_root,
                            'wx': target_window.winfo_x(), 'wy': target_window.winfo_y(),
-                           'window': target_window}
+                           'window': target_window, 'moved': False}
+        self._debug_interaction(
+            "drag_started",
+            target="root" if target_window == self.root else str(target_window),
+            x_root=event.x_root,
+            y_root=event.y_root,
+        )
 
     def on_drag_motion(self, event):
+        resize = getattr(self, '_resize_data', None)
+        if resize:
+            dx = event.x_root - resize['x']
+            dy = event.y_root - resize['y']
+            new_x, new_y = resize['wx'], resize['wy']
+            new_w, new_h = resize['width'], resize['height']
+            if resize['left']:
+                new_x += dx
+                new_w -= dx
+            elif resize['right']:
+                new_w += dx
+            if resize['top']:
+                new_y += dy
+                new_h -= dy
+            elif resize['bottom']:
+                new_h += dy
+            min_w, min_h = 120, 150
+            if new_w < min_w:
+                if resize['left']:
+                    new_x -= min_w - new_w
+                new_w = min_w
+            if new_h < min_h:
+                if resize['top']:
+                    new_y -= min_h - new_h
+                new_h = min_h
+            self.root.geometry(f"{int(new_w)}x{int(new_h)}+{int(new_x)}+{int(new_y)}")
+            return
+
         if getattr(self, '_drag_data', None):
             target_window = self._drag_data['window']
             dx = event.x_root - self._drag_data['x']
             dy = event.y_root - self._drag_data['y']
+            if abs(dx) > 3 or abs(dy) > 3:
+                if not self._drag_data.get('moved'):
+                    self._debug_interaction(
+                        "drag_marked_moved",
+                        dx=dx,
+                        dy=dy,
+                        target="root" if target_window == self.root else str(target_window),
+                    )
+                self._drag_data['moved'] = True
             new_x = self._drag_data['wx'] + dx
             new_y = self._drag_data['wy'] + dy
             target_window.geometry(f"+{new_x}+{new_y}")
@@ -1073,46 +1765,50 @@ class ClockWidget:
                     rw = self.root.winfo_width()
                     self.controls_window.geometry(f"+{new_x + rw + 10}+{new_y}")
 
+    def on_drag_end(self, _event=None):
+        resize = getattr(self, '_resize_data', None)
+        drag = getattr(self, '_drag_data', None)
+        control_gesture = self._canvas_control_gesture
+        gesture_token = self._canvas_control_gesture_token
+        self._resize_data = None
+        self._drag_data = None
+        self._canvas_control_gesture = False
+        self._debug_interaction(
+            "drag_end",
+            control_gesture=control_gesture,
+            token=gesture_token,
+            had_resize=bool(resize),
+            had_drag=bool(drag),
+            drag_moved=bool(drag and drag.get('moved')),
+            drag_target=(
+                "root" if drag and drag.get('window') == self.root
+                else str(drag.get('window')) if drag else None
+            ),
+        )
+        if control_gesture:
+            self._debug_interaction(
+                "drag_end_suppressed_duplicate_toggle",
+                token=gesture_token,
+            )
+            return
+        if resize:
+            if self._resize_redraw_id is not None:
+                self.root.after_cancel(self._resize_redraw_id)
+                self._resize_redraw_id = None
+            self._schedule_clock_redraw()
+            return
+        if drag and drag.get('window') == self.root and not drag.get('moved'):
+            self._debug_interaction("drag_end_clock_click_toggle")
+            self.toggle_controls()
+
     def on_leave(self, event):
         if self.hover_timer is not None:
             self.root.after_cancel(self.hover_timer)
             self.hover_timer = None
 
-    def _get_max_energy(self):
-        current_args = (
-            self.wake_hour, self.bathyphase_hour,
-            self.tau_wake.get(), self.tau_sleep.get(), self.tau_inertia.get(), 
-            self.debt_factor.get(), self.circadian_offset.get(), self.use_bathyphase.get()
-        )
-        if not hasattr(self, '_max_rested_energy') or getattr(self, '_max_rested_energy_args', None) != current_args:
-            max_e = 0
-            for i in range(1440):
-                h_test = (i / 1440.0) * 24.0
-                e = get_energy_level(
-                    h_test,
-                    self.wake_hour,
-                    0.0,
-                    self.bedtime_goal.get(),
-                    self.bathyphase_hour if self.use_bathyphase.get() else None,
-                    clamp=False,
-                    tau_wake=self.tau_wake.get(),
-                    tau_sleep=self.tau_sleep.get(),
-                    tau_inertia=self.tau_inertia.get(),
-                    debt_factor=self.debt_factor.get(),
-                    circadian_peak_offset=None if self.use_bathyphase.get() else self.circadian_offset.get()
-                )
-                if e > max_e:
-                    max_e = e
-            self._max_rested_energy = max_e
-            self._max_rested_energy_args = current_args
-        return self._max_rested_energy
-
     def _energy_display_pct(self, current_e: float) -> int:
-        """Percent of today's personal peak (same sleep/debt inputs as the live curve)."""
-        max_e = self.energy_curve._cached_e_max
-        if max_e <= 0:
-            return 0
-        return min(100, max(0, int(round((current_e / max_e) * 100))))
+        """Absolute energy percentage represented by the current curve value."""
+        return min(100, max(0, int(round(current_e * 100))))
 
     def on_right_click_start(self, event):
         self._right_click_active = True
@@ -1266,8 +1962,7 @@ class ClockWidget:
                 print(f"[ClockWidget] Timezone fallback: {lat}, {lon} (Offset: {offset_hours})")
 
             try:
-                self.lat = lat
-                self.lon = lon
+                Observer, sun, _, _, _ = _load_astral_dependencies()
                 obs = Observer(latitude=lat, longitude=lon)
                 # Pass the local timezone to astral to ensure sun events are found for 'today'
                 local_tz = datetime.datetime.now().astimezone().tzinfo
@@ -1276,58 +1971,93 @@ class ClockWidget:
                 sunrise_dt = s['sunrise']
                 sunset_dt = s['sunset']
                
-                self.sunrise_hour = sunrise_dt.hour + sunrise_dt.minute / 60.0 + sunrise_dt.second / 3600.0
-                self.sunset_hour = sunset_dt.hour + sunset_dt.minute / 60.0 + sunset_dt.second / 3600.0
-                print(f"[ClockWidget] Sun times computed: {self.sunrise_hour:.2f} to {self.sunset_hour:.2f}")
+                sunrise_hour = sunrise_dt.hour + sunrise_dt.minute / 60.0 + sunrise_dt.second / 3600.0
+                sunset_hour = sunset_dt.hour + sunset_dt.minute / 60.0 + sunset_dt.second / 3600.0
+                print(f"[ClockWidget] Sun times computed: {sunrise_hour:.2f} to {sunset_hour:.2f}")
             except Exception as e:
                 print(f"[ClockWidget] Could not compute sunrise/sunset: {e}")
-                self.sunrise_hour = None
-                self.sunset_hour = None
-            finally:
-                if getattr(self, '_initial_shown', False):
-                    self.root.after(0, self.draw_clock)
-                else:
-                    self._initial_shown = True
-                    self.root.after(0, self.show_initial)
+                sunrise_hour = None
+                sunset_hour = None
+            self._post_ui(self._apply_sun_times, lat, lon, sunrise_hour, sunset_hour)
 
-        threading.Thread(target=_fetch, daemon=True).start()
+        self._submit_background(_fetch)
+
+    def _apply_sun_times(self, lat, lon, sunrise_hour, sunset_hour):
+        changed = (lat, lon, sunrise_hour, sunset_hour) != (
+            getattr(self, 'lat', None), getattr(self, 'lon', None),
+            self.sunrise_hour, self.sunset_hour,
+        )
+        self.lat, self.lon = lat, lon
+        self.sunrise_hour, self.sunset_hour = sunrise_hour, sunset_hour
+        if changed:
+            self._extremes_cache = None
+            self._solar_peak_cache = None
+            self._schedule_clock_redraw({
+                "night_shading", "sun_and_moon", "ticks_and_numbers", "solar_circle"
+            })
+
+    def _get_fitbit_client_worker(self):
+        if self.fitbit is None:
+            from fitbit_client import FitbitClient
+            self.fitbit = FitbitClient(
+                client_id=self.FITBIT_CLIENT_ID,
+                client_secret=self.FITBIT_CLIENT_SECRET,
+            )
+        return self.fitbit
 
     def relink_fitbit_and_refresh(self):
         """Re-authorize Fitbit OAuth, then force-fetch fresh sleep data."""
         def _task():
             try:
                 print("[ClockWidget] Starting Fitbit re-authorization...")
-                self.fitbit.authorize()
+                with self._fitbit_operation_lock:
+                    self._get_fitbit_client_worker().authorize()
                 print("[ClockWidget] Fitbit re-authorization succeeded — refreshing data.")
-                self.root.after(0, lambda: self._set_reauth_status('fitbit', False))
-                self.update_fitbit_data(force=True)
+                self._post_ui(self._set_reauth_status, 'fitbit', False)
+                self._post_ui(self.update_fitbit_data, True, "reauth")
             except Exception as e:
                 print(f"[ClockWidget] Fitbit re-link failed: {e}")
-                self.root.after(0, lambda: self._set_reauth_status('fitbit', True))
+                self._post_ui(self._set_reauth_status, 'fitbit', True)
 
-        threading.Thread(target=_task, daemon=True).start()
+        self._submit_background(_task)
 
-    def update_fitbit_data(self, force: bool = False):
+    def update_fitbit_data(self, force: bool = False, reason: str = "scheduled"):
         """
         Background task to fetch latest Fitbit sleep & HR.
         Calls FitbitClient and updates self.fitbit_data.
         """
+        if self._fitbit_refreshing:
+            if force:
+                self._fitbit_refresh_pending = True
+                self._fitbit_pending_force = True
+            return
+
+        now_monotonic = time.monotonic()
+        if not force and now_monotonic - self._fitbit_last_request_monotonic < 15.0:
+            return
+
+        self._fitbit_refreshing = True
+        self._fitbit_last_request_monotonic = now_monotonic
+        print(f"[ClockWidget] Fitbit refresh started ({reason}).")
+
         # Safely extract Tkinter variables on the main thread before starting the background task
         bedtime_goal = self.bedtime_goal.get()
         include_naps = self.include_naps.get()
         excluded_dates = list(self.excluded_dates) # Thread-safe copy
+        explicit_dates = set(getattr(self, 'explicit_dates', ()))
 
         def _task():
             try:
-                inputs = self.fitbit.get_all_energy_inputs(
-                    bedtime_goal_hours=bedtime_goal,
-                    include_naps=include_naps,
-                    force=force,
-                    excluded_dates=excluded_dates
-                )
+                with self._fitbit_operation_lock:
+                    inputs = self._get_fitbit_client_worker().get_all_energy_inputs(
+                        bedtime_goal_hours=bedtime_goal,
+                        include_naps=include_naps,
+                        force=force,
+                        excluded_dates=excluded_dates
+                    )
                 
                 # If we got here, reauth is NOT needed
-                self.root.after(0, lambda: self._set_reauth_status('fitbit', False))
+                self._post_ui(self._set_reauth_status, 'fitbit', False)
 
                 # ... (rest of the logic)
                 
@@ -1345,16 +2075,7 @@ class ClockWidget:
                     for log in raw_logs
                 )
 
-                # Check if we have an explicit saved setting for today yet (file I/O is safe)
-                has_saved_setting = False
-                if os.path.exists(self.sleep_settings_file):
-                    try:
-                        with open(self.sleep_settings_file, 'r') as f:
-                            saved = json.load(f).get('explicit_dates', [])
-                            if today_str in saved:
-                                has_saved_setting = True
-                    except Exception:
-                        pass
+                has_saved_setting = today_str in explicit_dates
 
                 should_save_image = (
                     (not inputs.get('from_cache', False) and inputs.get('is_real_today', False))
@@ -1362,19 +2083,45 @@ class ClockWidget:
                 )
 
                 # Schedule ALL state mutations on the main thread to avoid data races
-                self.root.after(0, lambda: self._apply_fitbit_results(
-                    inputs, today_str, has_today_main, has_saved_setting, should_save_image
-                ))
+                self._post_ui(
+                    self._apply_fitbit_results,
+                    inputs, today_str, has_today_main, has_saved_setting, should_save_image,
+                )
 
-            except ReauthRequiredError:
-                print("[update_fitbit_data] Fitbit re-authentication required.")
-                self.root.after(0, lambda: self._set_reauth_status('fitbit', True))
             except Exception as e:
-                print(f"[update_fitbit_data] Fitbit background update failed: {e}")
+                if e.__class__.__name__ == "ReauthRequiredError":
+                    print("[update_fitbit_data] Fitbit re-authentication required.")
+                    self._post_ui(self._set_reauth_status, 'fitbit', True)
+                else:
+                    print(f"[update_fitbit_data] Fitbit background update failed: {e}")
+            finally:
+                def finish_refresh():
+                    self._fitbit_refreshing = False
+                    if self._fitbit_refresh_pending:
+                        pending_force = self._fitbit_pending_force
+                        self._fitbit_refresh_pending = False
+                        self._fitbit_pending_force = False
+                        self.update_fitbit_data(force=pending_force, reason="coalesced")
+                self._post_ui(finish_refresh)
        
-        threading.Thread(target=_task, daemon=True).start()
+        self._submit_background(_task)
 
     def _apply_fitbit_results(self, inputs, today_str, has_today_main, has_saved_setting, should_save_image):
+        """Queue the newest Fitbit snapshot for one main-thread apply pass."""
+        self._pending_fitbit_results = (
+            inputs, today_str, has_today_main, has_saved_setting, should_save_image
+        )
+        if self._fitbit_apply_id is None:
+            self._fitbit_apply_id = self.root.after_idle(self._flush_fitbit_results)
+
+    def _flush_fitbit_results(self):
+        self._fitbit_apply_id = None
+        pending = self._pending_fitbit_results
+        self._pending_fitbit_results = None
+        if pending is not None:
+            self._apply_fitbit_results_now(*pending)
+
+    def _apply_fitbit_results_now(self, inputs, today_str, has_today_main, has_saved_setting, should_save_image):
         """Apply Fitbit fetch results on the main thread (thread-safe)."""
         eff   = inputs.get('empirical_efficiency', 1.0)
         need  = inputs.get('sleep_need_hours', self.bedtime_goal.get())
@@ -1384,8 +2131,23 @@ class ClockWidget:
         debt  = inputs.get('sleep_debt_hours', 0.0)
         bathy = inputs.get('bathyphase_hour')
 
-        self.raw_sleep_logs = inputs.get('raw_sleep_logs', [])
-        self._sleep_table_needs_refresh = True
+        next_raw_logs = inputs.get('raw_sleep_logs', [])
+        raw_signature = tuple(
+            (
+                log.get('dateOfSleep'), log.get('startTime'), log.get('endTime'),
+                log.get('minutesAsleep'), log.get('isMainSleep'),
+            )
+            for log in next_raw_logs
+        )
+        next_signature = (
+            wake, start, dur, debt, bathy, eff, need,
+            inputs.get('active_sleep_date'), raw_signature,
+        )
+        data_changed = next_signature != getattr(self, '_fitbit_display_signature', None)
+        self._fitbit_display_signature = next_signature
+        self.raw_sleep_logs = next_raw_logs
+        if data_changed:
+            self._sleep_table_needs_refresh = True
 
         self._sync_sleep_inclusion(self.raw_sleep_logs)
 
@@ -1413,83 +2175,109 @@ class ClockWidget:
             self.bathyphase_hour    = bathy
             self.sleep_efficiency   = eff
             self.sleep_need_hours   = need
-            self.raw_sleep_logs     = inputs.get('raw_sleep_logs', [])
+            self.raw_sleep_logs     = next_raw_logs
             self.active_sleep_date  = inputs.get('active_sleep_date')
 
             self.last_fitbit_update = datetime.datetime.now()
 
-            # Push main sleep and time-local naps into the adaptive model.
-            self._apply_energy_curve_params()
+            if data_changed:
+                # Push main sleep and time-local naps into the adaptive model.
+                self._apply_energy_curve_params()
+                self.update_metric_labels()
+                self.populate_sleep_table()
+                self._schedule_clock_redraw({
+                    "sleep_arc", "energy_curve", "sleep_debt_text",
+                    "energy_indicators", "clock_hand",
+                })
 
-            self.update_metric_labels()
-            self.populate_sleep_table()
-            self.draw_clock()
-
-            if should_save_image:
+            if should_save_image and data_changed:
                 self.root.after(1000, self.save_clock_image)
         else:
             print("[update_fitbit_data] wake_hour still None after fetch.")
 
-    def update_calendar_data(self):
+    def update_calendar_data(self, reason: str = "scheduled"):
         """Fetch today's events from Google Calendar in the background."""
         if getattr(self, '_calendar_refreshing', False):
             print("[ClockWidget] Calendar refresh already in progress, skipping.")
             return
         
         self._calendar_refreshing = True
+        print(f"[ClockWidget] Calendar refresh started ({reason}).")
 
         def _task():
             try:
-                if not getattr(self, 'calendar_svc', None):
+                from google_calendar_client import (
+                    get_calendar_service, get_calendar_events,
+                )
+                service = self.calendar_svc
+                if not service:
                     try:
                         print("[ClockWidget] Initializing Google Calendar service...")
-                        self.calendar_svc = get_calendar_service()
+                        service = get_calendar_service()
                     except Exception as e:
                         print(f"[Calendar] Failed to initialize service: {e}")
                         return
 
-                if not self.calendar_svc:
+                if not service:
                     print("[ClockWidget] Calendar service is None, aborting refresh.")
                     return
                 
                 print("[ClockWidget] Fetching calendar events...")
-                events = get_calendar_events(self.calendar_svc, 'primary')
-                self.calendar_events = events
-                self._last_calendar_refresh_time = datetime.datetime.now()
+                events = get_calendar_events(service, 'primary')
                 print(f"[Calendar] Successfully fetched {len(events)} events.")
-                self.root.after(0, lambda: (self._set_reauth_status('calendar', False), self.draw_clock()))
-            except CalReauthRequiredError:
-                print("[Calendar] Re-authentication required.")
-                self.root.after(0, lambda: self._set_reauth_status('calendar', True))
+                self._post_ui(self._apply_calendar_results, service, events)
             except Exception as e:
-                print(f"[Calendar] Update failed: {e}")
+                if e.__class__.__name__ == "ReauthRequiredError":
+                    print("[Calendar] Re-authentication required.")
+                    self._post_ui(self._set_reauth_status, 'calendar', True)
+                else:
+                    print(f"[Calendar] Update failed: {e}")
             finally:
-                self._calendar_refreshing = False
+                self._post_ui(self._finish_calendar_refresh)
         
-        threading.Thread(target=_task, daemon=True).start()
+        self._submit_background(_task)
+
+    @staticmethod
+    def _calendar_signature(events):
+        return tuple(
+            (
+                event.get('summary'), event.get('is_all_day'),
+                event.get('start_dt'), event.get('end_dt'),
+            )
+            for event in events
+        )
+
+    def _apply_calendar_results(self, service, events):
+        signature = self._calendar_signature(events)
+        changed = signature != getattr(self, '_calendar_display_signature', None)
+        self.calendar_svc = service
+        self.calendar_events = events
+        self._calendar_display_signature = signature
+        self._last_calendar_refresh_time = datetime.datetime.now()
+        self._set_reauth_status('calendar', False)
+        if changed:
+            self._schedule_clock_redraw({"calendar_events"})
+
+    def _finish_calendar_refresh(self):
+        self._calendar_refreshing = False
 
     def _build_sleep_table(self):
-        """Build the styled sleep log table inside sleep_table_window."""
-        ACCENT  = "#00ffcc"
-        HDR_BG  = "#1e1e1e"
-        BG      = self.solid_bg
+        """Build the styled sleep log inside its retained settings page."""
+        ACCENT  = self.UI_ACCENT
+        HDR_BG  = self.UI_SURFACE
+        BG      = self.UI_BG
 
         outer = tk.Frame(self.sleep_table_window, bg=HDR_BG, bd=0)
         outer.pack(fill=tk.BOTH, expand=True)
 
-        # Draggable title bar
+        # Page heading (the containing settings window owns the drag bar).
         title_bar = tk.Frame(outer, bg=HDR_BG)
         title_bar.pack(fill=tk.X)
         title_lbl = tk.Label(
-            title_bar, text="  Sleep Log", bg=HDR_BG, fg=ACCENT,
-            font=("Segoe UI", 10, "bold"), anchor="w", padx=4, pady=6
+            title_bar, text="  Sleep log", bg=HDR_BG, fg=self.UI_TEXT,
+            font=("Segoe UI", 11, "bold"), anchor="w", padx=6, pady=9
         )
         title_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        # Bind drag to title bar only
-        for w in (title_bar, title_lbl):
-            w.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_table_window))
-            w.bind("<B1-Motion>", self.on_drag_motion)
-
         # Column specs: (header_text, pixel_width, data_anchor)
         self._table_cols = [
             ("Inc.",     35,  "center"),
@@ -1506,6 +2294,9 @@ class ClockWidget:
         # Single shared grid frame — headers at row 0, data below
         self.table_frame = tk.Frame(outer, bg=BG)
         self.table_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0, 6))
+        self._sleep_table_width = sum(width for _, width, _ in self._table_cols) + 28
+        self._table_row_pool = []
+        self._table_separator = tk.Frame(self.table_frame, bg=self.UI_BORDER, height=1)
 
         for col_i, (hdr_text, px_width, _) in enumerate(self._table_cols):
             self.table_frame.columnconfigure(col_i, minsize=px_width, weight=0)
@@ -1523,44 +2314,57 @@ class ClockWidget:
 
 
     def _add_divider(self, text, parent):
+        parent_bg = parent.cget("bg")
         if parent.winfo_children():
-            sep = tk.Frame(parent, bg="#444444", height=1)
-            sep.pack(fill=tk.X, pady=(5, 5))
+            sep = tk.Frame(parent, bg=self.UI_BORDER, height=1)
+            sep.pack(fill=tk.X, pady=(9, 8))
             self._control_widgets.append(sep)
         
-        lbl = tk.Label(parent, text=text, bg=self.solid_bg, fg="white", font=("Arial", 8, "bold underline"))
-        lbl.pack(side=tk.TOP, anchor=tk.W, pady=(0, 2))
+        lbl = tk.Label(
+            parent, text=text.title(), bg=parent_bg, fg=self.UI_MUTED,
+            font=("Segoe UI", 9, "bold"), anchor=tk.W,
+        )
+        lbl.pack(side=tk.TOP, anchor=tk.W, pady=(0, 4))
         self._control_widgets.append(lbl)
 
     def _add_toggle(self, text, var, cmd, parent, tooltip=None):
+        parent_bg = parent.cget("bg")
         cb = tk.Checkbutton(
             parent,
             text=text,
             variable=var,
             command=cmd,
-            bg=self.solid_bg,
-            fg="white",
-            selectcolor="#3c3c3c",
-            activebackground=self.solid_bg,
-            activeforeground="white"
+            bg=parent_bg,
+            fg=self.UI_TEXT,
+            selectcolor=self.UI_SURFACE_ALT,
+            activebackground=parent_bg,
+            activeforeground=self.UI_ACCENT_HOVER,
+            highlightthickness=0,
+            bd=0,
+            padx=6,
+            pady=4,
+            anchor=tk.W,
+            cursor="hand2",
+            font=("Segoe UI", 9),
         )
-        cb.pack(side=tk.TOP, anchor=tk.W)
+        cb.pack(side=tk.TOP, fill=tk.X, anchor=tk.W)
         if tooltip:
             Tooltip(cb, tooltip)
         self._control_widgets.append(cb)
         return cb
 
     def _add_slider(self, text, var, from_, to, parent, resolution=0.1, command=None, tooltip=None):
-        frame = tk.Frame(parent, bg=self.solid_bg)
-        frame.pack(side=tk.TOP, fill=tk.X)
-        lbl = tk.Label(frame, text=text, bg=self.solid_bg, fg="white", font=("Arial", 7))
+        parent_bg = parent.cget("bg")
+        frame = tk.Frame(parent, bg=parent_bg)
+        frame.pack(side=tk.TOP, fill=tk.X, pady=2)
+        lbl = tk.Label(frame, text=text, bg=parent_bg, fg=self.UI_TEXT, font=("Segoe UI", 9))
         lbl.pack(side=tk.TOP, anchor=tk.W)
         
         s = tk.Scale(
             frame, variable=var, from_=from_, to=to, resolution=resolution,
-            orient=tk.HORIZONTAL, bg=self.solid_bg, fg="white",
-            highlightthickness=0, troughcolor="#404040", activebackground="#00ffcc",
-            showvalue=True, font=("Arial", 7)
+            orient=tk.HORIZONTAL, bg=parent_bg, fg=self.UI_MUTED,
+            highlightthickness=0, troughcolor=self.UI_SURFACE_ALT, activebackground=self.UI_ACCENT,
+            showvalue=True, font=("Segoe UI", 8), bd=0,
         )
         s.pack(side=tk.TOP, fill=tk.X, padx=5)
         if command:
@@ -1574,35 +2378,27 @@ class ClockWidget:
         self._control_widgets.append(s)
 
     def _build_sleep_model(self):
-        """Build the sleep model settings window."""
-        ACCENT  = "#00ffcc"
-        HDR_BG  = "#1e1e1e"
-        BG      = self.solid_bg
+        """Build the advanced model inside its retained settings page."""
+        ACCENT  = self.UI_ACCENT
+        HDR_BG  = self.UI_SURFACE
+        BG      = self.UI_BG
 
         outer = tk.Frame(self.sleep_model_window, bg=HDR_BG, bd=0)
         outer.pack(fill=tk.BOTH, expand=True)
 
-        # Draggable title bar
+        # Page heading (the containing settings window owns the drag bar).
         title_bar = tk.Frame(outer, bg=HDR_BG)
         title_bar.pack(fill=tk.X)
         title_lbl = tk.Label(
-            title_bar, text="  Sleep Model", bg=HDR_BG, fg=ACCENT,
-            font=("Segoe UI", 10, "bold"), anchor="w", padx=4, pady=6
+            title_bar, text="  Advanced sleep model", bg=HDR_BG, fg=self.UI_TEXT,
+            font=("Segoe UI", 11, "bold"), anchor="w", padx=6, pady=9
         )
         title_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        # Bind drag to title bar only
-        for w in (title_bar, title_lbl):
-            w.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, self.sleep_model_window))
-            w.bind("<B1-Motion>", self.on_drag_motion)
-
         content = tk.Frame(outer, bg=BG)
         content.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
 
         def on_model_change():
-            self.draw_clock()
-            self._save_sleep_settings()
-            # If bedtime goal changed, we might need a debt recalculation
-            self._recalculate_debt()
+            self._schedule_settings_refresh(recalculate_debt=True)
             
         def reset_model_defaults():
             self.bedtime_goal.set(9.75)
@@ -1641,12 +2437,7 @@ class ClockWidget:
                          tooltip="Show an inward-pointing triangle at your highest predicted energy point today.")
 
         # Reset button
-        reset_btn = tk.Button(
-            content, text="Reset", command=reset_model_defaults,
-            bg="#404040", fg="#ff6b6b", activebackground="#555555",
-            activeforeground="white", relief=tk.FLAT, padx=10, pady=2,
-            font=("Arial", 8, "bold")
-        )
+        reset_btn = self._settings_button(content, "Reset to defaults", reset_model_defaults, danger=True)
         reset_btn.pack(side=tk.BOTTOM, pady=(10, 0))
 
     def _recalculate_debt(self, *args):
@@ -1672,7 +2463,9 @@ class ClockWidget:
             # Refresh labels, table, and curve
             self.update_metric_labels()
             self.populate_sleep_table()
-            self.draw_clock()
+            self._schedule_clock_redraw({
+                "energy_curve", "sleep_debt_text", "energy_indicators", "clock_hand"
+            })
         except Exception as e:
             print(f"[_recalculate_debt] Error: {e}")
 
@@ -1681,18 +2474,20 @@ class ClockWidget:
         """Populate the sleep table from self.raw_sleep_logs."""
         if not hasattr(self, 'table_frame') or not hasattr(self, '_table_cols'):
             return
+        if (not getattr(self, 'sleep_table_page', None)
+                or not self._settings_page_selected(self.sleep_table_page)):
+            self._sleep_table_needs_refresh = True
+            return
 
-        for widget in self.table_frame.grid_slaves():
-            if int(widget.grid_info().get('row', 0)) >= 2:
-                widget.destroy()
+        started_at = time.perf_counter()
 
         TODAY_STR = datetime.datetime.now().strftime("%Y-%m-%d")
-        ACCENT    = "#00ffcc"
-        ROW_ODD   = "#2f2f2f"
-        ROW_EVN   = "#272727"
-        TODAY_BG  = "#2a2a4a"
+        ACCENT    = self.UI_ACCENT
+        ROW_ODD   = self.UI_SURFACE_ALT
+        ROW_EVN   = self.UI_SURFACE
+        TODAY_BG  = "#293548"
         TODAY_FG  = "#aaddff"
-        FG        = "#e0e0e0"
+        FG        = self.UI_TEXT
         NAP_FG    = "#9ecfb8"
 
         daily_logs: dict[str, list] = {}
@@ -1738,7 +2533,10 @@ class ClockWidget:
                 self.energy_curve.sleep_debt_hours = new_debt
                 self.update_metric_labels()
                 self.populate_sleep_table()
-                self.draw_clock()
+                self._schedule_clock_redraw({
+                    "sleep_arc", "energy_curve", "sleep_debt_text",
+                    "energy_indicators", "clock_hand",
+                })
             except Exception as e:
                 print(f"[toggle_date] Instant refresh failed: {e}")
             self.update_fitbit_data()
@@ -1761,12 +2559,71 @@ class ClockWidget:
             eff_val = (mins_asleep / mins_in_bed * 100) if mins_in_bed > 0 else None
             return start_fmt, end_fmt, asleep_h, eff_val
 
+        used_pool_rows = 0
+
+        def acquire_row(row_idx, bg_color, include_state, cell_data, font):
+            nonlocal used_pool_rows
+            while len(self._table_row_pool) <= used_pool_rows:
+                include_var = tk.BooleanVar(value=True)
+                check = tk.Checkbutton(
+                    self.table_frame,
+                    variable=include_var,
+                    bg=self.UI_SURFACE,
+                    selectcolor=self.UI_SURFACE_ALT,
+                    activebackground=self.UI_SURFACE,
+                    highlightthickness=0,
+                    bd=0,
+                    padx=0,
+                    pady=0,
+                    cursor="hand2",
+                )
+                blank = tk.Label(self.table_frame, text="", bg=self.UI_SURFACE)
+                labels = [
+                    tk.Label(
+                        self.table_frame, text="", bg=self.UI_SURFACE, fg=self.UI_TEXT,
+                        font=("Segoe UI", 9), padx=6,
+                    )
+                    for _ in range(8)
+                ]
+                self._table_row_pool.append({
+                    "include_var": include_var,
+                    "check": check,
+                    "blank": blank,
+                    "labels": labels,
+                })
+
+            row = self._table_row_pool[used_pool_rows]
+            used_pool_rows += 1
+            check = row["check"]
+            blank = row["blank"]
+            if include_state is not None:
+                date_str, is_included = include_state
+                row["include_var"].set(is_included)
+                check.configure(
+                    command=lambda d=date_str, v=row["include_var"]: toggle_date(d, v),
+                    bg=bg_color,
+                    activebackground=bg_color,
+                    selectcolor=self.UI_SURFACE_ALT,
+                )
+                blank.grid_remove()
+                check.grid(row=row_idx, column=0, sticky="nsew")
+            else:
+                check.grid_remove()
+                blank.configure(bg=bg_color)
+                blank.grid(row=row_idx, column=0, sticky="nsew")
+
+            for col_i, (label, (value, anchor, fg_color)) in enumerate(zip(row["labels"], cell_data)):
+                label.configure(
+                    text=value, bg=bg_color, fg=fg_color, font=font, anchor=anchor,
+                )
+                label.grid(row=row_idx, column=col_i + 1, sticky="ew", pady=1)
+
         def render_row(
             row_idx: int,
             bg_color: str,
             row_fg: str,
             debt_fg: str,
-            inc_widget,
+            include_state,
             day_fmt: str,
             date_fmt: str,
             start_fmt: str,
@@ -1777,10 +2634,6 @@ class ClockWidget:
             wtd_fmt: str,
             font: tuple = ("Segoe UI", 9),
         ) -> None:
-            if inc_widget is not None:
-                inc_widget.grid(row=row_idx, column=0, sticky="nsew")
-            else:
-                tk.Label(self.table_frame, text="", bg=bg_color).grid(row=row_idx, column=0, sticky="nsew")
             cell_data = [
                 (day_fmt, "center", row_fg),
                 (date_fmt, "e", row_fg),
@@ -1791,12 +2644,7 @@ class ClockWidget:
                 (debt_fmt, "e", debt_fg),
                 (wtd_fmt, "e", debt_fg),
             ]
-            for col_i, (val, anc, fg_color) in enumerate(cell_data):
-                tk.Label(
-                    self.table_frame, text=val,
-                    bg=bg_color, fg=fg_color,
-                    font=font, anchor=anc, padx=6,
-                ).grid(row=row_idx, column=col_i + 1, sticky="ew", pady=1)
+            acquire_row(row_idx, bg_color, include_state, cell_data, font)
 
         for i, date_str in enumerate(display_dates):
             is_excluded = date_str in self.excluded_dates
@@ -1817,14 +2665,7 @@ class ClockWidget:
             main_sleep = next((s for s in logs if s.get('isMainSleep')), None)
             naps = [s for s in logs if not s.get('isMainSleep')]
 
-            cb_var = tk.BooleanVar(value=not is_excluded)
-            cb = tk.Checkbutton(
-                self.table_frame,
-                variable=cb_var,
-                command=lambda d=date_str, v=cb_var: toggle_date(d, v),
-                bg=bg_color, selectcolor="#3c3c3c",
-                activebackground=bg_color, bd=0, padx=0, pady=0,
-            )
+            include_state = (date_str, not is_excluded)
 
             if main_sleep:
                 start_fmt, end_fmt, asleep_h, eff_val = session_fields(main_sleep)
@@ -1847,7 +2688,7 @@ class ClockWidget:
                 if is_excluded:
                     debt_fg = "#442222" if debt_val > 0.1 else "#224422"
                 render_row(
-                    grid_row, bg_color, row_fg, debt_fg, cb,
+                    grid_row, bg_color, row_fg, debt_fg, include_state,
                     day_fmt, date_fmt, start_fmt, end_fmt,
                     f"{asleep_h:.1f}h",
                     f"{eff_val:.0f}%" if eff_val is not None else "—",
@@ -1861,7 +2702,7 @@ class ClockWidget:
                     total_wtd += wtd_val
                 debt_fg = "#ff6b6b" if not is_excluded else "#442222"
                 render_row(
-                    grid_row, bg_color, row_fg, debt_fg, cb,
+                    grid_row, bg_color, row_fg, debt_fg, include_state,
                     day_fmt, date_fmt, "—", "—", "0.0h", "—",
                     f"{debt_val:+.1f}h", f"{wtd_val:+.1f}h",
                 )
@@ -1888,8 +2729,9 @@ class ClockWidget:
                     grid_row += 1
 
         # Summary Row (Averages / Totals)
-        sep = tk.Frame(self.table_frame, bg="#444444", height=1)
-        sep.grid(row=grid_row, column=0, columnspan=len(self._table_cols), sticky="ew", pady=2)
+        self._table_separator.grid(
+            row=grid_row, column=0, columnspan=len(self._table_cols), sticky="ew", pady=2
+        )
         grid_row += 1
         
         # Circular mean helper for times
@@ -1929,55 +2771,71 @@ class ClockWidget:
             (f"{total_wtd:+.1f}h", "e", wtd_fg),
         ]
         
-        for col_i, (val, anc, fg_color) in enumerate(summary_data):
-            lbl = tk.Label(
-                self.table_frame, text=val,
-                bg="#1a1a1a", fg=fg_color,
-                font=("Segoe UI", 9, "bold"),
-                anchor=anc,
-                padx=6
-            )
-            lbl.grid(row=grid_row, column=col_i + 1, sticky="ew", pady=2)
+        acquire_row(
+            grid_row, self.UI_BG, None, summary_data, ("Segoe UI", 9, "bold")
+        )
 
-        # Shrink-wrap window to exact content size
-        self.sleep_table_window.update_idletasks()
-        self.sleep_table_window.geometry("")
+        for row in self._table_row_pool[used_pool_rows:]:
+            row["check"].grid_remove()
+            row["blank"].grid_remove()
+            for label in row["labels"]:
+                label.grid_remove()
+
         self._sleep_table_needs_refresh = False
+        self._log_timing("sleep log refresh", started_at)
 
     def update_metric_labels(self):
         """Update the Bathyphase and Efficiency labels in the controls window."""
+        if not hasattr(self, 'bathyphase_label') or not hasattr(self, 'efficiency_label'):
+            return
         if self.bathyphase_hour is not None:
             h = int(self.bathyphase_hour)
             m = int((self.bathyphase_hour - h) * 60)
             am_pm = "AM" if h < 12 else "PM"
             h_display = h % 12
             if h_display == 0: h_display = 12
-            self.bathyphase_label.config(text=f"Bathyphase: {h_display}:{m:02d} {am_pm}")
+            self.bathyphase_label.config(text=f"Bathyphase  ·  {h_display}:{m:02d} {am_pm}")
         else:
-            self.bathyphase_label.config(text="Bathyphase: --:-- --")
+            self.bathyphase_label.config(text="Bathyphase  ·  --:-- --")
             
         if self.sleep_efficiency is not None:
-            self.efficiency_label.config(text=f"Sleep Efficiency: {self.sleep_efficiency*100:.1f}%")
+            self.efficiency_label.config(text=f"Sleep efficiency  ·  {self.sleep_efficiency*100:.1f}%")
         else:
-            self.efficiency_label.config(text="Sleep Efficiency: --.-%")
+            self.efficiency_label.config(text="Sleep efficiency  ·  --.-%")
 
     def show_initial(self):
         self.make_clock_transparent()
-        self.make_controls_hidden()
-        self.update_fitbit_data()
-        self.update_calendar_data()
-        self.draw_clock()
         self.root.deiconify()
-        self.update_bedtime_countdown_visibility()
+        # Realize the borderless window before measuring the canvas. A draw
+        # while withdrawn can see a 1x1 canvas and leave only later partial
+        # layers painted.
+        self.root.update_idletasks()
+        self.draw_clock()
+        self.root.after_idle(self._schedule_clock_redraw)
+        self.root.after_idle(lambda: self._refresh_window_rect("root", self.root))
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
-        self.setup_tray_icon()
+        self._log_timing("first visible frame queued", self._launch_started)
+        self.root.after_idle(self._start_background_services)
+
+    def _start_background_services(self):
+        """Begin non-critical work only after the clock has become visible."""
+        self.fetch_sun_times()
+        self.update_fitbit_data(reason="startup")
+        self.update_calendar_data(reason="startup")
+        self.update_bedtime_countdown_visibility(persist=False)
+        self.root.after(75, self._ensure_controls_window)
+        self.root.after(150, self.setup_tray_icon)
 
     def on_close(self):
+        self._closing = True
+        self._stop_bedtime_countdown_timer()
         if hasattr(self, 'tray_icon'):
             self.tray_icon.stop()
+        self._executor.shutdown(wait=False, cancel_futures=True)
         self.root.destroy()
 
     def create_tray_image(self, now):
+        from PIL import Image, ImageDraw
         image = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
         draw = ImageDraw.Draw(image)
        
@@ -2007,7 +2865,7 @@ class ClockWidget:
         self.root.deiconify()
         self.root.lift()
         self.root.focus_force()
-        self.make_solid()
+        self.make_clock_solid()
 
     def toggle_widget(self):
         if self.root.winfo_viewable():
@@ -2019,19 +2877,25 @@ class ClockWidget:
         if getattr(self, '_tray_initialized', False):
             return
         self._tray_initialized = True
+        import pystray
+        from PIL import ImageTk
 
         def on_quit(icon, item):
             icon.stop()
-            self.root.after(0, self.root.destroy)
+            self._post_ui(self.on_close)
 
         def on_toggle(icon, item=None):
-            self.root.after(0, self.toggle_widget)
+            self._post_ui(self.toggle_widget)
+
+        def on_settings(icon, item=None):
+            self._post_ui(self.toggle_controls)
            
         def on_reauth(icon, item=None):
-            self.root.after(0, self.relink_fitbit_and_refresh)
+            self._post_ui(self.relink_fitbit_and_refresh)
 
         self.tray_menu = pystray.Menu(
             pystray.MenuItem('Show/Hide Clock', on_toggle, default=True),
+            pystray.MenuItem('Settings', on_settings),
             pystray.MenuItem('Relink Fitbit', on_reauth),
             pystray.MenuItem('Exit', on_quit)
         )
@@ -2054,7 +2918,13 @@ class ClockWidget:
             new_size = (event.width, event.height)
             if getattr(self, '_last_canvas_size', None) != new_size:
                 self._last_canvas_size = new_size
-                self.draw_clock()
+                if self._resize_redraw_id is not None:
+                    self.root.after_cancel(self._resize_redraw_id)
+                self._resize_redraw_id = self.root.after(35, self._flush_resize_redraw)
+
+    def _flush_resize_redraw(self):
+        self._resize_redraw_id = None
+        self._schedule_clock_redraw()
 
     def update_clock(self):
         now = datetime.datetime.now()
@@ -2069,16 +2939,19 @@ class ClockWidget:
             if now.hour == 0 and now.minute == 0:
                 print(f"[ClockWidget] Midnight reset at {now}")
                 self.fetch_sun_times()
-                self.update_fitbit_data(force=True)
-                self.update_calendar_data()
+                self.update_fitbit_data(force=True, reason="midnight")
+                self.update_calendar_data(reason="midnight")
             # 2. 10-minute polling (Fitbit + Calendar + Celestial)
             elif now.minute % 10 == 0:
                 print(f"[ClockWidget] 10-minute polling refresh at {now}")
-                self.update_fitbit_data()
-                self.update_calendar_data()
+                self.update_fitbit_data(reason="poll")
+                self.update_calendar_data(reason="poll")
 
             self._last_drawn_minute = current_minute
-            self.draw_clock()
+            if self.canvas.find_all():
+                self.draw_clock({"calendar_events", "sun_and_moon", "solar_circle", "clock_hand"})
+            else:
+                self.draw_clock()
         else:
             self._update_hand_only(now)
             
@@ -2092,20 +2965,12 @@ class ClockWidget:
                     self.tray_icon.icon = img
                 except Exception:
                     pass
-            try:
-                self.tk_icon = ImageTk.PhotoImage(img)
-                self.root.iconphoto(True, self.tk_icon)
-            except Exception:
-                pass
-               
         seconds_to_next_mark = 10 - (now.second % 10)
         ms_to_next_mark = seconds_to_next_mark * 1000 - int(now.microsecond / 1000)
         self.root.after(max(100, ms_to_next_mark + 50), self.update_clock)
 
     def _update_hand_only(self, now):
         """Lightweight redraw: only move the clock hand between full redraws."""
-        self.canvas.delete("clock_hand")
-        self.canvas.delete("solar_circle")
         w = self.canvas.winfo_width()
         h = self.canvas.winfo_height()
         center_x, center_y = w / 2, h / 2
@@ -2117,6 +2982,23 @@ class ClockWidget:
         self._draw_clock_hand(now, center_x, center_y, radius)
 
     def _apply_energy_curve_params(self):
+        raw_signature = tuple(
+            (
+                log.get('dateOfSleep'), log.get('startTime'), log.get('endTime'),
+                log.get('minutesAsleep'), log.get('isMainSleep'),
+            )
+            for log in self.raw_sleep_logs
+        )
+        signature = (
+            self.wake_hour, self.sleep_debt_hours, self.sleep_duration,
+            self.bathyphase_hour, self.active_sleep_date, raw_signature,
+            self.show_sleep_debt.get(), self.include_naps.get(),
+            self.tau_wake.get(), self.tau_sleep.get(), self.tau_inertia.get(),
+            self.debt_factor.get(), self.circadian_offset.get(), self.use_bathyphase.get(),
+        )
+        if signature == getattr(self, '_energy_param_signature', None):
+            return
+        self._energy_param_signature = signature
         self.energy_curve.wake_hour = self.wake_hour
         self.energy_curve.sleep_debt_hours = self.sleep_debt_hours if self.show_sleep_debt.get() else 0.0
         main_duration, nap_intervals = sleep_model_context(
@@ -2136,8 +3018,6 @@ class ClockWidget:
         self.energy_curve.tau_inertia = self.tau_inertia.get()
         self.energy_curve.debt_factor = self.debt_factor.get()
         self.energy_curve.circadian_peak_offset = None if self.use_bathyphase.get() else self.circadian_offset.get()
-        
-        self.energy_curve.max_rested_energy = self._get_max_energy()
 
     def _draw_clock_hand(self, now, center_x, center_y, radius):
         current_hour = now.hour + now.minute / 60.0 + now.second / 3600.0
@@ -2149,22 +3029,38 @@ class ClockWidget:
        
         arrow_len = radius * 0.12
         hand_width = max(2, int(radius/25))
-        self.canvas.create_line(
-            center_x, center_y, hx, hy,
-            fill="#FF9F1C", width=hand_width,
-            arrow=tk.LAST, arrowshape=(arrow_len, arrow_len, arrow_len/3),
-            capstyle=tk.ROUND,
-            tags="clock_hand"
-        )
+        line_items = self.canvas.find_withtag("clock_hand_line")
+        if line_items:
+            hand_line = line_items[0]
+            self.canvas.coords(hand_line, center_x, center_y, hx, hy)
+            self.canvas.itemconfigure(
+                hand_line, width=hand_width,
+                arrowshape=(arrow_len, arrow_len, arrow_len/3),
+            )
+        else:
+            self.canvas.create_line(
+                center_x, center_y, hx, hy,
+                fill="#FF9F1C", width=hand_width,
+                arrow=tk.LAST, arrowshape=(arrow_len, arrow_len, arrow_len/3),
+                capstyle=tk.ROUND,
+                tags=("clock_hand", "clock_hand_line"),
+            )
         
         # Add a circular cap at the center for a perfectly rounded terminus
         dot_r = hand_width / 2
-        self.canvas.create_oval(
-            center_x - dot_r, center_y - dot_r,
-            center_x + dot_r, center_y + dot_r,
-            fill="#FF9F1C", outline="",
-            tags="clock_hand"
-        )
+        dot_items = self.canvas.find_withtag("clock_hand_dot")
+        if dot_items:
+            self.canvas.coords(
+                dot_items[0], center_x - dot_r, center_y - dot_r,
+                center_x + dot_r, center_y + dot_r,
+            )
+        else:
+            self.canvas.create_oval(
+                center_x - dot_r, center_y - dot_r,
+                center_x + dot_r, center_y + dot_r,
+                fill="#FF9F1C", outline="",
+                tags=("clock_hand", "clock_hand_dot"),
+            )
         
         if self.wake_hour is not None:
             self._apply_energy_curve_params()
@@ -2181,23 +3077,38 @@ class ClockWidget:
                 font_size = max(8, int(radius / 11))
                 text_color = self.energy_curve.interpolate_color(current_e)
                 
-                # Draw black outline (4 directions)
-                for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                    self.canvas.create_text(
-                        tx + dx, ty + dy,
-                        text=f"{pct}%",
-                        fill="black",
-                        font=("Segoe UI", font_size, "bold"),
-                        tags="clock_hand"
-                    )
+                text_value = f"{pct}%"
+                for index, (dx, dy) in enumerate([(-1, 0), (1, 0), (0, -1), (0, 1)]):
+                    tag = f"clock_hand_pct_outline_{index}"
+                    items = self.canvas.find_withtag(tag)
+                    if items:
+                        item_id = items[0]
+                        self.canvas.coords(item_id, tx + dx, ty + dy)
+                        self.canvas.itemconfigure(item_id, text=text_value, font=("Segoe UI", font_size, "bold"))
+                    else:
+                        self.canvas.create_text(
+                            tx + dx, ty + dy, text=text_value, fill="black",
+                            font=("Segoe UI", font_size, "bold"),
+                            tags=("clock_hand", "clock_hand_pct", tag),
+                        )
 
-                self.canvas.create_text(
-                    tx, ty,
-                    text=f"{pct}%",
-                    fill=text_color,
-                    font=("Segoe UI", font_size, "bold"),
-                    tags="clock_hand"
-                )
+                pct_items = self.canvas.find_withtag("clock_hand_pct_text")
+                if pct_items:
+                    self.canvas.coords(pct_items[0], tx, ty)
+                    self.canvas.itemconfigure(
+                        pct_items[0], text=text_value, fill=text_color,
+                        font=("Segoe UI", font_size, "bold"),
+                    )
+                else:
+                    self.canvas.create_text(
+                        tx, ty, text=text_value, fill=text_color,
+                        font=("Segoe UI", font_size, "bold"),
+                        tags=("clock_hand", "clock_hand_pct", "clock_hand_pct_text"),
+                    )
+            else:
+                self.canvas.delete("clock_hand_pct")
+        else:
+            self.canvas.delete("clock_hand_pct")
 
     def _get_celestial_positions(self, current_hour):
         """Return (sun_rad, moon_rad, m_phase_val, sun_elev), calculating current elevation every minute but caching extremes for 5 minutes."""
@@ -2211,7 +3122,8 @@ class ClockWidget:
                 user_lon = getattr(self, 'lon', None)
                 if user_lat is None or user_lon is None:
                     raise ValueError("Lat/Lon not yet available")
-                
+
+                Observer, _, sun_elevation, phase, moon_elevation = _load_astral_dependencies()
                 obs = Observer(latitude=user_lat, longitude=user_lon)
                 times = [now_utc + datetime.timedelta(hours=h) for h in range(-12, 13)]
                 
@@ -2236,6 +3148,7 @@ class ClockWidget:
                 return s_rad, m_rad, m_phase_val, 0
 
         # 2. Calculate current positions every minute using cached extremes
+        _, _, sun_elevation, _, moon_elevation = _load_astral_dependencies()
         cache = self._extremes_cache
         obs = cache['obs']
         
@@ -2280,6 +3193,7 @@ class ClockWidget:
             if user_lat is None or user_lon is None:
                 raise ValueError("Lat/Lon not available")
 
+            Observer, _, sun_elevation, _, _ = _load_astral_dependencies()
             now_utc = datetime.datetime.now(datetime.timezone.utc)
             obs = Observer(latitude=user_lat, longitude=user_lon)
             elev = sun_elevation(obs, now_utc)   # degrees, negative when below horizon
@@ -2350,14 +3264,22 @@ class ClockWidget:
         fill_color = f"#{val:02x}{val:02x}{val:02x}"
 
 
-        self.canvas.create_oval(
-            center_x - circle_r, center_y - circle_r,
-            center_x + circle_r, center_y + circle_r,
-            fill=fill_color,
-            outline="",
-            width=1,
-            tags="solar_circle"
-        )
+        circle_items = self.canvas.find_withtag("solar_circle")
+        if circle_items:
+            self.canvas.coords(
+                circle_items[0], center_x - circle_r, center_y - circle_r,
+                center_x + circle_r, center_y + circle_r,
+            )
+            self.canvas.itemconfigure(circle_items[0], fill=fill_color)
+        else:
+            self.canvas.create_oval(
+                center_x - circle_r, center_y - circle_r,
+                center_x + circle_r, center_y + circle_r,
+                fill=fill_color,
+                outline="",
+                width=1,
+                tags="solar_circle"
+            )
 
     def _interpolate_sun_color(self, elevation):
         """Return (fill_hex, alpha_0_255, outline_hex) based on sun elevation."""
@@ -2393,24 +3315,26 @@ class ClockWidget:
 
     def on_canvas_motion(self, event):
         """Handle tooltip display for calendar events."""
-        # Hide existing tooltip first
-        if self._tooltip_id:
-            self.canvas.delete(self._tooltip_id)
-            self._tooltip_id = None
-        if self._tooltip_bg_id:
-            self.canvas.delete(self._tooltip_bg_id)
-            self._tooltip_bg_id = None
+        self._update_resize_cursor(event)
 
-        # Find item under cursor
         item = self.canvas.find_withtag("current")
-        if not item:
+        item_id = item[0] if item else None
+        if item_id not in self._calendar_item_map:
+            self._hide_calendar_tooltip()
             return
-            
-        item_id = item[0]
-        if item_id in self._calendar_item_map:
-            summary = self._calendar_item_map[item_id]
-            
-            # Create tooltip text
+
+        now_monotonic = time.monotonic()
+        if (item_id == self._tooltip_event_item
+                and now_monotonic - self._last_tooltip_motion < 0.03):
+            return
+        self._last_tooltip_motion = now_monotonic
+        self._tooltip_event_item = item_id
+        summary = self._calendar_item_map[item_id]
+
+        if self._tooltip_id:
+            self.canvas.coords(self._tooltip_id, event.x, event.y - 20)
+            self.canvas.itemconfigure(self._tooltip_id, text=summary)
+        else:
             self._tooltip_id = self.canvas.create_text(
                 event.x, event.y - 20,
                 text=summary,
@@ -2419,34 +3343,99 @@ class ClockWidget:
                 anchor=tk.S,
                 state=tk.DISABLED # Transparent to clicks
             )
-            
-            # Create tooltip background
-            bbox = self.canvas.bbox(self._tooltip_id)
-            if bbox:
+
+        bbox = self.canvas.bbox(self._tooltip_id)
+        if bbox:
+            coords = (bbox[0]-4, bbox[1]-2, bbox[2]+4, bbox[3]+2)
+            if self._tooltip_bg_id:
+                self.canvas.coords(self._tooltip_bg_id, *coords)
+            else:
                 self._tooltip_bg_id = self.canvas.create_rectangle(
-                    bbox[0]-4, bbox[1]-2, bbox[2]+4, bbox[3]+2,
+                    *coords,
                     fill="#1a1a1a", outline="#9370DB", width=1,
                     state=tk.DISABLED # Transparent to clicks
                 )
-                self.canvas.tag_lower(self._tooltip_bg_id, self._tooltip_id)
+            self.canvas.tag_raise(self._tooltip_bg_id)
+            self.canvas.tag_raise(self._tooltip_id)
+
+    def _hide_calendar_tooltip(self):
+        if self._tooltip_id:
+            self.canvas.delete(self._tooltip_id)
+        if self._tooltip_bg_id:
+            self.canvas.delete(self._tooltip_bg_id)
+        self._tooltip_id = None
+        self._tooltip_bg_id = None
+        self._tooltip_event_item = None
+
+    def _update_resize_cursor(self, event):
+        if self.is_clock_transparent:
+            cursor = ""
+        else:
+            margin = 12
+            width = max(1, self.canvas.winfo_width())
+            height = max(1, self.canvas.winfo_height())
+            left, right = event.x <= margin, event.x >= width - margin
+            top, bottom = event.y <= margin, event.y >= height - margin
+            if (left and top) or (right and bottom):
+                cursor = "size_nw_se"
+            elif (right and top) or (left and bottom):
+                cursor = "size_ne_sw"
+            elif left or right:
+                cursor = "sb_h_double_arrow"
+            elif top or bottom:
+                cursor = "sb_v_double_arrow"
+            else:
+                cursor = "fleur"
+        try:
+            self.canvas.configure(cursor=cursor)
+        except tk.TclError:
+            self.canvas.configure(cursor="")
 
     def _set_reauth_status(self, service, needed):
-        if service == 'fitbit':
-            self.reauth_needed_fitbit = needed
-        else:
-            self.reauth_needed_calendar = needed
-        
-        # Update UI if needed
-        self.draw_clock()
+        attr = 'reauth_needed_fitbit' if service == 'fitbit' else 'reauth_needed_calendar'
+        if getattr(self, attr) == needed:
+            return
+        setattr(self, attr, needed)
+        self._schedule_clock_redraw({"reauth_indicators"})
 
-    def draw_clock(self):
-        self.canvas.delete("all")
-        # ... (rest of the function)
-        self._calendar_item_map.clear() # Clear item map on redraw
+    def draw_clock(self, dirty_layers=None):
+        """Draw all layers, or update only the requested retained layers."""
+        # The full compositor remains the correctness path. The retained
+        # hand-only update still handles the frequent 10-second tick, while
+        # promoting invalidated layer requests avoids overlays disappearing
+        # when a later redraw changes the canvas tag order.
+        dirty_layers = None
+        full_redraw = dirty_layers is None
+        requested_layers = set(self.DRAW_ORDER if full_redraw else dirty_layers)
+        if full_redraw:
+            self.canvas.delete("all")
+            self.energy_curve._line_ids = []
+            self._calendar_item_map.clear()
+            self._tooltip_id = None
+            self._tooltip_bg_id = None
+            self._tooltip_event_item = None
+        else:
+            if "calendar_events" in requested_layers:
+                self._hide_calendar_tooltip()
+                self._calendar_item_map.clear()
+            retained = {"energy_curve", "solar_circle", "clock_hand"}
+            for layer_name in requested_layers:
+                preserve_items = layer_name in retained
+                if layer_name == "energy_curve" and (
+                        not self.show_energy.get() or self.wake_hour is None):
+                    preserve_items = False
+                if not preserve_items:
+                    self.canvas.delete(f"layer:{layer_name}")
+                    if layer_name == "energy_curve":
+                        self.canvas.delete("energy_curve")
+                        self.energy_curve._line_ids = []
+
         w = self.canvas.winfo_width()
         h = self.canvas.winfo_height()
        
         if w < 10 or h < 10:
+            if self.root.winfo_viewable() and self._layout_retry_id is None:
+                self._layout_retry_id = self.root.after(50, self._retry_full_clock_draw)
             return
            
         center_x = w / 2
@@ -2787,9 +3776,23 @@ class ClockWidget:
             now = datetime.datetime.now()
             current_hour = now.hour + now.minute / 60.0 + now.second / 3600.0
             if self.show_sun_moon.get():
-                sun_rad, moon_rad, m_phase_val, sun_elev = self._get_celestial_positions(current_hour)
-                icon_size = max(12, int(radius / 7))
-                orbit_radius = radius + icon_size + 2
+                # Astral/location data is optional. Keep the markers visible
+                # with a deterministic clock-based fallback if it is missing
+                # or temporarily unavailable during startup.
+                try:
+                    sun_rad, moon_rad, m_phase_val, sun_elev = self._get_celestial_positions(current_hour)
+                except Exception as exc:
+                    print(f"[ClockWidget] Celestial marker fallback: {exc}")
+                    sun_rad = math.radians((18 - current_hour) * 15)
+                    moon_hour = (current_hour + 12.0) % 24.0
+                    moon_rad = math.radians((18 - moon_hour) * 15)
+                    m_phase_val = 14.765
+                    sun_elev = 0.0
+                icon_size = max(14, int(radius / 7))
+                # Keep markers inside the face. This avoids them being lost
+                # against the transparent window key on borderless Windows
+                # windows while preserving their orbital relationship.
+                orbit_radius = max(20, radius - icon_size * 1.25)
 
                 sx = center_x + orbit_radius * math.cos(sun_rad)
                 sy = center_y - orbit_radius * math.sin(sun_rad)
@@ -2821,7 +3824,7 @@ class ClockWidget:
                 # Base unlit moon (shadow)
                 self.canvas.create_oval(
                     mx - m_r, my - m_r, mx + m_r, my + m_r,
-                    fill="#444444", outline="", tags="sun_and_moon"
+                    fill="#444444", outline="#222222", width=1, tags="sun_and_moon"
                 )
                 
                 # Lit part calculation
@@ -2837,7 +3840,7 @@ class ClockWidget:
                         e_color = "#444444" if mid_p < 0 else "#E0E0E0"
                         self.canvas.create_oval(
                             mx - e_width, my - m_r, mx + e_width, my + m_r,
-                            fill=e_color, outline="", tags="sun_and_moon"
+                            fill=e_color, outline="#777777", width=1, tags="sun_and_moon"
                         )
                     else: # Waning (lit on the left)
                         self.canvas.create_arc(
@@ -2850,12 +3853,12 @@ class ClockWidget:
                         e_color = "#E0E0E0" if mid_p < 0 else "#444444"
                         self.canvas.create_oval(
                             mx - e_width, my - m_r, mx + e_width, my + m_r,
-                            fill=e_color, outline="", tags="sun_and_moon"
+                            fill=e_color, outline="#777777", width=1, tags="sun_and_moon"
                         )
                 elif 0.49 <= p <= 0.51: # Full Moon fallback
                     self.canvas.create_oval(
                         mx - m_r, my - m_r, mx + m_r, my + m_r,
-                        fill="#E0E0E0", outline="", tags="sun_and_moon"
+                        fill="#E0E0E0", outline="#777777", width=1, tags="sun_and_moon"
                     )
 
         def draw_sleep_debt_text():
@@ -2941,7 +3944,7 @@ class ClockWidget:
                 )
                 self.canvas.create_text(ix, iy, text="F", fill="white", font=("Arial", int(icon_r), "bold"), tags="reauth_icon_fitbit")
                 self.canvas.tag_bind("reauth_icon_fitbit", "<Button-1>", lambda e: self.relink_fitbit_and_refresh())
-                Tooltip(self.canvas, "Fitbit Auth Expired - Click to Re-link")
+                Tooltip(self.canvas, "Fitbit Auth Expired - Click to Re-link", tag="reauth_icon_fitbit")
                 iy += icon_r * 2.5
                 
             # Calendar warning (purple-ish)
@@ -2957,7 +3960,7 @@ class ClockWidget:
                     self.calendar_svc = None
                     self.update_calendar_data()
                 self.canvas.tag_bind("reauth_icon_cal", "<Button-1>", trigger_cal_auth)
-                Tooltip(self.canvas, "Calendar Auth Expired - Click to Re-link")
+                Tooltip(self.canvas, "Calendar Auth Expired - Click to Re-link", tag="reauth_icon_cal")
 
         # Map string names to their drawing functions
         layers = {
@@ -2977,78 +3980,135 @@ class ClockWidget:
             "clock_hand": draw_clock_hand
         }
 
-        # Draw in the configured order
+        # Draw only invalidated layers and tag every newly created item. Existing
+        # hand/solar/energy objects are updated in place by their draw methods.
         for layer_name in self.DRAW_ORDER:
-            if layer_name in layers:
-                layers[layer_name]()
+            if layer_name in layers and layer_name in requested_layers:
+                before = set(self.canvas.find_all())
+                try:
+                    layers[layer_name]()
+                except Exception as exc:
+                    # A malformed remote event or model value must not abort
+                    # the remainder of the compositor after the canvas was
+                    # cleared. Keep later layers (including the hand) alive.
+                    print(f"[ClockWidget] draw layer '{layer_name}' failed: {exc}")
+                    if layer_name == "solar_circle":
+                        circle_r = radius * (2 / 13)
+                        self.canvas.create_oval(
+                            center_x - circle_r, center_y - circle_r,
+                            center_x + circle_r, center_y + circle_r,
+                            fill="#000000", outline="", tags="solar_circle",
+                        )
+                    elif layer_name == "clock_hand":
+                        current_hour = datetime.datetime.now().hour
+                        current_hour += datetime.datetime.now().minute / 60.0
+                        hand_rad = math.radians((18 - current_hour) * 15)
+                        hx = center_x + radius * math.cos(hand_rad)
+                        hy = center_y - radius * math.sin(hand_rad)
+                        self.canvas.create_line(
+                            center_x, center_y, hx, hy,
+                            fill="#FF9F1C", width=max(2, int(radius / 25)),
+                            arrow=tk.LAST, tags="clock_hand",
+                        )
+                        dot_r = max(2, int(radius / 50))
+                        self.canvas.create_oval(
+                            center_x - dot_r, center_y - dot_r,
+                            center_x + dot_r, center_y + dot_r,
+                            fill="#FF9F1C", outline="", tags="clock_hand",
+                        )
+                new_items = set(self.canvas.find_all()) - before
+                for item_id in new_items:
+                    self.canvas.addtag_withtag(f"layer:{layer_name}", item_id)
+
+        # Full redraws create items in DRAW_ORDER, so the canvas already has
+        # the correct stacking. Avoid raising tagged groups: on some Tk builds
+        # a colon-containing tag can be treated as an item identifier and move
+        # the face above all overlays.
+        if self._tooltip_bg_id and self._tooltip_id:
+            self.canvas.tag_lower(self._tooltip_bg_id, self._tooltip_id)
+        # Controls are deliberately drawn last so they remain above the face,
+        # hand, and data overlays while the clock is solid.
+        if not self.is_clock_transparent:
+            self._draw_hover_controls()
+        if full_redraw:
+            self._has_full_clock_draw = True
 
     def save_clock_image(self):
-        """Saves a high-resolution (1200x1200px) image of the clock face to 'saved_curves/'."""
+        """Capture plain state and render the archive image off the Tk thread."""
         if self.wake_hour is None:
             return
+        self._apply_energy_curve_params()
+        snapshot = {
+            'wake_hour': self.wake_hour,
+            'sleep_hour': self.sleep_hour,
+            'sleep_duration': self.sleep_duration,
+            'show_total_bedtime': self.show_total_bedtime.get(),
+            'sunrise_hour': self.sunrise_hour,
+            'sunset_hour': self.sunset_hour,
+            'energy': {
+                name: getattr(self.energy_curve, name)
+                for name in (
+                    'wake_hour', 'sleep_debt_hours', 'sleep_duration', 'bathyphase_hour',
+                    'nap_intervals', 'tau_wake', 'tau_sleep', 'tau_inertia',
+                    'debt_factor', 'circadian_peak_offset',
+                )
+            },
+            'timestamp': datetime.datetime.now(),
+        }
+        self._submit_background(lambda: self._render_clock_image(snapshot))
 
-        # Ensure directory exists
+    def _render_clock_image(self, snapshot):
+        from PIL import Image, ImageDraw
+
         folder = os.path.join(os.path.dirname(__file__), "saved_curves")
-        if not os.path.exists(folder):
-            os.makedirs(folder)
-            
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        os.makedirs(folder, exist_ok=True)
+        timestamp = snapshot['timestamp'].strftime("%Y-%m-%d_%H-%M-%S")
         filepath = os.path.join(folder, f"{timestamp}_energy_curve.png")
-        
-        # High-res rendering (1200x1200px)
+
         size = 1200
-        img = Image.new('RGB', (size, size), "#2b2b2b") # Use solid_bg value
+        img = Image.new('RGB', (size, size), "#2b2b2b")
         draw = ImageDraw.Draw(img)
-        
         center_x = size / 2
         center_y = size / 2
-        
-        # Proportional radius (matching the widget's aspect ratio)
         scale = size / 230.0
         radius = 77 * scale
-        
-        # 1. Background Face
         draw.ellipse([center_x - radius, center_y - radius, center_x + radius, center_y + radius], fill="#ffffff", outline="black", width=int(3 * scale))
-        
-        # 2. Night Shading
-        if self.sunrise_hour is not None and self.sunset_hour is not None:
-            night_hours = self.sunrise_hour - self.sunset_hour
+
+        sunrise_hour = snapshot['sunrise_hour']
+        sunset_hour = snapshot['sunset_hour']
+        if sunrise_hour is not None and sunset_hour is not None:
+            night_hours = sunrise_hour - sunset_hour
             if night_hours < 0: night_hours += 24
-            sunset_angle_tk = (18 - self.sunset_hour) * 15
+            sunset_angle_tk = (18 - sunset_hour) * 15
             extent_tk = -(night_hours * 15)
-            
             pil_start = -sunset_angle_tk
             pil_end = pil_start - extent_tk
             draw.pieslice([center_x - radius, center_y - radius, center_x + radius, center_y + radius], start=pil_start, end=pil_end, fill="#2C3E50")
 
-        # 3. Sleep Arc
-        if self.wake_hour is not None:
-            if self.show_total_bedtime.get():
-                start_h = self.sleep_hour
+        wake_hour = snapshot['wake_hour']
+        if wake_hour is not None:
+            if snapshot['show_total_bedtime']:
+                start_h = snapshot['sleep_hour']
             else:
-                start_h = (self.wake_hour - self.sleep_duration) % 24 if self.sleep_duration else self.sleep_hour
-            
+                duration = snapshot['sleep_duration']
+                start_h = (wake_hour - duration) % 24 if duration else snapshot['sleep_hour']
             if start_h is not None:
-                display_dur = self.wake_hour - start_h
+                display_dur = wake_hour - start_h
                 if display_dur < 0: display_dur += 24
                 sleep_start_angle = (18 - start_h) * 15
                 sleep_extent = -(display_dur * 15)
-                
                 margin = radius * 0.15
-                bbox_sleep = [center_x - (radius - margin), center_y - (radius - margin), 
+                bbox_sleep = [center_x - (radius - margin), center_y - (radius - margin),
                               center_x + (radius - margin), center_y + (radius - margin)]
                 draw.pieslice(bbox_sleep, start=-sleep_start_angle, end=-sleep_start_angle - sleep_extent, fill="#6A5ACD")
 
-        # 4. Energy Curve (Always Normalized for the archive)
-        old_norm = self.energy_curve.normalize
-        self.energy_curve.normalize = True
-        self.energy_curve.draw(center_x, center_y, radius, self.wake_hour, draw_obj=draw, width_scale=scale)
-        self.energy_curve.normalize = old_norm
-        
-        # 5. Perimeter Line
+        curve = EnergyCurve(None)
+        for name, value in snapshot['energy'].items():
+            setattr(curve, name, value)
+        curve.normalize = True
+        curve.draw(center_x, center_y, radius, wake_hour, draw_obj=draw, width_scale=scale)
+
         draw.ellipse([center_x - radius, center_y - radius, center_x + radius, center_y + radius], outline="black", width=int(2 * scale))
-        
-        # 6. Ticks (No Numbers)
         for h_tick in range(0, 24, 2):
             angle = (18 - h_tick) * 15
             rad = math.radians(angle)
@@ -3058,8 +4118,8 @@ class ClockWidget:
             x2 = center_x + radius * math.cos(rad)
             y2 = center_y - radius * math.sin(rad)
             
-            if self.sunrise_hour is not None and self.sunset_hour is not None:
-                is_night = (h_tick >= self.sunset_hour or h_tick < self.sunrise_hour) if self.sunset_hour > self.sunrise_hour else (h_tick >= self.sunset_hour and h_tick < self.sunrise_hour)
+            if sunrise_hour is not None and sunset_hour is not None:
+                is_night = (h_tick >= sunset_hour or h_tick < sunrise_hour) if sunset_hour > sunrise_hour else (h_tick >= sunset_hour and h_tick < sunrise_hour)
             else:
                 is_night = False
             tick_color = "white" if is_night else "black"
@@ -3067,20 +4127,31 @@ class ClockWidget:
 
         img.save(filepath)
         print(f"[save_clock_image] Saved energy snapshot to: {filepath}")
+        self._post_ui(self._mark_today_image_saved, snapshot['timestamp'].strftime("%Y-%m-%d"))
+
+    def _mark_today_image_saved(self, date_str):
+        self._today_image_cache = (date_str, True)
 
     def _has_today_image(self):
         """Returns True if at least one energy curve image exists for today."""
         folder = os.path.join(os.path.dirname(__file__), "saved_curves")
-        if not os.path.exists(folder):
-            return False
         date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+        cached = getattr(self, '_today_image_cache', None)
+        if cached and cached[0] == date_str:
+            return cached[1]
+        if not os.path.exists(folder):
+            self._today_image_cache = (date_str, False)
+            return False
+        found = False
         try:
             for f in os.listdir(folder):
                 if f.startswith(date_str):
-                    return True
+                    found = True
+                    break
         except:
             pass
-        return False
+        self._today_image_cache = (date_str, found)
+        return found
 
 
 
