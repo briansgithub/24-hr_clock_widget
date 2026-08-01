@@ -522,7 +522,9 @@ class ClockWidget:
         win.title("Clock Settings")
         win.configure(bg=self.UI_BORDER)
         win.overrideredirect(True)
+        # Start withdrawn and off-screen to prevent flashing at (0,0)
         win.withdraw()
+        win.geometry("+9999+9999")
         win.geometry("560x680")
         win.attributes('-topmost', self.always_on_top.get())
 
@@ -803,7 +805,9 @@ class ClockWidget:
         win.title("Bedtime Countdown")
         win.configure(bg="#1a1a1a")
         win.overrideredirect(True)
+        # Start withdrawn and off-screen to prevent flashing at (0,0)
         win.withdraw()
+        win.geometry("+9999+9999")
         win.attributes('-topmost', self.always_on_top.get())
         win.bind("<Enter>", self.on_enter)
         win.bind("<Leave>", self.on_leave)
@@ -844,10 +848,7 @@ class ClockWidget:
         if self.is_clock_transparent: return
         self.is_clock_transparent = True
 
-        # The auxiliary countdown follows the same timeout as the clock.
-        if hasattr(self, 'bedtime_countdown_window') and self.bedtime_countdown_window.winfo_viewable():
-            self.bedtime_countdown_window.withdraw()
-        self._stop_bedtime_countdown_timer()
+        # The auxiliary countdown is independent of clock transparency.
         self._clear_hover_controls()
         
         bg_color = self.transparent_key
@@ -1194,12 +1195,43 @@ class ClockWidget:
 
         return target
 
+    def _reposition_bedtime_countdown(self):
+        """Robustly center the bedtime countdown window below the clock face."""
+        if not (hasattr(self, 'bedtime_countdown_window') and self.bedtime_countdown_window.winfo_viewable()):
+            return
+
+        try:
+            # Ensure both windows have their geometry updated before query
+            self.canvas.update_idletasks()
+            self.bedtime_countdown_window.update_idletasks()
+
+            canvas_rx = self.canvas.winfo_rootx()
+            canvas_ry = self.canvas.winfo_rooty()
+            canvas_width = self.canvas.winfo_width()
+            canvas_height = self.canvas.winfo_height()
+
+            # If canvas isn't rendered yet, its size might be 1x1. Defer.
+            if canvas_width < 10 or canvas_height < 10:
+                self.root.after(100, self._reposition_bedtime_countdown)
+                return
+
+            cw = self.bedtime_countdown_window.winfo_width()
+            
+            new_x = canvas_rx + (canvas_width // 2) - (cw // 2)
+            new_y = canvas_ry + canvas_height + 10
+            
+            self.bedtime_countdown_window.geometry(f"+{new_x}+{new_y}")
+            self._refresh_window_rect("countdown", self.bedtime_countdown_window)
+        except tk.TclError:
+            # This can happen if a window is destroyed during the update
+            pass
+
     def update_bedtime_countdown_visibility(self, *args, persist=True):
         """Show/hide the standalone bedtime countdown window and start/stop its timer."""
         if persist:
             self._save_sleep_settings()
 
-        if self.show_bedtime_countdown.get() and not self.is_clock_transparent:
+        if self.show_bedtime_countdown.get():
             self._ensure_bedtime_countdown_window()
             bg_color = self.transparent_key if getattr(self, 'is_clock_transparent', False) else self.solid_bg
             self.bedtime_countdown_window.configure(bg=bg_color)
@@ -1209,11 +1241,9 @@ class ClockWidget:
             if hasattr(self, '_bc_target'): self._bc_target.configure(bg=bg_color)
 
             if not self.bedtime_countdown_window.winfo_viewable():
-                # Position below the clock widget on first show
-                rx = self.root.winfo_rootx()
-                ry = self.root.winfo_rooty()
-                rh = self.root.winfo_height()
-                self.bedtime_countdown_window.geometry(f"+{rx}+{ry + rh + 10}")
+                # Positioning is now handled by a dedicated method.
+                # Defer the call slightly to ensure the window is mapped and measurable.
+                self.root.after(50, self._reposition_bedtime_countdown)
             self.bedtime_countdown_window.deiconify()
             self.bedtime_countdown_window.lift()
             self._refresh_window_rect("countdown", self.bedtime_countdown_window)
@@ -1241,7 +1271,7 @@ class ClockWidget:
     def _update_bedtime_countdown_tick(self):
         """Tick the bedtime countdown display every second."""
         self._bc_timer_id = None
-        if (not self.show_bedtime_countdown.get() or self.is_clock_transparent
+        if (not self.show_bedtime_countdown.get()
                 or not getattr(self, 'bedtime_countdown_window', None)
                 or not self.bedtime_countdown_window.winfo_viewable()):
             return
@@ -1258,15 +1288,8 @@ class ClockWidget:
         total_seconds = max(0, int(remaining.total_seconds()))
         minutes_remaining = total_seconds / 60.0
 
-        # Color: interpolate white → gray (#888) over last 90 minutes
-        if is_overdue:
-            color = "#888888"
-        elif minutes_remaining > 90:
-            color = "#ffffff"
-        else:
-            progress = max(0.0, min(1.0, (90.0 - minutes_remaining) / 90.0))
-            channel = int(255 - (255 - 136) * progress)
-            color = f"#{channel:02x}{channel:02x}{channel:02x}"
+        # Text color is always white as per user request.
+        color = "#ffffff"
 
         if is_overdue:
             countdown_str = "GO TO BED!"
@@ -1583,7 +1606,7 @@ class ClockWidget:
 
     def _queue_drag_geometry(
             self, window, x, y, width, height, *, resize=False,
-            follow_controls=False, controls_size=None):
+            follow_controls=False, controls_size=None, follow_countdown=False):
         """Keep only the latest requested drag geometry for the next frame."""
         self._pending_drag_geometry = {
             "window": window,
@@ -1595,6 +1618,7 @@ class ClockWidget:
             "resize": bool(resize),
             "follow_controls": bool(follow_controls),
             "controls_size": controls_size,
+            "follow_countdown": bool(follow_countdown),
         }
         if self._drag_flush_id is None:
             self._drag_flush_id = self.root.after(
@@ -1635,6 +1659,10 @@ class ClockWidget:
                 )
             except tk.TclError:
                 pass
+
+        if (pending.get("follow_countdown") and hasattr(self, 'bedtime_countdown_window')
+                and self.bedtime_countdown_window.winfo_viewable()):
+            self._reposition_bedtime_countdown()
 
     def _flush_pending_drag_geometry(self):
         self._drag_flush_id = None
@@ -1729,6 +1757,12 @@ class ClockWidget:
             except tk.TclError:
                 follow_controls = False
 
+        follow_countdown = False
+        if (target_window == self.root
+                and hasattr(self, 'bedtime_countdown_window')
+                and self.bedtime_countdown_window.winfo_viewable()):
+            follow_countdown = True
+
         self._resize_data = None
         self._drag_in_progress = True
         self._drag_data = {'x': event.x_root, 'y': event.y_root,
@@ -1736,7 +1770,8 @@ class ClockWidget:
                            'width': w, 'height': h,
                            'window': target_window, 'moved': False,
                            'follow_controls': follow_controls,
-                           'controls_size': controls_size}
+                           'controls_size': controls_size,
+                           'follow_countdown': follow_countdown}
 
     def on_drag_motion(self, event):
         resize = getattr(self, '_resize_data', None)
@@ -1786,6 +1821,7 @@ class ClockWidget:
                 drag['height'],
                 follow_controls=drag['follow_controls'],
                 controls_size=drag['controls_size'],
+                follow_countdown=drag.get('follow_countdown', False),
             )
 
     def on_drag_end(self, _event=None):
