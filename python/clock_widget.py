@@ -629,21 +629,23 @@ class ClockWidget:
         self.timeout_delay_entry.grid(row=0, column=3, padx=(10, 0))
 
         metrics = self._settings_section(sleep_tab, "Current metrics")
-        self.bathyphase_label = tk.Label(
-            metrics, text="Bathyphase  ·  --:-- --", bg=self.UI_SURFACE, fg=self.UI_TEXT,
-            font=("Segoe UI", 10, "bold"), anchor=tk.W, padx=6, pady=4,
+        metrics.grid_columnconfigure(1, weight=1)
+        metric_rows = (
+            ("Bathyphase", "bathyphase_label", "--:-- --"),
+            ("Predicted acrophase", "acrophase_label", "--:-- --"),
+            ("Sleep efficiency", "efficiency_label", "--.-%"),
         )
-        self.bathyphase_label.pack(fill=tk.X)
-        self.acrophase_label = tk.Label(
-            metrics, text="Predicted acrophase  ·  --:-- --", bg=self.UI_SURFACE, fg=self.UI_TEXT,
-            font=("Segoe UI", 10, "bold"), anchor=tk.W, padx=6, pady=4,
-        )
-        self.acrophase_label.pack(fill=tk.X)
-        self.efficiency_label = tk.Label(
-            metrics, text="Sleep efficiency  ·  --.-%", bg=self.UI_SURFACE, fg=self.UI_TEXT,
-            font=("Segoe UI", 10, "bold"), anchor=tk.W, padx=6, pady=4,
-        )
-        self.efficiency_label.pack(fill=tk.X)
+        for row, (name, attribute, value) in enumerate(metric_rows):
+            tk.Label(
+                metrics, text=name, bg=self.UI_SURFACE, fg=self.UI_TEXT,
+                font=("Segoe UI", 10, "bold"), anchor=tk.W, padx=6, pady=4,
+            ).grid(row=row, column=0, sticky="w")
+            label = tk.Label(
+                metrics, text=value, bg=self.UI_SURFACE, fg=self.UI_TEXT,
+                font=("Segoe UI", 10, "bold"), anchor=tk.W, padx=6, pady=4,
+            )
+            label.grid(row=row, column=1, sticky="ew")
+            setattr(self, attribute, label)
 
         sleep_display = self._settings_section(sleep_tab, "Sleep display")
         self.sleep_toggle = self._add_toggle("Sleep arc", self.show_sleep, on_visual_change, sleep_display)
@@ -2825,22 +2827,22 @@ class ClockWidget:
             am_pm = "AM" if h < 12 else "PM"
             h_display = h % 12
             if h_display == 0: h_display = 12
-            self.bathyphase_label.config(text=f"Bathyphase  ·  {h_display}:{m:02d} {am_pm}")
+            self.bathyphase_label.config(text=f"{h_display}:{m:02d} {am_pm}")
         else:
-            self.bathyphase_label.config(text="Bathyphase  ·  --:-- --")
+            self.bathyphase_label.config(text="--:-- --")
             
         acrophase_hour = self._predicted_acrophase_hour()
         if acrophase_hour is not None:
             self.acrophase_label.config(
-                text=f"Predicted acrophase  ·  {self._format_clock_time(acrophase_hour)}"
+                text=self._format_clock_time(acrophase_hour)
             )
         else:
-            self.acrophase_label.config(text="Predicted acrophase  ·  --:-- --")
+            self.acrophase_label.config(text="--:-- --")
 
         if self.sleep_efficiency is not None:
-            self.efficiency_label.config(text=f"Sleep efficiency  ·  {self.sleep_efficiency*100:.1f}%")
+            self.efficiency_label.config(text=f"{self.sleep_efficiency*100:.1f}%")
         else:
-            self.efficiency_label.config(text="Sleep efficiency  ·  --.-%")
+            self.efficiency_label.config(text="--.-%")
 
     def show_initial(self):
         self.make_clock_transparent()
