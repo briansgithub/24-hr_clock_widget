@@ -14,14 +14,14 @@ object EnergyCalculator {
         "M7_empirical_clock_fourier"
     )
     private val adaptiveCircadianCoefs = doubleArrayOf(
-        51.760499671310974,
-        -7.1539665570855036,
-        -20.1182843432549,
-        5.748481363814623,
-        -6.102330290654
+        51.79829899798624,
+        -8.970119863421589,
+        -19.40441654693655,
+        4.839958739091168,
+        -5.463160275994447
     )
     private const val referenceSleepHours = 8.0
-    private const val referencePeakClock = 20.0
+    private const val referencePeakClock = 13.48
     private const val maxPhaseShiftHours = 3.0
     private const val adaptiveTauWake = 23.0
     private const val adaptiveTauSleep = 4.0

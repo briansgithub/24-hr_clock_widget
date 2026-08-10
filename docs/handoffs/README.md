@@ -9,10 +9,13 @@ Last verified: 2026-07-31
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
 | `main` | `62adb6d` (synced with `origin/main`) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `feature/energy-refit-aug09` | in progress (sibling worktree) | M8 energy-model re-fit on the Aug 9 alertness export | [handoff](feature/energy-refit-aug09.md) | [history](feature/energy-refit-aug09.history.md) |
 
 ## Current merge order
 
-No feature branches are currently queued for merge. The former `feature/energy-refit-jul29` files remain preserved in a detached worktree at `3a13b4b`; the branch label has been deleted.
+1. `feature/energy-refit-aug09` — independent of other work; merges into `main` once its Android test has been run.
+
+The former `feature/energy-refit-jul29` files remain preserved in a detached worktree at `3a13b4b`; the branch label has been deleted.
 
 Parallel agents must use separate Git worktrees — see [MULTI_AGENT.md](MULTI_AGENT.md).
 

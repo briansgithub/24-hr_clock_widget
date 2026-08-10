@@ -94,13 +94,13 @@ class EnergyCalculatorTest {
         val cases = listOf(
             Pair(
                 EnergyCalculator.adaptiveSleepEnergy(14.0, 9.0, 7.0, 3.0),
-                0.6464512909036823
+                0.6599810557700918
             ),
             Pair(
                 EnergyCalculator.adaptiveSleepEnergy(
                     20.0, 9.0, 8.0, 0.0, bathyphaseHour = 5.0
                 ),
-                0.6801698896361507
+                0.6594005145987748
             ),
             Pair(
                 EnergyCalculator.adaptiveSleepEnergy(
@@ -108,11 +108,11 @@ class EnergyCalculatorTest {
                     circadianPeakOffset = 12.0,
                     napIntervals = listOf(SleepInterval(4.0, 4.5))
                 ),
-                0.6397337294750542
+                0.6424203612753479
             ),
             Pair(
                 EnergyCalculator.adaptiveSleepEnergy(8.0, 8.0, 8.0, 0.0),
-                0.28325070000118563
+                0.2978989746884647
             )
         )
         for ((actual, expected) in cases) {
