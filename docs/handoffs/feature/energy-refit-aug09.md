@@ -24,6 +24,7 @@
 - **Day inclusion stays at `min_logged_per_day = 20`**, the prior convention: 18 days in, 7 out (Jul 27-30, Aug 4, Aug 6, Aug 9).
 - 4 ratings inside Fitbit sleep windows were re-marked `SLEEP_EXCLUDED`; keeping them would split the contiguous sleep run that wake inference depends on.
 - **`reference_peak_clock` is now fitter output, not configuration** (20.0 -> 13.48). It names where the baseline peaks and anchors the bathyphase phase shift, so a stale value silently biases every shift.
+- **`Alertness_Master_Log*.csv` is no longer tracked.** `.gitignore` now covers the whole family and the two previously committed copies were removed from the index; the files remain on disk. The fit therefore needs a locally supplied export — a fresh clone has no training data, and `test_energy_fit.py`'s live-CSV case will skip. This matches the stated policy in `docs/energy_model_refinement.md:18`, which the repository had been contradicting. Older exports are still the only record of sleep windows for their period, so keep them on disk.
 
 ## Changes since branch creation
 

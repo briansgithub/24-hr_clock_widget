@@ -18,6 +18,11 @@ env/
 .env/
 .pytest_cache/
 
+# Personal empirical logs — never tracked. These are raw personal alertness
+# ratings; they are model input, not source. Covers the numbered export copies
+# the Android share sheet produces, e.g. "Alertness_Master_Log (3).csv".
+Alertness_Master_Log*.csv
+
 # Data and Secrets
 *.json
 !fitbit_config.json.example

@@ -113,11 +113,17 @@ If recovery stays at 0% while `Status == SLEEP_EXCLUDED`, Fitbit timing may not
 overlap the log grid — inferred episodes from the CSV should still engage; file a
 bug if not.
 
-**k_S tuning (Process S penalty scale):** `predict_energy_sleep_aware()` subtracts
-`k_s * s_pressure * 35` from the M4 baseline. Grid-search on Jul 16–22 (2026-07-22)
-showed `k_s=1.0` over-penalized post-wake mornings (Jul 21–22 MAE ~18 vs ~10 at
-`k_s=0.2`). Production default: **`k_s=0.2`** in `personal_energy_fit.json`.
-Re-tune with `python python/tune_k_s.py` after each bi-weekly re-fit.
+**k_S tuning (Process S penalty scale, historical):** `predict_energy_sleep_aware()`
+subtracts `k_s * s_pressure * 35` from the M4 baseline. A grid search on Jul 16–22
+(2026-07-22) showed `k_s=1.0` over-penalized post-wake mornings (Jul 21–22 MAE ~18
+vs ~10 at `k_s=0.2`).
+
+This no longer applies to production. `k_s` is not a parameter of `M8_adaptive_sleep`
+and is absent from `personal_energy_fit.json`; M8 expresses the homeostatic penalty
+as `homeostatic_scale * clamp(process_delta)` instead. The `tune_k_s.py` helper was
+removed in 2026-08 — its objective was hardcoded to two July dates and scored missing
+dates as zero error, so it rewarded absent data. Re-fit with
+`python python/fit_adaptive_sleep_model.py`.
 
 Naps: when Fitbit logs non-main sleep, `sleep_dynamics.py` discharges S and
 applies short inertia without resetting circadian `t` (hours since main wake).
