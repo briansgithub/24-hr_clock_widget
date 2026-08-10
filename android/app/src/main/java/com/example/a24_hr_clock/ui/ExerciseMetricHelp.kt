@@ -109,7 +109,7 @@ fun ExerciseChartLegend(
     onOpenHelp: (MetricHelpId) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val hrssColor = Color(0xFF00E5FF)
+    val loadColor = Color(0xFF00E5FF)
     val hrvColor = Color(0xFFFFB300)
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -119,9 +119,9 @@ fun ExerciseChartLegend(
             verticalAlignment = Alignment.CenterVertically
         ) {
             LegendHelpItem(
-                swatchColor = hrssColor,
-                label = "HRSS",
-                onClick = { onOpenHelp(MetricHelpId.HRSS) }
+                swatchColor = loadColor,
+                label = "Cardio Load",
+                onClick = { onOpenHelp(MetricHelpId.CARDIO_LOAD) }
             )
             LegendHelpItem(
                 swatchColor = hrvColor,

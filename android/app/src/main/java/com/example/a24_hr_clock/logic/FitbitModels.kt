@@ -29,8 +29,21 @@ data class SleepLogEntry(
 
 @Serializable
 data class HeartRateResponse(
+    @SerialName("activities-heart")
+    val activities_heart: List<HeartRateSummaryEntry>? = null,
     @SerialName("activities-heart-intraday")
     val activities_heart_intraday: IntradayDataset? = null
+)
+
+@Serializable
+data class HeartRateSummaryEntry(
+    val dateTime: String,
+    val value: HeartRateSummaryValue
+)
+
+@Serializable
+data class HeartRateSummaryValue(
+    val restingHeartRate: Int? = null
 )
 
 @Serializable
@@ -64,6 +77,10 @@ data class HRVValue(
 data class DailyExerciseMetrics(
     val date: String,
     val trimp: Double,
-    val hrv: Double,
-    val hrss: Double = 0.0
+    val hrv: Double?,
+    val rhr: Double? = null,
+    val hrss: Double = 0.0,
+    val hrvMissing: Boolean = false,
+    val hrMissing: Boolean = false,
+    val dataStatus: String = "valid" // "valid", "incomplete", "missing"
 )

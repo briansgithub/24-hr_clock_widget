@@ -223,6 +223,8 @@ data class ModelSettings(
     val lastTodayDate: String = "",
     val userAge: Int = 31,
     val restingHR: Double = 55.0,
+    val maxHR: Double = 189.0, // 220 - 31
+    val isMale: Boolean = true,
     val hrvPeakPotential: Double = 71.0,
     val hrvMedicatedBase: Double = 30.0,
     val googleDriveUrl: String = DEFAULT_GOOGLE_DRIVE_WEB_APP_URL,

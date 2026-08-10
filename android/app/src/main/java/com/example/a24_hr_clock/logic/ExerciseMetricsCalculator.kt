@@ -5,12 +5,19 @@ import kotlin.math.max
 
 object ExerciseMetricsCalculator {
 
-    fun calculateTrimp(hrSeries: List<Int>, rhr: Double, maxHr: Double): Double {
+    /**
+     * Calculates Banister-style Training Impulse (TRIMP).
+     * @param hrSeries Heart rate samples (1-minute intervals preferred).
+     * @param rhr Resting Heart Rate.
+     * @param maxHr Maximum Heart Rate.
+     * @param isMale Whether to use the male (1.92) or female (1.67) coefficient.
+     */
+    fun calculateTrimp(hrSeries: List<Int>, rhr: Double, maxHr: Double, isMale: Boolean = true): Double {
         var trimpTotal = 0.0
-        val k = 1.92 // standard for males
+        val k = if (isMale) 1.92 else 1.67
 
         for (hr in hrSeries) {
-            if (hr > rhr) {
+            if (hr > rhr && maxHr > rhr) {
                 val w = (hr - rhr) / (maxHr - rhr)
                 trimpTotal += w * exp(k * w)
             }
@@ -18,6 +25,22 @@ object ExerciseMetricsCalculator {
         return Math.round(trimpTotal * 100.0) / 100.0
     }
 
+    /**
+     * Calculates relative load against a deterministic baseline.
+     * @param trimpScore Current day's TRIMP.
+     * @param baselineTrimp Reference TRIMP (e.g., 28-day rolling average of valid data).
+     */
+    fun calculateRelativeLoad(trimpScore: Double, baselineTrimp: Double): Double {
+        if (baselineTrimp <= 0.0) return 0.0
+        return Math.round((trimpScore / baselineTrimp) * 100.0 * 10.0) / 10.0
+    }
+
+    // Deprecated legacy name for compatibility during refactor
+    fun calculateHrss(trimpScore: Double, weeklyAvgTrimp: Double): Double = calculateRelativeLoad(trimpScore, weeklyAvgTrimp)
+
+    /**
+     * Experimental EPOC calculation.
+     */
     fun calculateEpoc(hrSeries: List<Int>, rhr: Double): Double {
         var epoc = 0.0
         val gain = 0.05
@@ -29,19 +52,5 @@ object ExerciseMetricsCalculator {
             epoc += delta
         }
         return Math.round(epoc * 100.0) / 100.0
-    }
-
-    fun calculateHrss(trimpScore: Double, weeklyAvgTrimp: Double): Double {
-        if (weeklyAvgTrimp == 0.0) return 0.0
-        return Math.round((trimpScore / weeklyAvgTrimp) * 100.0 * 10.0) / 10.0
-    }
-
-    fun generateSystemAlert(currentHrv: Double, hrssLoad: Double, medicatedBase: Double): String {
-        return when {
-            currentHrv < (medicatedBase - 5) -> "STATUS: DEPLETED. HRV is below medicated baseline. Strict rest recommended."
-            hrssLoad > 120 && currentHrv <= medicatedBase -> "STATUS: OVERREACHING. High load detected with suppressed HRV. Focus on Zone 1 recovery."
-            currentHrv > (medicatedBase + 5) -> "STATUS: OPTIMIZED. Nervous system is resilient today. Cleared for high intensity."
-            else -> "STATUS: STEADY. System is holding at pharmacological baseline. Proceed as planned."
-        }
     }
 }

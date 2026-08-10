@@ -78,6 +78,7 @@ enum class Screen {
 class MainActivity : ComponentActivity() {
     private lateinit var fitbitManager: FitbitManager
     private lateinit var settingsManager: SettingsManager
+    private lateinit var exerciseRepository: ExerciseRepository
     private var initialAction by mutableStateOf<String?>(null)
 
     val requestPermissionLauncher = registerForActivityResult(
@@ -99,6 +100,7 @@ class MainActivity : ComponentActivity() {
         context = this
         fitbitManager = FitbitManager(this)
         settingsManager = SettingsManager(this)
+        exerciseRepository = ExerciseRepository(this, fitbitManager)
         
         checkPermissions()
         
@@ -115,6 +117,7 @@ class MainActivity : ComponentActivity() {
                     MainScreen(
                         fitbitManager = fitbitManager,
                         settingsManager = settingsManager,
+                        exerciseRepository = exerciseRepository,
                         initialAction = initialAction,
                         onClearAction = { initialAction = null },
                         modifier = Modifier.padding(innerPadding),
@@ -214,6 +217,7 @@ class MainActivity : ComponentActivity() {
 fun MainScreen(
     fitbitManager: FitbitManager,
     settingsManager: SettingsManager,
+    exerciseRepository: ExerciseRepository,
     initialAction: String? = null,
     onClearAction: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -225,7 +229,6 @@ fun MainScreen(
     
     val isLoggedIn by fitbitManager.loginStatusFlow.collectAsState(initial = false)
     val sleepLogs by fitbitManager.sleepLogsFlow.collectAsState(initial = emptyList())
-    val exerciseMetrics by fitbitManager.exerciseMetricsFlow.collectAsState(initial = emptyList())
     val metrics by fitbitManager.metricsFlow.collectAsState(initial = Triple(null, 1.0, 9.75))
     
     val homeSettings by settingsManager.homeSettingsFlow.collectAsState(initial = ClockSettings())
@@ -435,9 +438,8 @@ fun MainScreen(
                     },
                     onUpdateModel = { scope.launch { settingsManager.updateModelSettings(it) } }
                 )
-                Screen.EXERCISE -> ExerciseMetricsScreen(
-                    fitbitManager = fitbitManager,
-                    exerciseMetrics = exerciseMetrics,
+                Screen.EXERCISE -> ExerciseScreen(
+                    repository = exerciseRepository,
                     modelSettings = modelSettings,
                     onUpdateModel = { scope.launch { settingsManager.updateModelSettings(it) } }
                 )
@@ -1477,348 +1479,3 @@ fun ChecklistItem(title: String, isOk: Boolean, actionText: String = "Fix", onCl
     }
 }
 
-@Composable
-fun ExerciseMetricsScreen(
-    fitbitManager: FitbitManager,
-    exerciseMetrics: List<DailyExerciseMetrics>,
-    modelSettings: ModelSettings,
-    onUpdateModel: (ModelSettings) -> Unit
-) {
-    val scope = rememberCoroutineScope()
-    var anchorDate by remember { mutableStateOf(java.time.LocalDate.now()) }
-    var helpMetricId by remember { mutableStateOf<MetricHelpId?>(null) }
-    
-    // Calculate week range (Mon to Sun)
-    val dayOfWeek = anchorDate.dayOfWeek.value // 1 (Mon) to 7 (Sun)
-    val startOfWeek = anchorDate.minusDays((dayOfWeek - 1).toLong())
-    val endOfWeek = startOfWeek.plusDays(6)
-    
-    val weekMetrics = remember(exerciseMetrics, startOfWeek) {
-        val startStr = startOfWeek.toString()
-        val endStr = endOfWeek.toString()
-        exerciseMetrics.filter { it.date >= startStr && it.date <= endStr }
-    }
-
-    LaunchedEffect(startOfWeek) {
-        if (weekMetrics.size < 7) {
-            fitbitManager.fetchExerciseMetricsForRange(startOfWeek.toString(), endOfWeek.toString())
-        }
-    }
-
-    helpMetricId?.let { id ->
-        ExerciseMetricHelpDialog(
-            metricId = id,
-            onDismiss = { helpMetricId = null }
-        )
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
-    ) {
-        Text(text = "Exercise & Readiness", style = MaterialTheme.typography.headlineMedium)
-        
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = { anchorDate = anchorDate.minusWeeks(1) }) {
-                Icon(Icons.Default.ChevronLeft, contentDescription = "Prev Week")
-            }
-            Text(
-                text = "${startOfWeek.format(java.time.format.DateTimeFormatter.ofPattern("MMM d"))} - ${endOfWeek.format(java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy"))}",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 8.dp)
-            )
-            IconButton(onClick = { 
-                if (anchorDate.plusWeeks(1).isBefore(java.time.LocalDate.now().plusDays(1))) {
-                    anchorDate = anchorDate.plusWeeks(1)
-                }
-            }) {
-                Icon(Icons.Default.ChevronRight, contentDescription = "Next Week")
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (weekMetrics.isEmpty() && exerciseMetrics.isEmpty()) {
-            Text("No exercise data available. Refresh Fitbit data in the Sleep tab to fetch.")
-        } else {
-            val latest = if (weekMetrics.isNotEmpty()) weekMetrics.last() else exerciseMetrics.last()
-            val alert = ExerciseMetricsCalculator.generateSystemAlert(latest.hrv, latest.hrss, modelSettings.hrvMedicatedBase)
-            
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Text(
-                    text = alert,
-                    modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = if (alert.contains("DEPLETED") || alert.contains("OVERREACHING")) Color(0xFFFF6B6B) else if (alert.contains("OPTIMIZED")) Color(0xFF6BFF6B) else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            DualAxisChart(
-                metrics = weekMetrics,
-                peakPotential = modelSettings.hrvPeakPotential,
-                medicatedBase = modelSettings.hrvMedicatedBase,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(350.dp)
-                    .background(Color(0xFF121212), shape = MaterialTheme.shapes.medium)
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-            ExerciseChartLegend(onOpenHelp = { helpMetricId = it })
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            Text("User Profile & Baselines", style = MaterialTheme.typography.titleMedium)
-            Spacer(modifier = Modifier.height(8.dp))
-            SettingSlider("User Age", modelSettings.userAge.toDouble(), 10f..100f, "") {
-                onUpdateModel(modelSettings.copy(userAge = it.toInt()))
-            }
-            SettingSlider("Resting HR", modelSettings.restingHR, 30f..120f, " BPM") {
-                onUpdateModel(modelSettings.copy(restingHR = it.toDouble()))
-            }
-            SettingSlider("HRV Peak Potential (2024)", modelSettings.hrvPeakPotential, 20f..150f, " ms") {
-                onUpdateModel(modelSettings.copy(hrvPeakPotential = it.toDouble()))
-            }
-            SettingSlider("HRV Medicated Base", modelSettings.hrvMedicatedBase, 10f..100f, " ms") {
-                onUpdateModel(modelSettings.copy(hrvMedicatedBase = it.toDouble()))
-            }
-        }
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun ExerciseMetricsScreenPreview() {
-    val context = LocalContext.current
-    val fitbitManager = remember { FitbitManager(context) }
-    val mockMetrics = listOf(
-        DailyExerciseMetrics("2026-05-03", 80.0, 32.0, 80.0),
-        DailyExerciseMetrics("2026-05-04", 120.0, 29.0, 120.0),
-        DailyExerciseMetrics("2026-05-05", 45.0, 36.0, 45.0),
-        DailyExerciseMetrics("2026-05-06", 160.0, 28.0, 160.0),
-        DailyExerciseMetrics("2026-05-07", 60.0, 31.0, 60.0),
-        DailyExerciseMetrics("2026-05-08", 50.0, 35.0, 50.0),
-        DailyExerciseMetrics("2026-05-09", 95.0, 30.0, 95.0)
-    )
-    val mockSettings = ModelSettings(
-        userAge = 31,
-        restingHR = 55.0,
-        hrvPeakPotential = 71.0,
-        hrvMedicatedBase = 30.0
-    )
-    _24_hr_clockTheme {
-        ExerciseMetricsScreen(
-            fitbitManager = fitbitManager,
-            exerciseMetrics = mockMetrics,
-            modelSettings = mockSettings,
-            onUpdateModel = {}
-        )
-    }
-}
-
-@Composable
-fun DualAxisChart(
-    metrics: List<DailyExerciseMetrics>,
-    peakPotential: Double,
-    medicatedBase: Double,
-    modifier: Modifier = Modifier
-) {
-    val barColor = Color(0xFF00E5FF)
-    val lineColor = Color(0xFFFFB300)
-    val peakLineColor = Color(0xFF00FF00).copy(alpha = 0.5f)
-    val baseLineColor = Color(0xFFFF4444).copy(alpha = 0.5f)
-    val gridColor = Color.Gray.copy(alpha = 0.2f)
-    val textColor = Color.White.copy(alpha = 0.7f)
-    
-    val textMeasurer = rememberTextMeasurer()
-    var scrubIndex by remember { mutableStateOf<Int?>(null) }
-
-    Canvas(modifier = modifier
-        .padding(8.dp)
-        .pointerInput(metrics) {
-            detectDragGestures(
-                onDragStart = { offset -> 
-                    if (metrics.isNotEmpty()) {
-                        val chartWidth = size.width - 100.dp.toPx()
-                        val paddingHorizontal = 50.dp.toPx()
-                        val xStep = chartWidth / (metrics.size + 1)
-                        val idx = (((offset.x - paddingHorizontal) / xStep) - 1).roundToInt().coerceIn(0, metrics.size - 1)
-                        scrubIndex = idx
-                    }
-                },
-                onDrag = { change, _ ->
-                    if (metrics.isNotEmpty()) {
-                        val chartWidth = size.width - 100.dp.toPx()
-                        val paddingHorizontal = 50.dp.toPx()
-                        val xStep = chartWidth / (metrics.size + 1)
-                        val idx = (((change.position.x - paddingHorizontal) / xStep) - 1).roundToInt().coerceIn(0, metrics.size - 1)
-                        scrubIndex = idx
-                    }
-                },
-                onDragEnd = { scrubIndex = null },
-                onDragCancel = { scrubIndex = null }
-            )
-        }
-    ) {
-        val width = size.width
-        val height = size.height
-        val paddingHorizontal = 50.dp.toPx()
-        val paddingVertical = 40.dp.toPx()
-        val chartWidth = width - 2 * paddingHorizontal
-        val chartHeight = height - 2 * paddingVertical
-
-        val maxHrss = (metrics.maxOfOrNull { it.hrss } ?: 100.0).coerceAtLeast(100.0) * 1.3
-        val maxHrv = 100.0
-
-        // Buffer space: Divide width by (size + 1) to get gaps on both sides
-        val xStep = chartWidth / (metrics.size + 1)
-
-        // Draw Axes
-        drawLine(textColor, start = Offset(paddingHorizontal, paddingVertical), end = Offset(paddingHorizontal, paddingVertical + chartHeight), strokeWidth = 1.dp.toPx())
-        drawLine(textColor, start = Offset(paddingHorizontal + chartWidth, paddingVertical), end = Offset(paddingHorizontal + chartWidth, paddingVertical + chartHeight), strokeWidth = 1.dp.toPx())
-        drawLine(textColor, start = Offset(paddingHorizontal, paddingVertical + chartHeight), end = Offset(paddingHorizontal + chartWidth, paddingVertical + chartHeight), strokeWidth = 1.dp.toPx())
-
-        // Y-Axis Labels (Left - HRSS)
-        for (i in 0..4) {
-            val y = paddingVertical + chartHeight - (i / 4f) * chartHeight
-            val value = (i / 4f) * maxHrss
-            drawText(
-                textMeasurer = textMeasurer,
-                text = value.toInt().toString(),
-                topLeft = Offset(paddingHorizontal - 40.dp.toPx(), y - 10.dp.toPx()),
-                style = TextStyle(color = barColor, fontSize = 10.sp)
-            )
-            drawLine(gridColor, start = Offset(paddingHorizontal, y), end = Offset(paddingHorizontal + chartWidth, y))
-        }
-        drawText(textMeasurer, "HRSS (%)", Offset(paddingHorizontal - 45.dp.toPx(), paddingVertical - 30.dp.toPx()), TextStyle(color = barColor, fontSize = 10.sp, fontWeight = FontWeight.Bold))
-
-        // Y-Axis Labels (Right - HRV)
-        for (i in 0..4) {
-            val y = paddingVertical + chartHeight - (i / 4f) * chartHeight
-            val value = (i / 4f) * maxHrv
-            drawText(
-                textMeasurer = textMeasurer,
-                text = value.toInt().toString(),
-                topLeft = Offset(paddingHorizontal + chartWidth + 5.dp.toPx(), y - 10.dp.toPx()),
-                style = TextStyle(color = lineColor, fontSize = 10.sp)
-            )
-        }
-        drawText(textMeasurer, "HRV (ms)", Offset(paddingHorizontal + chartWidth + 5.dp.toPx(), paddingVertical - 30.dp.toPx()), TextStyle(color = lineColor, fontSize = 10.sp, fontWeight = FontWeight.Bold))
-
-        // Draw Baselines
-        val peakY = (paddingVertical + chartHeight - (peakPotential / maxHrv) * chartHeight).toFloat()
-        val baseY = (paddingVertical + chartHeight - (medicatedBase / maxHrv) * chartHeight).toFloat()
-        
-        drawLine(peakLineColor, start = Offset(paddingHorizontal, peakY), end = Offset(paddingHorizontal + chartWidth, peakY), pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f)))
-        drawLine(baseLineColor, start = Offset(paddingHorizontal, baseY), end = Offset(paddingHorizontal + chartWidth, baseY), pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f)))
-
-        // Draw Bars (HRSS)
-        metrics.forEachIndexed { i, m ->
-            val barHeight = ((m.hrss / maxHrss) * chartHeight).toFloat()
-            val x = paddingHorizontal + (i + 1) * xStep
-            val barWidth = 20.dp.toPx()
-            drawRect(
-                color = barColor,
-                topLeft = Offset(x - barWidth / 2, paddingVertical + chartHeight - barHeight),
-                size = Size(barWidth, barHeight),
-                alpha = if (scrubIndex != null && scrubIndex != i) 0.2f else 0.6f
-            )
-            
-            // X-Axis Date Label
-            val dateLabel = try { java.time.LocalDate.parse(m.date).format(java.time.format.DateTimeFormatter.ofPattern("E")) } catch(e: Exception) { m.date.takeLast(2) }
-            drawText(
-                textMeasurer = textMeasurer,
-                text = dateLabel,
-                topLeft = Offset(x - 12.dp.toPx(), paddingVertical + chartHeight + 8.dp.toPx()),
-                style = TextStyle(color = textColor, fontSize = 10.sp)
-            )
-        }
-
-        // Draw Line (HRV)
-        val points = metrics.mapIndexed { i, m ->
-            val x = paddingHorizontal + (i + 1) * xStep
-            val y = (paddingVertical + chartHeight - (m.hrv / maxHrv) * chartHeight).toFloat()
-            Offset(x, y)
-        }
-
-        if (points.size > 1) {
-            val path = Path().apply {
-                moveTo(points[0].x, points[0].y)
-                for (i in 1 until points.size) {
-                    lineTo(points[i].x, points[i].y)
-                }
-            }
-            drawPath(path, color = lineColor, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round), alpha = if (scrubIndex != null) 0.3f else 1.0f)
-            
-            // Fill under line
-            val fillPath = Path().apply {
-                moveTo(points[0].x, points[0].y)
-                for (i in 1 until points.size) {
-                    lineTo(points[i].x, points[i].y)
-                }
-                lineTo(points.last().x, paddingVertical + chartHeight)
-                lineTo(points.first().x, paddingVertical + chartHeight)
-                close()
-            }
-            drawPath(fillPath, color = lineColor.copy(alpha = 0.1f))
-        }
-        
-        // Points
-        points.forEachIndexed { i, p ->
-            drawCircle(lineColor, radius = 4.dp.toPx(), center = p, alpha = if (scrubIndex != null && scrubIndex != i) 0.2f else 1.0f)
-        }
-        
-        // Scrub Overlay
-        scrubIndex?.let { idx ->
-            if (idx in metrics.indices) {
-                val m = metrics[idx]
-                val x = paddingHorizontal + (idx + 1) * xStep
-                
-                // Vertical Line
-                drawLine(Color.White.copy(alpha = 0.5f), start = Offset(x, paddingVertical), end = Offset(x, paddingVertical + chartHeight), strokeWidth = 1.dp.toPx())
-                
-                // Tooltip
-                val dateObj = try { java.time.LocalDate.parse(m.date) } catch(e: Exception) { null }
-                val dayAbbr = dateObj?.format(java.time.format.DateTimeFormatter.ofPattern("EEE")) ?: ""
-                val tooltipText = "$dayAbbr, ${m.date}\nHRSS: ${m.hrss.toInt()}%\nHRV: ${m.hrv.toInt()}ms\nTRIMP: ${m.trimp.toInt()}"
-                
-                val layoutResult = textMeasurer.measure(tooltipText, style = TextStyle(color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold))
-                
-                val tooltipWidth = layoutResult.size.width.toFloat() + 20.dp.toPx()
-                val tooltipHeight = layoutResult.size.height.toFloat() + 20.dp.toPx()
-                
-                var tooltipX = x - tooltipWidth / 2
-                if (tooltipX < 0) tooltipX = 0f
-                if (tooltipX + tooltipWidth > width) tooltipX = width - tooltipWidth
-                
-                val tooltipY = paddingVertical + 10.dp.toPx()
-                
-                drawRoundRect(
-                    color = Color.White.copy(alpha = 0.9f),
-                    topLeft = Offset(tooltipX, tooltipY),
-                    size = Size(tooltipWidth, tooltipHeight),
-                    cornerRadius = CornerRadius(8.dp.toPx(), 8.dp.toPx())
-                )
-                
-                drawText(
-                    textMeasurer = textMeasurer,
-                    text = tooltipText,
-                    topLeft = Offset(tooltipX + 10.dp.toPx(), tooltipY + 10.dp.toPx()),
-                    style = TextStyle(color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                )
-            }
-        }
-    }
-}
