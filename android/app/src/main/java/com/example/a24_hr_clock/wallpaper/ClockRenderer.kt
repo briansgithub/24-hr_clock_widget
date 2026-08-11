@@ -1371,7 +1371,7 @@ class ClockRenderer {
         val my = cy + orbitRadius * sin(moonRad).toFloat()
 
         // Sun
-        val sunR = iconSize / 1.6f
+        val sunR = iconSize / 1.92f
         
         // Dynamic sun color based on elevation
         val (sunColor, sunAlpha) = interpolateSunColor(sunElevation)
@@ -1387,7 +1387,7 @@ class ClockRenderer {
 
         // Moon
         val p = (moonPhase / 29.530588) % 1.0
-        val mR = iconSize / 1.6f
+        val mR = iconSize / 1.92f
         canvas.drawCircle(mx, my, mR, moonShadowPaint)
 
         if (p in 0.01..0.99) {

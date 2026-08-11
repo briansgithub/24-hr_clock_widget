@@ -3289,11 +3289,13 @@ class ClockWidget:
         """Calculate the outer-orbit geometry shared by rendering and tests."""
         icon_size = max(12, int(radius / 7))
         orbit_radius = radius + icon_size + 2
-        marker_radius = icon_size / 1.6
+        sun_radius = icon_size / 1.92
+        moon_radius = icon_size / 1.92
         return {
             "icon_size": icon_size,
             "orbit_radius": orbit_radius,
-            "marker_radius": marker_radius,
+            "sun_radius": sun_radius,
+            "moon_radius": moon_radius,
             "sun_center": (
                 center_x + orbit_radius * math.cos(sun_rad),
                 center_y - orbit_radius * math.sin(sun_rad),
@@ -3311,21 +3313,22 @@ class ClockWidget:
         geometry = self._celestial_marker_geometry(
             center_x, center_y, radius, sun_rad, moon_rad
         )
-        marker_radius = geometry["marker_radius"]
+        sun_radius = geometry["sun_radius"]
+        moon_radius = geometry["moon_radius"]
         sx, sy = geometry["sun_center"]
         mx, my = geometry["moon_center"]
 
         sun_fill, _sun_alpha, sun_outline = self._interpolate_sun_color(sun_elevation)
         self.canvas.create_oval(
-            sx - marker_radius, sy - marker_radius,
-            sx + marker_radius, sy + marker_radius,
+            sx - sun_radius, sy - sun_radius,
+            sx + sun_radius, sy + sun_radius,
             fill=sun_fill, outline=sun_outline, width=2,
             tags="sun_and_moon",
         )
 
         moon_bounds = (
-            mx - marker_radius, my - marker_radius,
-            mx + marker_radius, my + marker_radius,
+            mx - moon_radius, my - moon_radius,
+            mx + moon_radius, my + moon_radius,
         )
         self.canvas.create_oval(
             *moon_bounds, fill=MOON_SHADOW_COLOR, outline="", tags="sun_and_moon"
@@ -3353,10 +3356,10 @@ class ClockWidget:
                 ellipse_color = (
                     MOON_LIT_COLOR if mid_phase < 0 else MOON_SHADOW_COLOR
                 )
-            ellipse_half_width = abs(mid_phase) * marker_radius
+            ellipse_half_width = abs(mid_phase) * moon_radius
             self.canvas.create_oval(
-                mx - ellipse_half_width, my - marker_radius,
-                mx + ellipse_half_width, my + marker_radius,
+                mx - ellipse_half_width, my - moon_radius,
+                mx + ellipse_half_width, my + moon_radius,
                 fill=ellipse_color, outline="", tags="sun_and_moon",
             )
 

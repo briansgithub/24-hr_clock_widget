@@ -48,12 +48,13 @@ class CelestialRenderingTests(unittest.TestCase):
 
         self.assertEqual(geometry["icon_size"], 12)
         self.assertAlmostEqual(geometry["orbit_radius"], 77.0)
-        self.assertAlmostEqual(geometry["marker_radius"], 7.5)
+        self.assertAlmostEqual(geometry["sun_radius"], 6.25)
+        self.assertAlmostEqual(geometry["moon_radius"], 6.25)
         self.assertEqual(geometry["sun_center"], (192.0, 120.0))
         self.assertAlmostEqual(geometry["moon_center"][0], 115.0)
         self.assertAlmostEqual(geometry["moon_center"][1], 43.0)
         self.assertGreater(
-            geometry["orbit_radius"] - geometry["marker_radius"],
+            geometry["orbit_radius"] - geometry["sun_radius"],
             63.0,
             "markers must remain fully outside the clock face",
         )
@@ -65,13 +66,16 @@ class CelestialRenderingTests(unittest.TestCase):
             geometry = self.widget._celestial_marker_geometry(
                 center_x, center_y, radius, angle, angle
             )
-            marker_radius = geometry["marker_radius"]
-            for marker_center in (geometry["sun_center"], geometry["moon_center"]):
+            for marker_center, r_key in (
+                (geometry["sun_center"], "sun_radius"),
+                (geometry["moon_center"], "moon_radius")
+            ):
                 x, y = marker_center
-                self.assertGreaterEqual(x - marker_radius, 0.0)
-                self.assertLessEqual(x + marker_radius, width)
-                self.assertGreaterEqual(y - marker_radius, 0.0)
-                self.assertLessEqual(y + marker_radius, height)
+                r = geometry[r_key]
+                self.assertGreaterEqual(x - r, 0.0)
+                self.assertLessEqual(x + r, width)
+                self.assertGreaterEqual(y - r, 0.0)
+                self.assertLessEqual(y + r, height)
 
     def test_python_and_android_angle_conventions_are_equivalent(self):
         center_y = 120.0

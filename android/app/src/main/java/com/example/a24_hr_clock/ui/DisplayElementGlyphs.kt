@@ -100,18 +100,19 @@ fun GlyphNumbers(modifier: Modifier = Modifier) {
 @Composable
 fun GlyphSunMoon(modifier: Modifier = Modifier) {
     Canvas(modifier.size(40.dp)) {
-        val r = size.minDimension * 0.18f
+        val sunR = size.minDimension * 0.15f
+        val moonR = size.minDimension * 0.15f
         // Keep clear gap between sun and moon disks
         val sun = Offset(size.width * 0.26f, size.height * 0.5f)
         val moon = Offset(size.width * 0.74f, size.height * 0.5f)
 
-        drawCircle(SunGold, r, sun)
-        drawCircle(SunOrange, r, sun, style = Stroke(1.5f))
+        drawCircle(SunGold, sunR, sun)
+        drawCircle(SunOrange, sunR, sun, style = Stroke(1.5f))
 
         // Match ClockRenderer.drawSunAndMoon waxing crescent (~day 4.5 / synodic month).
-        drawCircle(MoonShadow, r, moon)
-        val topLeft = Offset(moon.x - r, moon.y - r)
-        val disc = Size(r * 2, r * 2)
+        drawCircle(MoonShadow, moonR, moon)
+        val topLeft = Offset(moon.x - moonR, moon.y - moonR)
+        val disc = Size(moonR * 2, moonR * 2)
         drawArc(
             color = MoonLit,
             startAngle = -90f,
@@ -122,12 +123,12 @@ fun GlyphSunMoon(modifier: Modifier = Modifier) {
         )
         val p = 0.15
         val midP = (p * 4) - 1
-        val eWidth = abs(midP).toFloat() * r
+        val eWidth = abs(midP).toFloat() * moonR
         val ePaint = if (midP < 0) MoonShadow else MoonLit
         drawOval(
             color = ePaint,
-            topLeft = Offset(moon.x - eWidth, moon.y - r),
-            size = Size(eWidth * 2, r * 2)
+            topLeft = Offset(moon.x - eWidth, moon.y - moonR),
+            size = Size(eWidth * 2, moonR * 2)
         )
     }
 }
