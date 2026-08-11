@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
@@ -17,7 +18,10 @@ class BedtimeNotificationManager(private val context: Context) {
     companion object {
         const val REMINDER_CHANNEL_ID = "bedtime_reminder_channel"
         const val COUNTDOWN_CHANNEL_ID = "bedtime_countdown_channel"
+        const val REMINDER_NOTIFICATION_ID = 3001
         private const val TAG = "BedtimeNotifManager"
+        private const val STATE_PREFS_NAME = "bedtime_notification_state"
+        private const val KEY_LAST_WAKE_END_TIME = "last_wake_end_time"
 
         /** Wind-down / countdown target is this many minutes before fall-asleep. */
         private const val BEDTIME_LEAD_MINUTES = 90L
@@ -126,8 +130,29 @@ class BedtimeNotificationManager(private val context: Context) {
 
         Log.d(TAG, "Calculated bedtime: ${LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(bedtimeMillis), ZoneId.systemDefault())}")
 
+        clearStaleReminderIfWakeChanged(logs)
         scheduleReminder(bedtimeMillis)
         startCountdownService(bedtimeMillis)
+    }
+
+    /**
+     * A previously posted "Time for bed" reminder was computed from the prior wake-up time.
+     * If today's main sleep now reports a different wake-up (endTime), that posted notification
+     * no longer reflects the current bedtime target, so clear it away.
+     */
+    private fun clearStaleReminderIfWakeChanged(logs: List<SleepLogEntry>) {
+        val mainSleep = logs.filter { it.isMainSleep }.maxByOrNull { it.dateOfSleep } ?: return
+        val today = LocalDate.now().toString()
+        if (mainSleep.dateOfSleep != today) return
+
+        val prefs = context.getSharedPreferences(STATE_PREFS_NAME, Context.MODE_PRIVATE)
+        val lastKnownWakeEndTime = prefs.getString(KEY_LAST_WAKE_END_TIME, null)
+        if (lastKnownWakeEndTime != null && lastKnownWakeEndTime != mainSleep.endTime) {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.cancel(REMINDER_NOTIFICATION_ID)
+            Log.d(TAG, "New wake-up time detected for today ($lastKnownWakeEndTime -> ${mainSleep.endTime}); cleared stale bedtime reminder")
+        }
+        prefs.edit().putString(KEY_LAST_WAKE_END_TIME, mainSleep.endTime).apply()
     }
 
     private fun scheduleReminder(bedtimeMillis: Long) {

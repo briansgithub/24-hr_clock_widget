@@ -39,6 +39,6 @@ class BedtimeReminderReceiver : BroadcastReceiver() {
             .setAutoCancel(true)
             .build()
 
-        notificationManager.notify(3001, notification)
+        notificationManager.notify(BedtimeNotificationManager.REMINDER_NOTIFICATION_ID, notification)
     }
 }
