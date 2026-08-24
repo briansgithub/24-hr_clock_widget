@@ -1,6 +1,9 @@
 package com.example.a24_hr_clock.logic
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -40,18 +43,111 @@ class EnergyCalculatorTest {
         val withNapLater = EnergyCalculator.adaptiveSleepEnergy(
             18.0, 8.0, 5.5, 0.0, napIntervals = nap
         )
-        val asleep = EnergyCalculator.adaptiveSleepEnergy(
-            12.25, 8.0, 5.5, 0.0, napIntervals = nap
-        )
         assertTrue(withNapImmediate < noNapImmediate)
         assertTrue(withNapLater > noNapLater)
-        assertEquals(0.0, asleep, 0.0)
+    }
+
+    private fun sleepLog(
+        isMain: Boolean,
+        start: String,
+        end: String,
+        minutes: Int
+    ) = SleepLogEntry(
+        dateOfSleep = "2026-07-21",
+        minutesAsleep = minutes,
+        isMainSleep = isMain,
+        timeInBed = minutes + 20,
+        startTime = start,
+        endTime = end
+    )
+
+    @Test
+    fun predictionStatesUseHalfOpenSleepBoundaries() {
+        val context = EnergyCalculator.buildSleepModelContext(
+            listOf(
+                sleepLog(true, "2026-07-20T23:00:00", "2026-07-21T07:00:00", 450),
+                sleepLog(false, "2026-07-21T14:00:00", "2026-07-21T14:30:00", 25)
+            ),
+            includeNaps = true
+        )
+        fun prediction(hour: Double) = EnergyCalculator.predictEnergy(
+            hClock = hour,
+            wakeHour = 7.0,
+            sleepContext = context,
+            sleepDuration = 7.5
+        )
+
+        assertEquals(EnergyPredictionState.ASLEEP, prediction(23.0).state)
+        assertEquals(EnergyPredictionState.ASLEEP, prediction(1.0).state)
+        assertEquals(EnergyPredictionState.AWAKE, prediction(7.0).state)
+        assertNotNull(prediction(7.0).value)
+        assertEquals(EnergyPredictionState.ASLEEP, prediction(14.0).state)
+        assertEquals(EnergyPredictionState.AWAKE, prediction(14.5).state)
     }
 
     @Test
-    fun settingsUseM8AndMigrateLegacyPersonalIds() {
+    fun disablingNapEffectsStillMasksNap() {
+        val logs = listOf(
+            sleepLog(true, "2026-07-21T00:00:00", "2026-07-21T08:00:00", 450),
+            sleepLog(false, "2026-07-21T12:00:00", "2026-07-21T12:30:00", 25)
+        )
+        val withEffects = EnergyCalculator.buildSleepModelContext(logs, includeNaps = true)
+        val withoutEffects = EnergyCalculator.buildSleepModelContext(logs, includeNaps = false)
+        fun prediction(hour: Double, context: SleepModelContext) =
+            EnergyCalculator.predictEnergy(
+                hClock = hour,
+                wakeHour = 8.0,
+                sleepContext = context,
+                sleepDuration = 7.5,
+                usePersonalModel = true,
+                personalModelId = EnergyCalculator.MODEL_M8
+            )
+
+        assertEquals(EnergyPredictionState.ASLEEP, prediction(12.25, withEffects).state)
+        assertEquals(EnergyPredictionState.ASLEEP, prediction(12.25, withoutEffects).state)
+        assertTrue(
+            prediction(12.5, withEffects).value!! <
+                prediction(12.5, withoutEffects).value!!
+        )
+    }
+
+    @Test
+    fun missingMainSleepIsUnavailable() {
+        val context = EnergyCalculator.buildSleepModelContext(emptyList())
+        val prediction = EnergyCalculator.predictEnergy(12.0, 8.0, context)
+        assertEquals(EnergyPredictionState.UNAVAILABLE, prediction.state)
+        assertNull(prediction.value)
+    }
+
+    @Test
+    fun awakeSegmentsDoNotCrossShortSleep() {
+        val intervals = listOf(
+            ClockSleepInterval(23.0, 7.0, SleepIntervalKind.MAIN),
+            ClockSleepInterval(14.1, 14.15, SleepIntervalKind.NAP)
+        )
+        val segments = EnergyCalculator.awakeClockSegments(intervals)
+        assertEquals(
+            listOf(AwakeClockSegment(7.0, 14.1), AwakeClockSegment(14.15, 23.0)),
+            segments
+        )
+        for (segment in segments) {
+            val midpoint = ((segment.startHour + segment.endHour) / 2.0).mod(24.0)
+            assertFalse(intervals.any { it.contains(midpoint) })
+        }
+    }
+
+    @Test
+    fun awakeRangeIgnoresMissingValues() {
+        val range = EnergyCalculator.awakeEnergyRange(listOf(null, 0.3, null, 0.8))
+        assertEquals(0.3, range!!.minimum, 0.0)
+        assertEquals(0.8, range.maximum, 0.0)
+        assertNull(EnergyCalculator.awakeEnergyRange(listOf(null, null)))
+    }
+
+    @Test
+    fun settingsUseProductionModelAndMigrateLegacyPersonalIds() {
         val m8 = ModelSettings(usePersonalModel = true)
-        assertEquals(EnergyCalculator.MODEL_M8, m8.personalModelId)
+        assertEquals(EnergyCalculator.PRODUCTION_MODEL_ID, m8.personalModelId)
         val expected = EnergyCalculator.adaptiveSleepEnergy(14.0, 9.0, 7.0, 3.0)
         val actual = EnergyCalculator.getEnergyLevelFromSettings(
             hClock = 14.0,

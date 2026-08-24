@@ -86,7 +86,7 @@ class SettingsManager(private val context: Context) {
             localBackupUri = "",
             lastEmpiricalSync = 0L,
             usePersonalModel = true,
-            personalModelId = EnergyCalculator.MODEL_M8,
+            personalModelId = EnergyCalculator.PRODUCTION_MODEL_ID,
             baselineIntercept = 37.30320553378204,
             baselineSleepCoef = 0.042489107249623334,
             baselineDebtCoef = 0.4463493452453248,
@@ -230,9 +230,9 @@ data class ModelSettings(
     val googleDriveUrl: String = DEFAULT_GOOGLE_DRIVE_WEB_APP_URL,
     val localBackupUri: String = "",
     val lastEmpiricalSync: Long = 0L,
-    /** When true, use the adaptive empirical M8 model instead of population defaults. */
+    /** When true, use the generated production adaptive model instead of population defaults. */
     val usePersonalModel: Boolean = true,
-    val personalModelId: String = EnergyCalculator.MODEL_M8,
+    val personalModelId: String = EnergyCalculator.PRODUCTION_MODEL_ID,
     val baselineIntercept: Double = 37.30320553378204,
     val baselineSleepCoef: Double = 0.042489107249623334,
     val baselineDebtCoef: Double = 0.4463493452453248,

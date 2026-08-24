@@ -1897,12 +1897,13 @@ class ClockWidget:
         center_x, center_y = w / 2, h / 2
         
         current_r = radius # Fallback to perimeter
-        current_e = 0.5    # Fallback energy
+        current_e = None
         
         if self.wake_hour is not None:
             self._apply_energy_curve_params()
             current_e = self.energy_curve.get_cached_energy(phantom_hour)
-            current_r = self.energy_curve.get_display_radius(current_e, radius)
+            if current_e is not None:
+                current_r = self.energy_curve.get_display_radius(current_e, radius)
 
         hx = center_x + current_r * math.cos(rad)
         hy = center_y - current_r * math.sin(rad)
@@ -1933,7 +1934,7 @@ class ClockWidget:
             self.canvas.coords("phantom_hand_dot", center_x - dot_r, center_y - dot_r, center_x + dot_r, center_y + dot_r)
             self.canvas.itemconfig("phantom_hand_dot", fill="#222222")
         
-        if self.wake_hour is not None:
+        if self.wake_hour is not None and current_e is not None:
             pct = self._energy_display_pct(current_e)
             if self.energy_curve._cached_e_max > 0:
                 icon_size = max(12, int(radius / 7))
@@ -2853,7 +2854,13 @@ class ClockWidget:
         levels = self.energy_curve._cached_levels
         if not levels:
             return None
-        peak_index = levels.index(self.energy_curve._cached_e_max)
+        awake_levels = [
+            (index, value) for index, value in enumerate(levels)
+            if value is not None
+        ]
+        if not awake_levels:
+            return None
+        peak_index, _ = max(awake_levels, key=lambda item: item[1])
         return (peak_index / (len(levels) - 1)) * 24.0
 
     def update_metric_labels(self):
@@ -3083,16 +3090,19 @@ class ClockWidget:
         self._energy_param_signature = signature
         self.energy_curve.wake_hour = self.wake_hour
         self.energy_curve.sleep_debt_hours = self.sleep_debt_hours if self.show_sleep_debt.get() else 0.0
-        main_duration, nap_intervals = sleep_model_context(
+        sleep_context = sleep_model_context(
             self.raw_sleep_logs,
             self.active_sleep_date,
             self.include_naps.get(),
         )
+        self.energy_curve.sleep_context = sleep_context
         self.energy_curve.sleep_duration = (
-            main_duration if main_duration is not None and main_duration > 0.0
+            sleep_context.main_sleep_duration
+            if sleep_context.main_sleep_duration is not None
+            and sleep_context.main_sleep_duration > 0.0
             else self.sleep_duration
         )
-        self.energy_curve.nap_intervals = nap_intervals
+        self.energy_curve.nap_intervals = sleep_context.modeled_nap_intervals
         self.energy_curve.bathyphase_hour = self.bathyphase_hour if self.use_bathyphase.get() else None
         
         self.energy_curve.tau_wake = self.tau_wake.get()
@@ -3148,7 +3158,11 @@ class ClockWidget:
             self._apply_energy_curve_params()
             current_e = self.energy_curve.get_cached_energy(current_hour)
 
-            if self.energy_curve._cached_e_max > 0 and self.show_energy_pct.get():
+            if (
+                current_e is not None
+                and self.energy_curve._cached_e_max > 0
+                and self.show_energy_pct.get()
+            ):
                 pct = self._energy_display_pct(current_e)
                 # Text at the tip of the hand
                 icon_size = max(12, int(radius / 7))
@@ -4151,6 +4165,7 @@ class ClockWidget:
         if self.wake_hour is None:
             return
         self._apply_energy_curve_params()
+        self.energy_curve.normalize = self.normalize_energy.get()
         snapshot = {
             'wake_hour': self.wake_hour,
             'sleep_hour': self.sleep_hour,
@@ -4162,8 +4177,8 @@ class ClockWidget:
                 name: getattr(self.energy_curve, name)
                 for name in (
                     'wake_hour', 'sleep_debt_hours', 'sleep_duration', 'bathyphase_hour',
-                    'nap_intervals', 'tau_wake', 'tau_sleep', 'tau_inertia',
-                    'debt_factor', 'circadian_peak_offset',
+                    'nap_intervals', 'sleep_context', 'tau_wake', 'tau_sleep', 'tau_inertia',
+                    'debt_factor', 'circadian_peak_offset', 'normalize',
                 )
             },
             'timestamp': datetime.datetime.now(),
@@ -4218,7 +4233,6 @@ class ClockWidget:
         curve = EnergyCurve(None)
         for name, value in snapshot['energy'].items():
             setattr(curve, name, value)
-        curve.normalize = True
         curve.draw(center_x, center_y, radius, wake_hour, draw_obj=draw, width_scale=scale)
 
         draw.ellipse([center_x - radius, center_y - radius, center_x + radius, center_y + radius], outline="black", width=int(2 * scale))

@@ -4,15 +4,16 @@ Active branch inventory and merge order. Consult the linked handoff when resumin
 
 Each active branch has a replacement-style handoff plus an adjacent append-only history. Closed branches are **archived** (not deleted): see [archive/](archive/) and the global close-only ledger [HISTORY.md](HISTORY.md).
 
-Last verified: 2026-07-31
+Last verified: 2026-08-24
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | `62adb6d` (synced with `origin/main`) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `main` | `62b8d19` (local base) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `feature/awake-energy-model` | validated local checkpoint based at `62b8d19` | Awake-only energy model and gated M9 candidate; M8 retained | [handoff](feature/awake-energy-model.md) | [history](feature/awake-energy-model.history.md) |
 
 ## Current merge order
 
-No feature branches are currently queued for merge. The former `feature/energy-refit-jul29` files remain preserved in a detached worktree at `3a13b4b`; the branch label has been deleted.
+`feature/awake-energy-model` is the only active feature branch. The former `feature/energy-refit-jul29` files remain preserved in a detached worktree at `3a13b4b`; the branch label has been deleted.
 
 Parallel agents must use separate Git worktrees — see [MULTI_AGENT.md](MULTI_AGENT.md).
 

@@ -2,6 +2,104 @@ import math
 import json
 import os
 import tkinter as tk
+import copy
+from dataclasses import dataclass
+from enum import Enum
+
+
+class SleepIntervalKind(str, Enum):
+    MAIN = "main"
+    NAP = "nap"
+
+
+class EnergyPredictionState(str, Enum):
+    AWAKE = "awake"
+    ASLEEP = "asleep"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True)
+class ClockSleepInterval:
+    """A half-open sleep interval on a circular 24-hour clock."""
+
+    start_hour: float
+    end_hour: float
+    kind: SleepIntervalKind
+
+    def contains(self, clock_hour: float) -> bool:
+        start = self.start_hour % 24.0
+        end = self.end_hour % 24.0
+        hour = clock_hour % 24.0
+        if math.isclose(start, end, abs_tol=1e-9):
+            return False
+        if start < end:
+            return start <= hour < end
+        return hour >= start or hour < end
+
+
+@dataclass(frozen=True)
+class SleepModelContext:
+    main_sleep_duration: float | None
+    all_sleep_intervals: tuple[ClockSleepInterval, ...] = ()
+    modeled_nap_intervals: tuple[tuple[float, float], ...] = ()
+
+    @property
+    def available(self) -> bool:
+        return self.main_sleep_duration is not None and any(
+            interval.kind == SleepIntervalKind.MAIN
+            for interval in self.all_sleep_intervals
+        )
+
+
+@dataclass(frozen=True)
+class EnergyPrediction:
+    state: EnergyPredictionState
+    value: float | None = None
+
+    def __post_init__(self) -> None:
+        if (self.state == EnergyPredictionState.AWAKE) != (self.value is not None):
+            raise ValueError("Only awake energy predictions may contain a value")
+
+
+def awake_clock_segments(
+    intervals: tuple[ClockSleepInterval, ...] | list[ClockSleepInterval],
+) -> tuple[tuple[float, float], ...]:
+    """Return non-overlapping awake clock segments, joining across midnight."""
+    spans: list[tuple[float, float]] = []
+    for interval in intervals:
+        start = interval.start_hour % 24.0
+        end = interval.end_hour % 24.0
+        if math.isclose(start, end, abs_tol=1e-9):
+            continue
+        if start < end:
+            spans.append((start, end))
+        else:
+            spans.extend(((start, 24.0), (0.0, end)))
+
+    if not spans:
+        return ((0.0, 24.0),)
+
+    spans.sort()
+    merged: list[tuple[float, float]] = []
+    for start, end in spans:
+        if merged and start <= merged[-1][1] + 1e-9:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+
+    gaps: list[tuple[float, float]] = []
+    cursor = 0.0
+    for start, end in merged:
+        if start > cursor + 1e-9:
+            gaps.append((cursor, start))
+        cursor = max(cursor, end)
+    if cursor < 24.0 - 1e-9:
+        gaps.append((cursor, 24.0))
+
+    if len(gaps) > 1 and gaps[0][0] <= 1e-9 and gaps[-1][1] >= 24.0 - 1e-9:
+        wrapped = (gaps[-1][0], gaps[0][1] + 24.0)
+        gaps = gaps[1:-1] + [wrapped]
+    return tuple(gaps)
 
 # -----------------------------------------------------------------------------
 # FITBIT DATA INPUTS (populate these from the API before drawing)
@@ -138,6 +236,8 @@ def two_process_energy(
 _personal_fit_cache: dict | None = None
 
 ADAPTIVE_MODEL_ID = "M8_adaptive_sleep"
+AWAKE_HYBRID_MODEL_ID = "M9_awake_hybrid"
+ADAPTIVE_MODEL_IDS = {ADAPTIVE_MODEL_ID, AWAKE_HYBRID_MODEL_ID}
 ADAPTIVE_MODEL_DEFAULTS = {
     "circadian_coefs": [
         51.760499671310974,
@@ -163,6 +263,54 @@ ADAPTIVE_MODEL_DEFAULTS = {
 }
 
 
+def _committed_m8_fallback(reason: str) -> dict:
+    return {
+        "schema_version": 1,
+        "model_id": ADAPTIVE_MODEL_ID,
+        "params": copy.deepcopy(ADAPTIVE_MODEL_DEFAULTS),
+        "fallback_reason": reason,
+    }
+
+
+def _valid_adaptive_fit(data: dict) -> bool:
+    if not isinstance(data, dict):
+        return False
+    model_id = data.get("model_id")
+    if model_id not in ADAPTIVE_MODEL_IDS:
+        return True
+    if model_id == AWAKE_HYBRID_MODEL_ID and data.get("schema_version") != 2:
+        return False
+    params = data.get("params")
+    if not isinstance(params, dict):
+        return False
+    required = set(ADAPTIVE_MODEL_DEFAULTS)
+    if not required.issubset(params):
+        return False
+    coefficients = params.get("circadian_coefs")
+    try:
+        harmonics = int(params.get("harmonics", 2))
+    except (TypeError, ValueError):
+        return False
+    if harmonics not in (2, 3) or not isinstance(coefficients, list):
+        return False
+    if len(coefficients) != 1 + 2 * harmonics:
+        return False
+    numeric = [value for key, value in params.items() if key != "circadian_coefs"]
+    numeric.extend(coefficients)
+    if not all(
+        isinstance(value, (int, float)) and math.isfinite(value)
+        for value in numeric
+    ):
+        return False
+    return (
+        float(params["tau_wake"]) == 23.0
+        and float(params["tau_sleep"]) == 4.0
+        and float(params["reference_sleep_hours"]) == 8.0
+        and float(params["debt_saturation_hours"]) == 12.0
+        and float(params["max_phase_shift_hours"]) == 3.0
+    )
+
+
 def load_personal_fit(path: str | None = None) -> dict | None:
     """Load personal model config; returns None if missing or disabled."""
     global _personal_fit_cache
@@ -180,10 +328,14 @@ def load_personal_fit(path: str | None = None) -> dict | None:
             pm = settings.get("personal_model", {})
             if not pm.get("enabled", True):
                 return None
+        if not _valid_adaptive_fit(data):
+            data = _committed_m8_fallback("invalid adaptive model configuration")
         _personal_fit_cache = data
         return data
     except (json.JSONDecodeError, OSError):
-        return None
+        fallback = _committed_m8_fallback("unreadable adaptive model configuration")
+        _personal_fit_cache = fallback
+        return fallback
 
 
 def personal_m4_energy(
@@ -383,11 +535,9 @@ def adaptive_sleep_energy(
     """
     model = _adaptive_params(params)
     t = (clock_hour - wake_hour) % 24.0
-    process_delta, hours_since_last_wake, asleep = _adaptive_process_s_context(
+    process_delta, hours_since_last_wake, _ = _adaptive_process_s_context(
         t, sleep_duration, nap_intervals, model
     )
-    if asleep:
-        return 0.0
 
     reference_peak = float(model["reference_peak_clock"])
     desired_peak = None
@@ -405,16 +555,16 @@ def adaptive_sleep_energy(
         )
 
     coefs = model.get("circadian_coefs", ADAPTIVE_MODEL_DEFAULTS["circadian_coefs"])
-    if len(coefs) < 5:
+    harmonics = int(model.get("harmonics", (len(coefs) - 1) // 2))
+    if harmonics not in (2, 3) or len(coefs) != 1 + 2 * harmonics:
         coefs = ADAPTIVE_MODEL_DEFAULTS["circadian_coefs"]
+        harmonics = 2
     theta = 2.0 * math.pi * ((clock_hour - phase_shift) % 24.0) / 24.0
-    baseline = (
-        float(coefs[0])
-        + float(coefs[1]) * math.cos(theta)
-        + float(coefs[2]) * math.sin(theta)
-        + float(coefs[3]) * math.cos(2.0 * theta)
-        + float(coefs[4]) * math.sin(2.0 * theta)
-    )
+    baseline = float(coefs[0])
+    for harmonic in range(1, harmonics + 1):
+        coefficient_index = 1 + (harmonic - 1) * 2
+        baseline += float(coefs[coefficient_index]) * math.cos(harmonic * theta)
+        baseline += float(coefs[coefficient_index + 1]) * math.sin(harmonic * theta)
 
     process_delta = max(
         float(model["homeostatic_delta_min"]),
@@ -493,7 +643,7 @@ def get_personal_energy(
         return None
     model_id = fit.get("model_id", "")
     params = fit.get("params", {})
-    if model_id == ADAPTIVE_MODEL_ID and clock_hour is not None and wake_hour is not None:
+    if model_id in ADAPTIVE_MODEL_IDS and clock_hour is not None and wake_hour is not None:
         return adaptive_sleep_energy(
             clock_hour=clock_hour,
             wake_hour=wake_hour,
@@ -591,6 +741,47 @@ def get_energy_level(
     )
 
 
+def predict_energy(
+    h_clock: float,
+    wake_hour: float,
+    sleep_context: SleepModelContext | None,
+    sleep_debt_hours: float = 0.0,
+    sleep_duration: float = 7.5,
+    bathyphase_hour: float | None = None,
+    clamp: bool = True,
+    tau_wake: float = 23.0,
+    tau_sleep: float = 4.0,
+    tau_inertia: float = 1.5,
+    debt_factor: float = 1.0,
+    circadian_peak_offset: float | None = None,
+    sleep_efficiency: float = 0.9,
+    use_personal_model: bool = True,
+) -> EnergyPrediction:
+    """Return an awake energy value or an explicit sleep/unavailable state."""
+    if sleep_context is None or not sleep_context.available:
+        return EnergyPrediction(EnergyPredictionState.UNAVAILABLE)
+    if any(interval.contains(h_clock) for interval in sleep_context.all_sleep_intervals):
+        return EnergyPrediction(EnergyPredictionState.ASLEEP)
+
+    value = get_energy_level(
+        h_clock,
+        wake_hour,
+        sleep_debt_hours,
+        sleep_duration,
+        bathyphase_hour,
+        clamp,
+        tau_wake,
+        tau_sleep,
+        tau_inertia,
+        debt_factor,
+        circadian_peak_offset,
+        sleep_efficiency,
+        use_personal_model,
+        sleep_context.modeled_nap_intervals,
+    )
+    return EnergyPrediction(EnergyPredictionState.AWAKE, value)
+
+
 def sync_sleep_inclusion(
     excluded_dates: list[str] | None,
     explicit_dates: list[str] | None,
@@ -654,15 +845,15 @@ def sleep_model_context(
     raw_logs: list[dict],
     active_sleep_date: str | None,
     include_naps: bool = True,
-) -> tuple[float | None, tuple[tuple[float, float], ...]]:
-    """Extract main-sleep duration and wake-relative nap intervals for M8."""
+) -> SleepModelContext:
+    """Extract the main sleep, display masks, and modeled nap intervals."""
     if not active_sleep_date:
-        return None, ()
+        return SleepModelContext(None)
 
     logs = [log for log in raw_logs if log.get("dateOfSleep") == active_sleep_date]
     main_sleep = next((log for log in logs if log.get("isMainSleep")), None)
     if not main_sleep:
-        return None, ()
+        return SleepModelContext(None)
 
     try:
         from datetime import datetime
@@ -671,13 +862,22 @@ def sleep_model_context(
             parsed = datetime.fromisoformat(value.strip().removesuffix("Z"))
             return parsed.replace(tzinfo=None)
 
+        main_start = parse_local(main_sleep["startTime"])
         wake_time = parse_local(main_sleep["endTime"])
     except (KeyError, TypeError, ValueError):
-        return None, ()
+        return SleepModelContext(None)
 
     main_duration = max(0.0, float(main_sleep.get("minutesAsleep", 0)) / 60.0)
-    if not include_naps:
-        return main_duration, ()
+    def clock_hour(value: datetime) -> float:
+        return value.hour + value.minute / 60.0 + value.second / 3600.0
+
+    sleep_intervals: list[ClockSleepInterval] = [
+        ClockSleepInterval(
+            clock_hour(main_start),
+            clock_hour(wake_time),
+            SleepIntervalKind.MAIN,
+        )
+    ]
 
     naps: list[tuple[float, float]] = []
     for nap in logs:
@@ -688,13 +888,24 @@ def sleep_model_context(
             end = parse_local(nap["endTime"])
         except (KeyError, TypeError, ValueError):
             continue
+        sleep_intervals.append(
+            ClockSleepInterval(
+                clock_hour(start),
+                clock_hour(end),
+                SleepIntervalKind.NAP,
+            )
+        )
         start_after_wake = (start - wake_time).total_seconds() / 3600.0
         end_after_wake = (end - wake_time).total_seconds() / 3600.0
-        if end_after_wake <= 0.0 or start_after_wake >= 24.0:
+        if not include_naps or end_after_wake <= 0.0 or start_after_wake >= 24.0:
             continue
         naps.append((max(0.0, start_after_wake), min(24.0, end_after_wake)))
 
-    return main_duration, _normalise_nap_intervals(naps)
+    return SleepModelContext(
+        main_sleep_duration=main_duration,
+        all_sleep_intervals=tuple(sleep_intervals),
+        modeled_nap_intervals=_normalise_nap_intervals(naps),
+    )
 
 
 def compute_sleep_debt(
@@ -797,6 +1008,7 @@ class EnergyCurve:
         self.sleep_duration    = 7.5
         self.bathyphase_hour   = None
         self.nap_intervals     = ()
+        self.sleep_context     = None
         self.normalize         = True
         
         # Model Parameters
@@ -820,18 +1032,54 @@ class EnergyCurve:
         b = int(255 * (1 - val) + 43  * val)
         return f'#{r:02x}{g:02x}{b:02x}'
 
-    def get_cached_energy(self, h: float, steps: int = 1440) -> float:
+    def get_cached_energy(self, h: float, steps: int = 1440) -> float | None:
         """Returns the energy level at hour `h` using a precomputed cache."""
         args = (
             self.wake_hour, self.sleep_debt_hours, self.sleep_duration, self.bathyphase_hour,
-            tuple(self.nap_intervals), self.tau_wake, self.tau_sleep, self.tau_inertia,
+            tuple(self.nap_intervals), self.sleep_context,
+            self.tau_wake, self.tau_sleep, self.tau_inertia,
             self.debt_factor, self.circadian_peak_offset
         )
         if self._cached_args != args or not self._cached_levels or len(self._cached_levels) != steps + 1:
             self._recompute_cache(steps)
-            
+
+        if self.sleep_context is None or not self.sleep_context.available:
+            return None
+        if any(
+            interval.contains(h)
+            for interval in self.sleep_context.all_sleep_intervals
+        ):
+            return None
         idx = int(round((h % 24.0) / 24.0 * steps)) % steps
-        return self._cached_levels[idx]
+        value = self._cached_levels[idx]
+        if value is not None:
+            return value
+        # Preserve exact half-open boundary semantics when the minute cache
+        # rounds an awake timestamp onto a neighboring sleep sample.
+        return predict_energy(
+            h,
+            self.wake_hour,
+            self.sleep_context,
+            self.sleep_debt_hours,
+            self.sleep_duration,
+            self.bathyphase_hour,
+            clamp=False,
+            tau_wake=self.tau_wake,
+            tau_sleep=self.tau_sleep,
+            tau_inertia=self.tau_inertia,
+            debt_factor=self.debt_factor,
+            circadian_peak_offset=self.circadian_peak_offset,
+        ).value
+
+    def get_cached_prediction(self, h: float, steps: int = 1440) -> EnergyPrediction:
+        value = self.get_cached_energy(h, steps)
+        if value is not None:
+            return EnergyPrediction(EnergyPredictionState.AWAKE, value)
+        if self.sleep_context and self.sleep_context.available and any(
+            interval.contains(h) for interval in self.sleep_context.all_sleep_intervals
+        ):
+            return EnergyPrediction(EnergyPredictionState.ASLEEP)
+        return EnergyPrediction(EnergyPredictionState.UNAVAILABLE)
 
     def _recompute_cache(self, steps: int):
         global _energy_summary_printed
@@ -839,9 +1087,10 @@ class EnergyCurve:
         levels = []
         for i in range(steps + 1):
             h = (i / float(steps)) * 24.0
-            e = get_energy_level(
+            prediction = predict_energy(
                 h,
                 self.wake_hour,
+                self.sleep_context,
                 self.sleep_debt_hours,
                 self.sleep_duration,
                 self.bathyphase_hour,
@@ -851,15 +1100,16 @@ class EnergyCurve:
                 tau_inertia=self.tau_inertia,
                 debt_factor=self.debt_factor,
                 circadian_peak_offset=self.circadian_peak_offset,
-                nap_intervals=self.nap_intervals,
             )
-            levels.append(e)
+            levels.append(prediction.value)
         self._cached_levels = levels
-        self._cached_e_min = min(levels)
-        self._cached_e_max = max(levels)
+        awake_levels = [level for level in levels if level is not None]
+        self._cached_e_min = min(awake_levels) if awake_levels else 0.0
+        self._cached_e_max = max(awake_levels) if awake_levels else 0.0
         self._cached_args = (
             self.wake_hour, self.sleep_debt_hours, self.sleep_duration, self.bathyphase_hour,
-            tuple(self.nap_intervals), self.tau_wake, self.tau_sleep, self.tau_inertia,
+            tuple(self.nap_intervals), self.sleep_context,
+            self.tau_wake, self.tau_sleep, self.tau_inertia,
             self.debt_factor, self.circadian_peak_offset
         )
 
@@ -883,49 +1133,61 @@ class EnergyCurve:
         
         # Trigger cache update if needed
         self.get_cached_energy(0)
-        
-        # 2. Draw the segments using a reduced visual resolution (e.g., 72 steps)
-        steps = 72
-        last_px = last_py = None
-        segment_index = 0
-        for i in range(steps + 1):
-            h = (i / float(steps)) * 24.0
-            energy = self.get_cached_energy(h)
-            current_r = self.get_display_radius(energy, radius)
 
-            angle = (18.0 - h) * 15.0
-            rad   = math.radians(angle)
-            px = cx + current_r * math.cos(rad)
-            py = cy - current_r * math.sin(rad)
-            
-            if last_px is not None:
-                color = self.interpolate_color(energy)
-                width = int(4 * width_scale)
-                if draw_obj:
-                    draw_obj.line([(last_px, last_py), (px, py)], fill=color, width=width)
-                else:
-                    item_id = self._line_ids[segment_index] if segment_index < len(self._line_ids) else None
-                    try:
-                        item_exists = item_id is not None and bool(self.canvas.type(item_id))
-                    except tk.TclError:
-                        item_exists = False
-                    if item_exists:
-                        self.canvas.coords(item_id, last_px, last_py, px, py)
-                        self.canvas.itemconfigure(item_id, fill=color, width=width)
+        # Draw each awake segment independently so no line crosses sleep.
+        max_step_hours = 24.0 / 72.0
+        segment_index = 0
+        intervals = self.sleep_context.all_sleep_intervals if self.sleep_context else ()
+        for start, end in awake_clock_segments(intervals):
+            length = end - start
+            if length <= 1e-9:
+                continue
+            point_count = max(2, int(math.ceil(length / max_step_hours)) + 1)
+            awake_end = math.nextafter(end, start)
+            last_px = last_py = None
+            for point_index in range(point_count):
+                fraction = point_index / (point_count - 1)
+                raw_hour = start + (awake_end - start) * fraction
+                h = raw_hour % 24.0
+                energy = self.get_cached_energy(h)
+                if energy is None:
+                    last_px = last_py = None
+                    continue
+                current_r = self.get_display_radius(energy, radius)
+
+                angle = (18.0 - h) * 15.0
+                rad = math.radians(angle)
+                px = cx + current_r * math.cos(rad)
+                py = cy - current_r * math.sin(rad)
+
+                if last_px is not None:
+                    color = self.interpolate_color(energy)
+                    width = int(4 * width_scale)
+                    if draw_obj:
+                        draw_obj.line([(last_px, last_py), (px, py)], fill=color, width=width)
                     else:
-                        item_id = self.canvas.create_line(
-                            last_px, last_py, px, py,
-                            fill=color,
-                            width=width,
-                            capstyle=tk.ROUND,
-                            tags=("energy_curve", f"energy_curve_segment_{segment_index}"),
-                        )
-                        if segment_index < len(self._line_ids):
-                            self._line_ids[segment_index] = item_id
+                        item_id = self._line_ids[segment_index] if segment_index < len(self._line_ids) else None
+                        try:
+                            item_exists = item_id is not None and bool(self.canvas.type(item_id))
+                        except tk.TclError:
+                            item_exists = False
+                        if item_exists:
+                            self.canvas.coords(item_id, last_px, last_py, px, py)
+                            self.canvas.itemconfigure(item_id, fill=color, width=width)
                         else:
-                            self._line_ids.append(item_id)
-                    segment_index += 1
-            last_px, last_py = px, py
+                            item_id = self.canvas.create_line(
+                                last_px, last_py, px, py,
+                                fill=color,
+                                width=width,
+                                capstyle=tk.ROUND,
+                                tags=("energy_curve", f"energy_curve_segment_{segment_index}"),
+                            )
+                            if segment_index < len(self._line_ids):
+                                self._line_ids[segment_index] = item_id
+                            else:
+                                self._line_ids.append(item_id)
+                        segment_index += 1
+                last_px, last_py = px, py
 
         if draw_obj is None and len(self._line_ids) > segment_index:
             for item_id in self._line_ids[segment_index:]:

@@ -7,11 +7,12 @@ empirical alertness data accumulates. Read alongside
 **Abbreviations:** see [energy_model_glossary.md](energy_model_glossary.md) for
 definitions of MAE, LOO-CV, M1–M6, Process S, k_s, outlier classes, and related terms.
 
-**Current baseline (2026-07-22, wake-episode grouping, Fitbit Jul 16–22):** 154 fit
-points over 7 days. LOO-CV winner **M3** (MAE 19.3); **M4** LOO MAE 21.1 / R² −0.24,
-in-sample MAE **15.5** / R² **0.39**. Production stays on **M4**
-(`personal_energy_fit.json`, k_s=0.2) until ≥21 days and a clear CV win. Parameters
-are **provisional**.
+**Current baseline (2026-08-24):** production remains **M8**
+(`M8_adaptive_sleep`). The canonical awake-episode run found 17 qualified episodes
+and 480 original ratings. Provisional **M9** regressed against M8 on the identical
+sample (MAE 15.10 vs 13.90; RMSE 18.36 vs 16.94), so no promotion is allowed.
+Recorded sleep has no subjective-energy value even though Process S continues to
+change internally.
 
 ---
 
@@ -41,6 +42,25 @@ are **provisional**.
 ## Standard pipeline (run in order)
 
 From repo root with `Alertness_Master_Log.csv` present:
+
+For the production-gated M9 path:
+
+```bash
+# Fit provisional parameters and write the candidate + validation report to analysis/
+python python/fit_awake_hybrid_model.py
+
+# Confirm the production JSON and generated Android constants have not drifted
+python python/export_energy_model.py --check
+
+# Promotion is deliberately separate and refuses any candidate with a failed gate
+python python/export_energy_model.py --promote analysis/m9_awake_hybrid_candidate.json
+```
+
+The M9 fitter uses only original `LOGGED` ratings for scoring, permits one- or
+two-slot interpolation within a wake episode for fitting, gives every qualified
+episode equal total weight, and holds out whole episodes in outer CV.
+
+The older diagnostic pipeline remains useful for historical M1–M6 comparisons:
 
 ```bash
 # 1. Unit tests (fast sanity)
@@ -124,12 +144,11 @@ applies short inertia without resetting circadian `t` (hours since main wake).
 
 ### 5. Export to production
 
-When params are stable (≥21 days, acceptable LOO MAE):
-
-1. Copy winning M4 params from `energy_fit_report.json` → `python/personal_energy_fit.json`.
-2. Sync `python/sleep_settings.json` `personal_model` block if present.
-3. Mirror in Android `EnergyCalculator.kt` / `ModelSettings.usePersonalModel`.
-4. Run `python python/test_energy_fit.py` and Android `EnergyCalculatorTest`.
+Promotion requires at least 21 qualified wake episodes, ≥1.0 common-sample
+outer-CV MAE improvement, no RMSE regression, wins on ≥60% of held-out episodes,
+and both reference and held-out peak–dip–peak shape gates. Never copy constants
+manually. Run the explicit exporter only after every gate passes; it writes the
+schema-version-2 production JSON and regenerates Android constants deterministically.
 
 ---
 
@@ -172,7 +191,9 @@ batch or overfitting; revert to previous `personal_energy_fit.json`.
 | `python/energy_models.py` | M1–M6 predictors, extrema detection |
 | `python/sleep_dynamics.py` | Process-S timeline, nap/main restoration |
 | `python/data_review.py` | Suspicious data, gap audit, peak/trough export |
-| `python/energy_logic.py` | Production `get_energy_level()` / personal M4 |
+| `python/energy_logic.py` | Production awake-only prediction contract and adaptive M8/M9 runtime |
+| `python/fit_awake_hybrid_model.py` | Canonical M8-vs-M9 grouped-CV fitter and promotion report |
+| `python/export_energy_model.py` | Deterministic Android export, drift check, and explicit gated promotion |
 
 ---
 

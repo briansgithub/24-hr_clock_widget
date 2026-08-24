@@ -15,7 +15,7 @@ validation reports, and handoffs.
 | **LOO** | Leave-one-out | Cross-validation that holds out one calendar day per fold. |
 | **LOO-CV** | Leave-one-out cross-validation | Primary generalization check in `analyze_energy_fit.py` (also written **CV**). |
 
-## Model tiers (M1â€“M8)
+## Model tiers (M1â€“M9)
 
 Candidate predictors benchmarked in `python/energy_models.py`. Names match `MODEL_REGISTRY` keys.
 
@@ -29,6 +29,7 @@ Candidate predictors benchmarked in `python/energy_models.py`. Names match `MODE
 | **M6** | `M6_time_varying_debt` | M2-style core with time-varying sleep-debt weighting. |
 | **M7** | `M7_empirical_clock_fourier` | Legacy personal local-clock Fourier curve without sleep-state corrections. |
 | **M8** | `M8_adaptive_sleep` | **Production default:** personal local-clock Fourier baseline plus continuous Process S, observed-night debt, and wake/nap inertia. |
+| **M9** | `M9_awake_hybrid` | Provisional awake-only hybrid candidate: two harmonics or a ridge-regularized third harmonic, fitted with mean-zero wake-episode intercepts and gated before promotion. |
 
 **CV winner** â€” model with the lowest LOO MAE in a given re-fit run (not always adopted for production).
 
@@ -49,7 +50,7 @@ Candidate predictors benchmarked in `python/energy_models.py`. Names match `MODE
 
 | Term | Meaning |
 |---|---|
-| **Energy %** | Percent of today's personal energy curve peak (0–100). Uses the same sleep and debt inputs as the live ring; not compared to a perfection reference night. |
+| **Energy %** | Predicted subjective alertness on the model's 0–100 scale. It is shown only while awake and is hidden during recorded sleep or when main sleep timing is unavailable. |
 | **Acrophase** | Clock time of the circadian energy peak for the current wake day (model-derived). |
 | **Perfection reference** | Hypothetical curve at goal sleep with zero debt; used for rested-cap logic, not for the Energy % hand label. |
 ## Sleep input grouping

@@ -5,6 +5,8 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta
+from pathlib import Path
 
 import pandas as pd
 
@@ -26,6 +28,16 @@ from analyze_energy_fit import (
 )
 from energy_models import ModelParams, predict_m4_circadian_baseline
 from energy_logic import get_personal_energy, load_personal_fit, personal_m4_energy
+from fit_awake_hybrid_model import (
+    FitObservation,
+    RawSlot,
+    WakeEpisode,
+    _group_folds,
+    episode_weights,
+    evaluate_promotion,
+    interpolate_episode,
+)
+from export_energy_model import check_export, render_android_constants
 from energy_models import (
     ModelParams,
     metrics,
@@ -66,6 +78,138 @@ class TestInterpolation(unittest.TestCase):
         interp = out[out["Status"] == STATUS_INTERP]
         self.assertEqual(len(interp), 1)
         self.assertAlmostEqual(float(interp.iloc[0]["EnergyLevel"]), 50.0, places=1)
+
+
+class TestAwakeHybridFitter(unittest.TestCase):
+    @staticmethod
+    def _episode(slots):
+        wake = slots[0].datetime
+        return WakeEpisode(
+            episode_id="episode-a",
+            wake=wake,
+            end=slots[-1].datetime + timedelta(minutes=30),
+            main_sleep_duration=8.0,
+            debt_hours=0.0,
+            nap_intervals=(),
+            slots=slots,
+            complete=True,
+        )
+
+    @staticmethod
+    def _observation(episode_id, minute, energy=50.0):
+        point = datetime(2026, 7, 21, 8, 0) + timedelta(minutes=minute)
+        return FitObservation(
+            episode_id=episode_id,
+            datetime=point,
+            clock_hour=point.hour + point.minute / 60.0,
+            energy=energy,
+            original=True,
+            wake_hour=8.0,
+            sleep_duration=8.0,
+            debt_hours=0.0,
+            nap_intervals=(),
+            process_delta=0.0,
+            hours_since_last_wake=minute / 60.0,
+            debt_load=0.0,
+        )
+
+    def test_interpolation_never_crosses_sleep(self):
+        start = datetime(2026, 7, 21, 7, 0)
+        slots = [
+            RawSlot(start, STATUS_LOGGED, 40.0),
+            RawSlot(start + timedelta(minutes=30), STATUS_MISSED, None),
+            RawSlot(start + timedelta(minutes=60), STATUS_SLEEP, None),
+            RawSlot(start + timedelta(minutes=90), STATUS_MISSED, None),
+            RawSlot(start + timedelta(minutes=120), STATUS_LOGGED, 60.0),
+        ]
+        rows = interpolate_episode(self._episode(slots), max_gap_slots=2)
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(row.original for row in rows))
+
+    def test_only_one_or_two_slots_are_interpolated_and_not_scored(self):
+        start = datetime(2026, 7, 21, 7, 0)
+        slots = [
+            RawSlot(start, STATUS_LOGGED, 40.0),
+            RawSlot(start + timedelta(minutes=30), STATUS_MISSED, None),
+            RawSlot(start + timedelta(minutes=60), STATUS_MISSED, None),
+            RawSlot(start + timedelta(minutes=90), STATUS_LOGGED, 70.0),
+        ]
+        rows = interpolate_episode(self._episode(slots), max_gap_slots=2)
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(sum(row.original for row in rows), 2)
+        self.assertEqual([row.energy for row in rows], [40.0, 50.0, 60.0, 70.0])
+
+    def test_episode_weights_have_equal_total_mass(self):
+        rows = [
+            self._observation("a", 0),
+            self._observation("a", 30),
+            self._observation("a", 60),
+            self._observation("b", 0),
+        ]
+        weights = episode_weights(rows)
+        mass_a = sum(weight for row, weight in zip(rows, weights) if row.episode_id == "a")
+        mass_b = sum(weight for row, weight in zip(rows, weights) if row.episode_id == "b")
+        self.assertAlmostEqual(mass_a, mass_b, places=12)
+
+    def test_group_folds_never_split_an_episode(self):
+        ids = ["a", "a", "b", "b", "c", "c", "d", "d"]
+        folds = _group_folds(ids, 3)
+        for episode_id in set(ids):
+            self.assertEqual(sum(episode_id in fold for fold in folds), 1)
+
+    def test_promotion_rejects_below_21_or_any_failed_gate(self):
+        baseline = {"mae": 12.0, "rmse": 15.0}
+        candidate = {"mae": 10.5, "rmse": 14.0}
+        reference = {"passes": True}
+        self.assertFalse(
+            evaluate_promotion(20, baseline, candidate, 0.7, reference, 0.7)["passed"]
+        )
+        self.assertTrue(
+            evaluate_promotion(21, baseline, candidate, 0.7, reference, 0.7)["passed"]
+        )
+        failures = [
+            (21, {"mae": 12.0, "rmse": 15.0}, {"mae": 11.5, "rmse": 14.0}, 0.7, reference, 0.7),
+            (21, baseline, {"mae": 10.5, "rmse": 15.1}, 0.7, reference, 0.7),
+            (21, baseline, candidate, 0.59, reference, 0.7),
+            (21, baseline, candidate, 0.7, {"passes": False}, 0.7),
+            (21, baseline, candidate, 0.7, reference, 0.59),
+        ]
+        for args in failures:
+            self.assertFalse(evaluate_promotion(*args)["passed"])
+
+    def test_android_export_is_deterministic_and_detects_drift(self):
+        model = {
+            "model_id": "M8_adaptive_sleep",
+            "params": {
+                "circadian_coefs": [50.0, 1.0, 2.0, 3.0, 4.0],
+                "reference_sleep_hours": 8.0,
+                "reference_peak_clock": 20.0,
+                "max_phase_shift_hours": 3.0,
+                "tau_wake": 23.0,
+                "tau_sleep": 4.0,
+                "inertia_tau": 0.75,
+                "homeostatic_scale": 20.0,
+                "debt_scale": 2.0,
+                "debt_saturation_hours": 12.0,
+                "inertia_scale": 12.0,
+                "process_s_min": 0.05,
+                "process_s_max": 1.0,
+                "homeostatic_delta_min": -0.15,
+                "homeostatic_delta_max": 0.35,
+            },
+        }
+        rendered = render_android_constants(model)
+        self.assertEqual(rendered, render_android_constants(model))
+        with tempfile.TemporaryDirectory() as tmp:
+            source = os.path.join(tmp, "model.json")
+            android = os.path.join(tmp, "Generated.kt")
+            with open(source, "w", encoding="utf-8") as handle:
+                import json
+                json.dump(model, handle)
+            with open(android, "w", encoding="utf-8") as handle:
+                handle.write(rendered + "// drift\n")
+            with self.assertRaises(RuntimeError):
+                check_export(Path(source), Path(android))
 
 
 class TestWakeAlignment(unittest.TestCase):

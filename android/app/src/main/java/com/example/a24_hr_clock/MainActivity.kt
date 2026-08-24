@@ -841,31 +841,25 @@ private fun energyTabTimings(
     sleepDebt: Double,
     modelSettings: ModelSettings
 ): Pair<Double?, Double?> {
-    val mainSleep = sleepLogs.find { it.isMainSleep } ?: sleepLogs.maxByOrNull { it.endTime }
+    val mainSleep = sleepLogs.find { it.isMainSleep }
+    val sleepContext = EnergyCalculator.buildSleepModelContext(
+        sleepLogs,
+        modelSettings.includeNaps
+    )
+    if (!sleepContext.available) return bathyphaseHour to null
     val mainWake = mainSleep?.let { parseEnergySleepDateTime(it.endTime) }
         ?: return bathyphaseHour to null
     val wakeHour = mainWake.hour + mainWake.minute / 60.0 + mainWake.second / 3600.0
-    val sleepDuration = (mainSleep?.minutesAsleep ?: 0) / 60.0
-    val sleepEfficiency = mainSleep?.let {
+    val sleepDuration = sleepContext.mainSleepDuration ?: return bathyphaseHour to null
+    val sleepEfficiency = mainSleep.let {
         if (it.timeInBed > 0) it.minutesAsleep.toDouble() / it.timeInBed else 0.92
-    } ?: 0.92
-    val napIntervals = if (modelSettings.includeNaps) {
-        sleepLogs.mapNotNull { log ->
-            if (log.isMainSleep) return@mapNotNull null
-            val start = parseEnergySleepDateTime(log.startTime) ?: return@mapNotNull null
-            val end = parseEnergySleepDateTime(log.endTime) ?: return@mapNotNull null
-            val startHours = java.time.Duration.between(mainWake, start).toMillis() / 3_600_000.0
-            val endHours = java.time.Duration.between(mainWake, end).toMillis() / 3_600_000.0
-            if (endHours <= 0.0 || startHours >= 24.0) null
-            else SleepInterval(max(0.0, startHours), min(24.0, endHours))
-        }
-    } else emptyList()
+    }
 
     var peakEnergy = -Double.MAX_VALUE
-    var acrophaseHour = 0.0
+    var acrophaseHour: Double? = null
     for (i in 0..144) {
         val hour = (i.toDouble() / 144) * 24.0
-        val energy = EnergyCalculator.getEnergyLevelFromSettings(
+        val energy = EnergyCalculator.predictEnergyFromSettings(
             hClock = hour,
             wakeHour = wakeHour,
             sleepDebtHours = sleepDebt,
@@ -874,8 +868,8 @@ private fun energyTabTimings(
             settings = modelSettings,
             useBathyphase = modelSettings.useBathyphase,
             sleepEfficiency = sleepEfficiency,
-            napIntervals = napIntervals
-        )
+            sleepContext = sleepContext
+        ).value ?: continue
         if (energy > peakEnergy) {
             peakEnergy = energy
             acrophaseHour = hour
