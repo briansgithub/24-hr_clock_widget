@@ -46,11 +46,17 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        resValues = true
     }
 
     defaultConfig {
         buildConfigField("String", "FITBIT_CLIENT_ID", "\"$fitbitClientId\"")
         buildConfigField("String", "FITBIT_CLIENT_SECRET", "\"$fitbitClientSecret\"")
+        buildConfigField("String", "SLEEP_RELAY_URL", "\"${localProperties.getProperty("SLEEP_RELAY_URL", "")}\"")
+        resValue("string", "google_app_id", localProperties.getProperty("FIREBASE_APP_ID", ""))
+        resValue("string", "google_api_key", localProperties.getProperty("FIREBASE_API_KEY", ""))
+        resValue("string", "gcm_defaultSenderId", localProperties.getProperty("FIREBASE_SENDER_ID", ""))
+        resValue("string", "project_id", localProperties.getProperty("FIREBASE_PROJECT_ID", ""))
     }
 
     compileOptions {
@@ -76,6 +82,9 @@ dependencies {
 
     // Networking & Serialization
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
+    implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.firebase:firebase-messaging")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
 
     // DataStore for settings and tokens
@@ -93,6 +102,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
 
     testImplementation(libs.junit)
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)

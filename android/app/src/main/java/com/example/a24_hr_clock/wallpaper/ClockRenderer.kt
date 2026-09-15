@@ -217,6 +217,8 @@ class ClockRenderer {
 
     private val lifeCalendarRenderer = com.example.a24_hr_clock.logic.LifeCalendarRenderer()
 
+    private var lastSleepSavedAt = 0L
+
     fun draw(
         canvas: Canvas,
         width: Int,
@@ -235,6 +237,8 @@ class ClockRenderer {
         calendarEvents: List<com.example.a24_hr_clock.logic.CalendarEvent> = emptyList(),
         showNumbers: Boolean = true,
         showSleep: Boolean = true,
+        sleepOpacity: Float = 1f,
+        sleepSavedAt: Long = 0,
         showSunMoon: Boolean = true,
         showSleepDebtText: Boolean = true,
         showEnergy: Boolean = false,
@@ -312,7 +316,11 @@ class ClockRenderer {
 
         // 3. Draw Sleep Arc
         if (showSleep && activeLogs.isNotEmpty()) {
-            drawSleepArcs(canvas, centerX, centerY, radius, activeLogs, includeNaps, showTotalBedtime)
+            drawSleepArcs(canvas, centerX, centerY, radius, activeLogs, includeNaps, showTotalBedtime, sleepOpacity)
+            if (sleepSavedAt > 0 && sleepSavedAt != lastSleepSavedAt) {
+                lastSleepSavedAt = sleepSavedAt
+                android.util.Log.i("SleepRender", "savedAt=$sleepSavedAt drawLatencyMs=${System.currentTimeMillis() - sleepSavedAt}")
+            }
         }
 
         // 3.5 Draw Wind-down Arc (90 min before asleep)
@@ -1198,7 +1206,8 @@ class ClockRenderer {
         radius: Float,
         targetLogs: List<com.example.a24_hr_clock.logic.SleepLogEntry>,
         includeNaps: Boolean,
-        showTotalBedtime: Boolean
+        showTotalBedtime: Boolean,
+        opacity: Float
     ) {
         targetLogs.forEach { log ->
             if (!includeNaps && !log.isMainSleep) return@forEach
@@ -1224,6 +1233,7 @@ class ClockRenderer {
                 val rect = RectF(cx - (radius - margin), cy - (radius - margin), cx + (radius - margin), cy + (radius - margin))
                 
                 sleepArcPaint.color = if (log.isMainSleep) Color.parseColor("#6A5ACD") else Color.parseColor("#8A7AED")
+                sleepArcPaint.alpha = (255 * opacity.coerceIn(0f, 1f)).toInt()
                 canvas.drawArc(rect, sleepStartAngle.toFloat(), sleepSweep.toFloat(), true, sleepArcPaint)
             } catch (e: Exception) {}
         }

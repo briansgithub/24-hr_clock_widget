@@ -121,10 +121,7 @@ class MainActivity : ComponentActivity() {
                         initialAction = initialAction,
                         onClearAction = { initialAction = null },
                         modifier = Modifier.padding(innerPadding),
-                        onLoginClick = { 
-                            val intent = CustomTabsIntent.Builder().build()
-                            intent.launchUrl(this, Uri.parse(fitbitManager.getAuthUrl()))
-                        },
+                        onLoginClick = { launchFitbitAuth() },
                         onLogoutClick = {
                             lifecycleScope.launch {
                                 fitbitManager.logout()
@@ -138,6 +135,7 @@ class MainActivity : ComponentActivity() {
 
         val syncManager = SyncManager(this)
         syncManager.schedulePeriodicSync()
+        syncManager.scheduleMaintenance()
         syncManager.scheduleEmpiricalEnergyWorker()
         syncManager.scheduleMissedDataCheckWorker()
 
@@ -189,28 +187,50 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
     }
 
-    private fun handleIntent(intent: Intent?) {
-        val actionExtra = intent?.getStringExtra("action")
-        if (actionExtra != null) {
-            initialAction = actionExtra
+    override fun onResume() {
+        super.onResume()
+        SleepSyncCoordinator.get(this).setVisible("activity", true)
+        lifecycleScope.launch { PushRegistrationManager.get(this@MainActivity).register() }
+    }
+
+    override fun onPause() {
+        SleepSyncCoordinator.get(this).setVisible("activity", false)
+        super.onPause()
+    }
+
+    private fun launchFitbitAuth() {
+        lifecycleScope.launch {
+            FitbitSession.get(this@MainActivity).store.dismissReconnect()
+            CustomTabsIntent.Builder().build().launchUrl(this@MainActivity, Uri.parse(fitbitManager.getAuthUrl()))
         }
-        val data = intent?.data
-        if (data != null && data.toString().startsWith("fitbit24h://callback")) {
-            val code = data.getQueryParameter("code")
-            if (code != null) {
-                lifecycleScope.launch {
-                    val success = fitbitManager.handleAuthCode(code)
-                    if (success) {
-                        Toast.makeText(this@MainActivity, "Fitbit Login Successful! Syncing...", Toast.LENGTH_SHORT).show()
-                        fitbitManager.refreshMetrics()
-                        Toast.makeText(this@MainActivity, "Sync Complete", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(this@MainActivity, "Fitbit Login Failed", Toast.LENGTH_SHORT).show()
-                    }
-                }
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        val action = intent?.getStringExtra("action")
+        intent?.removeExtra("action")
+        if (action == "reauth") {
+            // Android can recreate the activity with its original notification Intent.
+            // Persist consumption before opening the browser, including across process death.
+            val requestId = intent.getStringExtra(AuthNotificationManager.RECONNECT_REQUEST_ID)
+                ?.takeIf { it.isNotBlank() && it.length <= 128 } ?: "legacy-reauth"
+            intent.removeExtra(AuthNotificationManager.RECONNECT_REQUEST_ID)
+            lifecycleScope.launch {
+                if (fitbitManager.store.consumeReconnectRequest(requestId)) launchFitbitAuth()
+            }
+        } else if (action != null) initialAction = action
+        val data = intent?.data ?: return
+        intent.data = null // Consume both cold-start and foreground delivery exactly once.
+        if (data.scheme == "fitbit24h" && data.host == "callback") lifecycleScope.launch {
+            if (fitbitManager.handleAuthCallback(data)) {
+                Toast.makeText(this@MainActivity, "Fitbit reconnected. Checking sleep...", Toast.LENGTH_SHORT).show()
+                SleepSyncCoordinator.get(this@MainActivity).request(history = true, immediate = true)
+                PushRegistrationManager.get(this@MainActivity).register(force = true)
+            } else {
+                Toast.makeText(this@MainActivity, "Fitbit connection was not completed. Cached sleep remains visible.", Toast.LENGTH_LONG).show()
             }
         }
     }
+
 }
 
 @Composable
@@ -228,7 +248,20 @@ fun MainScreen(
     val scope = rememberCoroutineScope()
     
     val isLoggedIn by fitbitManager.loginStatusFlow.collectAsState(initial = false)
-    val sleepLogs by fitbitManager.sleepLogsFlow.collectAsState(initial = emptyList())
+    val sleepSnapshot by fitbitManager.sleepSnapshotFlow.collectAsState(initial = SleepSnapshot(emptyList(), SleepSyncStatus(), FitbitCredentials()))
+    val sleepLogs = sleepSnapshot.logs
+    val pushStatus by PushRegistrationManager.get(context).statusFlow.collectAsState(initial = PushStatus())
+    val reconnect = sleepSnapshot.auth.reconnectEpisode != null
+    if (reconnect && sleepSnapshot.auth.dismissedEpisode != sleepSnapshot.auth.reconnectEpisode) {
+        fun later() { scope.launch { FitbitSession.get(context).store.dismissReconnect() } }
+        AlertDialog(
+            onDismissRequest = { later() },
+            title = { Text("Reconnect Fitbit") },
+            text = { Text("Fitbit needs your permission again. Your cached sleep remains visible while you reconnect.") },
+            confirmButton = { TextButton(onClick = onLoginClick) { Text("Reconnect Fitbit") } },
+            dismissButton = { TextButton(onClick = { later() }) { Text("Later") } }
+        )
+    }
     val metrics by fitbitManager.metricsFlow.collectAsState(initial = Triple(null, 1.0, 9.75))
     
     val homeSettings by settingsManager.homeSettingsFlow.collectAsState(initial = ClockSettings())
@@ -368,6 +401,8 @@ fun MainScreen(
         Column(modifier = Modifier.padding(innerPadding)) {
             when (currentScreen) {
                 Screen.PREVIEW -> ClockPreviewScreen(
+                    sleepStatus = sleepSnapshot.status,
+                    reconnectRequired = reconnect,
                     settings = if (previewIsLockScreen) lockSettings else homeSettings,
                     modelSettings = modelSettings,
                     sleepLogs = sleepLogs,
@@ -422,6 +457,9 @@ fun MainScreen(
                     onCancel = { currentScreen = Screen.PREVIEW }
                 )
                 Screen.SLEEP -> SleepLogScreen(
+                    syncStatus = sleepSnapshot.status,
+                    reconnectRequired = reconnect,
+                    pushStatus = pushStatus,
                     sleepLogs = sleepLogs,
                     metrics = metrics,
                     modelSettings = modelSettings,
@@ -431,9 +469,7 @@ fun MainScreen(
                     onRefresh = {
                         scope.launch {
                             Toast.makeText(context, "Refreshing Fitbit data...", Toast.LENGTH_SHORT).show()
-                            context.sendBroadcast(Intent("com.example.a24_hr_clock.REFRESH_DATA"))
-                            fitbitManager.refreshMetrics()
-                            BedtimeNotificationManager(context).updateNotifications()
+                            SleepSyncCoordinator.get(context).request(history = true, immediate = true).await()
                         }
                     },
                     onUpdateModel = { scope.launch { settingsManager.updateModelSettings(it) } }
@@ -450,6 +486,8 @@ fun MainScreen(
 
 @Composable
 fun ClockPreviewScreen(
+    sleepStatus: SleepSyncStatus = SleepSyncStatus(),
+    reconnectRequired: Boolean = false,
     settings: ClockSettings,
     modelSettings: ModelSettings,
     sleepLogs: List<SleepLogEntry>,
@@ -507,6 +545,8 @@ fun ClockPreviewScreen(
                     calendarEvents,
                     showNumbers = settings.showNumbers,
                     showSleep = settings.showSleep,
+                    sleepOpacity = sleepStatus.opacity(System.currentTimeMillis(), reconnectRequired),
+                    sleepSavedAt = sleepStatus.lastSavedAt,
                     showSunMoon = settings.showSunMoon,
                     showSleepDebtText = settings.showSleepDebtText,
                     showEnergy = settings.showEnergy,
@@ -1026,6 +1066,9 @@ fun ModelSettingsScreen(
 
 @Composable
 fun SleepLogScreen(
+    syncStatus: SleepSyncStatus,
+    reconnectRequired: Boolean,
+    pushStatus: PushStatus,
     sleepLogs: List<SleepLogEntry>,
     metrics: Triple<Double?, Double, Double>,
     modelSettings: ModelSettings,
@@ -1046,10 +1089,38 @@ fun SleepLogScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = if (isLoggedIn) "Status: Connected" else "Status: Not Connected",
+            text = "Status: " + when {
+                reconnectRequired -> "Reconnect Fitbit"
+                !isLoggedIn -> "Not connected"
+                syncStatus.phase == SleepSyncPhase.CHECKING -> "Checking sleep..."
+                syncStatus.phase == SleepSyncPhase.PROCESSING -> "Fitbit is still processing sleep"
+                syncStatus.error != null -> when (syncStatus.error) {
+                    SyncError.NETWORK -> "Unable to reach Fitbit"
+                    SyncError.RATE_LIMIT -> "Fitbit has asked us to wait"
+                    SyncError.SERVER -> "Fitbit is temporarily unavailable"
+                    SyncError.DECODING -> "Fitbit returned an unreadable response"
+                    SyncError.CONFIGURATION -> "Fitbit connection settings need attention"
+                    else -> "Reconnect Fitbit"
+                }
+                syncStatus.lastVerifiedAt > 0 -> "Sleep verified"
+                else -> "Cached sleep has not been verified"
+            },
             color = if (isLoggedIn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodyLarge
         )
+
+        fun stamp(time: Long) = if (time == 0L) "Never" else java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(time))
+        Text("Last checked: ${stamp(syncStatus.lastAttemptAt)}")
+        Text("Last successful check: ${stamp(syncStatus.lastVerifiedAt)}")
+        Text("Latest sleep: ${sleepLogs.maxByOrNull { it.endTime }?.let { "${it.dateOfSleep}, ${it.startTime.substringAfter('T').take(5)} to ${it.endTime.substringAfter('T').take(5)}" } ?: "None"}")
+        Text("Sleep records last changed: ${stamp(syncStatus.lastDataChangedAt)}")
+        Text("Push delivery: ${pushStatus.message}")
+        Text("Last push received on this device: ${stamp(pushStatus.receivedAt)}")
+        val context = LocalContext.current
+        if (!androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()) {
+            Text("Notifications are disabled. You can reconnect here at any time.")
+            TextButton(onClick = { context.startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)) }) { Text("Notification settings") }
+        }
 
         if (isLoggedIn) {
             val (bathy, eff, _) = metrics
@@ -1075,7 +1146,7 @@ fun SleepLogScreen(
         Spacer(modifier = Modifier.height(16.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onLoginClick, modifier = Modifier.weight(1f)) {
-                Text(if (isLoggedIn) "Relink Fitbit" else "Login with Fitbit")
+                Text(if (reconnectRequired) "Reconnect Fitbit" else if (isLoggedIn) "Relink Fitbit" else "Login with Fitbit")
             }
             if (isLoggedIn) {
                 OutlinedButton(onClick = onLogoutClick) {

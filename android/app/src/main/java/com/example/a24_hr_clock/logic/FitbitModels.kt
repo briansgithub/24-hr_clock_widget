@@ -13,8 +13,12 @@ data class FitbitTokens(
 
 @Serializable
 data class SleepResponse(
-    val sleep: List<SleepLogEntry>
+    val sleep: List<SleepLogEntry>? = null,
+    val meta: SleepProcessingMeta? = null
 )
+
+@Serializable
+data class SleepProcessingMeta(val state: String = "", val retryDuration: Long? = null)
 
 @Serializable
 data class SleepLogEntry(
@@ -24,7 +28,8 @@ data class SleepLogEntry(
     val timeInBed: Int,
     val startTime: String,
     val endTime: String,
-    val duration: Long = 0
+    val duration: Long = 0,
+    val sourceRecordId: String? = null
 )
 
 @Serializable

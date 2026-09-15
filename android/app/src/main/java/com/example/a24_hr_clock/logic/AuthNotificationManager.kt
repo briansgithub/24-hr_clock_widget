@@ -33,11 +33,15 @@ class AuthNotificationManager(private val context: Context) {
         }
     }
 
-    fun showReauthNotification() {
+    fun cancel() { NotificationManagerCompat.from(context).cancel(notificationId) }
+
+    fun showReauthNotification(requestId: String): Boolean {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return false
         val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             // We can pass an extra to tell MainActivity to open the auth URL immediately
             putExtra("action", "reauth")
+            putExtra(RECONNECT_REQUEST_ID, requestId)
         }
         
         val pendingIntent: PendingIntent = PendingIntent.getActivity(
@@ -51,14 +55,21 @@ class AuthNotificationManager(private val context: Context) {
             .setContentText("Tap to quickly reconnect and resume syncing sleep data.")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
+            .addAction(0, "Reconnect Fitbit", pendingIntent)
+            .setOnlyAlertOnce(true)
             .setAutoCancel(true)
 
         with(NotificationManagerCompat.from(context)) {
             try {
                 notify(notificationId, builder.build())
+                return true
             } catch (e: SecurityException) {
-                // Handle missing permission if targetSdk >= 33
+                return false
             }
         }
+    }
+
+    companion object {
+        const val RECONNECT_REQUEST_ID = "reconnect_request_id"
     }
 }

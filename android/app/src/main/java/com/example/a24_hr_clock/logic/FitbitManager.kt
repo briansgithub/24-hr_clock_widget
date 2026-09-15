@@ -1,308 +1,122 @@
 package com.example.a24_hr_clock.logic
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.encodeToString
-import okhttp3.*
-import okhttp3.RequestBody.Companion.toRequestBody
 import com.example.a24_hr_clock.BuildConfig
-import java.io.IOException
-import java.util.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
+import kotlinx.serialization.json.Json
+import java.security.MessageDigest
+import java.security.SecureRandom
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
-
-private val Context.dataStore by preferencesDataStore(name = "fitbit_prefs")
+import java.util.Base64
 
 class FitbitManager(private val context: Context) : ExerciseDataSource {
-    private val client = OkHttpClient()
+    private val session = FitbitSession.get(context)
+    val store = session.store
+    private val http = session.http
     private val json = Json { ignoreUnknownKeys = true }
+    val sleepLogsFlow = store.sleepLogsFlow
+    val sleepSnapshotFlow = store.snapshotFlow
+    val statusFlow = store.statusFlow
+    val authFlow = store.credentialsFlow
+    val metricsFlow = store.metricsFlow
+    val loginStatusFlow = authFlow.map { it.accessToken.isNotBlank() }
 
-    private val clientId = BuildConfig.FITBIT_CLIENT_ID
-    private val clientSecret = BuildConfig.FITBIT_CLIENT_SECRET
-    private val redirectUri = "fitbit24h://callback"
+    override suspend fun getSourceInfo() = "Fitbit Web API"
+    suspend fun isLoggedIn() = store.credentials().accessToken.isNotBlank()
+    suspend fun getLastSleepLogs() = store.snapshot().logs
+    suspend fun saveMetrics(bathyphase: Double?, efficiency: Double, sleepNeed: Double) = store.saveMetrics(bathyphase, efficiency, sleepNeed)
 
-    private val ACCESS_TOKEN = stringPreferencesKey("access_token")
-    private val REFRESH_TOKEN = stringPreferencesKey("refresh_token")
-    private val LAST_SLEEP_LOGS = stringPreferencesKey("last_sleep_logs")
-    private val BATHYPHASE = androidx.datastore.preferences.core.doublePreferencesKey("bathyphase")
-    private val EFFICIENCY = androidx.datastore.preferences.core.doublePreferencesKey("efficiency")
-    private val SLEEP_NEED = androidx.datastore.preferences.core.doublePreferencesKey("sleep_need")
+    suspend fun getAuthUrl(): String {
+        fun random() = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also { SecureRandom().nextBytes(it) })
+        val attempt = OAuthAttempt(random(), random(), System.currentTimeMillis())
+        store.saveOAuth(attempt)
+        val challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256").digest(attempt.verifier.toByteArray(Charsets.US_ASCII)))
+        return Uri.parse("https://www.fitbit.com/oauth2/authorize").buildUpon()
+            .appendQueryParameter("client_id", BuildConfig.FITBIT_CLIENT_ID)
+            .appendQueryParameter("response_type", "code").appendQueryParameter("scope", "sleep heartrate activity")
+            .appendQueryParameter("redirect_uri", REDIRECT).appendQueryParameter("state", attempt.state)
+            .appendQueryParameter("code_challenge", challenge).appendQueryParameter("code_challenge_method", "S256").build().toString()
+    }
 
-    override suspend fun getSourceInfo(): String = "Fitbit Web API"
-
-    override suspend fun fetchDailyMetrics(startDate: String, endDate: String): List<DailyExerciseMetrics> = withContext(Dispatchers.IO) {
-        val settingsManager = SettingsManager(context)
-        val modelSettings = settingsManager.modelSettingsFlow.first()
-        val today = LocalDate.now()
-        
-        val start = LocalDate.parse(startDate)
-        val end = LocalDate.parse(endDate)
-
-        val results = mutableListOf<DailyExerciseMetrics>()
-        
-        var cursor = start
-        while (!cursor.isAfter(end) && !cursor.isAfter(today)) {
-            val dateStr = cursor.toString()
-            Log.d("FitbitManager", "Fetching daily metrics for $dateStr")
-            
-            val url = "https://api.fitbit.com/1/user/-/activities/heart/date/$dateStr/1d/1min.json"
-            val token = getAccessToken() ?: return@withContext results
-            val request = Request.Builder().url(url).addHeader("Authorization", "Bearer $token").build()
-            
-            var response = client.newCall(request).execute()
-            if (response.code == 401 && refreshTokens()) {
-                val newToken = getAccessToken()
-                response = client.newCall(request.newBuilder().header("Authorization", "Bearer $newToken").build()).execute()
-            }
-            
-            var hrIntraday = emptyList<HeartRatePointEntry>()
-            var rhr: Double? = null
-            
-            if (response.isSuccessful) {
-                val body = response.body?.string() ?: ""
-                val hrResponse = try { json.decodeFromString<HeartRateResponse>(body) } catch(e: Exception) { null }
-                hrIntraday = hrResponse?.activities_heart_intraday?.dataset ?: emptyList()
-                rhr = hrResponse?.activities_heart?.firstOrNull()?.value?.restingHeartRate?.toDouble()
-            }
-
-            val hrv = fetchHRV(dateStr)
-            
-            val trimp = ExerciseMetricsCalculator.calculateTrimp(
-                hrSeries = hrIntraday.map { it.value },
-                rhr = rhr ?: modelSettings.restingHR,
-                maxHr = modelSettings.maxHR,
-                isMale = modelSettings.isMale
-            )
-            
-            results.add(DailyExerciseMetrics(
-                date = dateStr,
-                trimp = trimp,
-                hrv = hrv,
-                rhr = rhr,
-                hrMissing = hrIntraday.isEmpty(),
-                hrvMissing = hrv == null,
-                dataStatus = if (hrIntraday.isEmpty() && hrv == null) "missing" else "valid"
-            ))
-            cursor = cursor.plusDays(1)
+    suspend fun handleAuthCallback(uri: Uri): Boolean {
+        if (uri.scheme != "fitbit24h" || uri.host != "callback" || !uri.path.isNullOrEmpty() || uri.port != -1) return false
+        val attempt = store.consumeOAuth() ?: run { Log.w("FitbitAuth", "callback rejected: no pending attempt"); return false }
+        val code = OAuthCallback.code(uri.toString(), attempt.state, attempt.createdAt, System.currentTimeMillis()) ?: run {
+            Log.w("FitbitAuth", "callback rejected: stateValid=${uri.getQueryParameters("state") == listOf(attempt.state)} fragmentPresent=${uri.fragment != null} denied=${uri.getQueryParameter("error") != null} ageValid=${System.currentTimeMillis() - attempt.createdAt in 0..600_000}")
+            return false
         }
-        return@withContext results
+        return try { http.exchangeCode(code, attempt.verifier, REDIRECT); Log.i("FitbitAuth", "authorization completed"); true }
+        catch (e: CancellationException) { throw e }
+        catch (e: FitbitRequestException) { Log.w("FitbitAuth", "authorization failed: ${e.category}"); false }
     }
-
-    override suspend fun fetchSessions(startDate: String, endDate: String): List<ExerciseSession> = withContext(Dispatchers.IO) {
-        // Placeholder for future Activity API integration
-        emptyList()
-    }
-
-    suspend fun saveMetrics(bathyphase: Double?, efficiency: Double, sleepNeed: Double) {
-        context.dataStore.edit { prefs ->
-            if (bathyphase != null) prefs[BATHYPHASE] = bathyphase
-            prefs[EFFICIENCY] = efficiency
-            prefs[SLEEP_NEED] = sleepNeed
-        }
-    }
-
-    val metricsFlow = context.dataStore.data.map { data ->
-        Triple(
-            data[BATHYPHASE],
-            data[EFFICIENCY] ?: 1.0,
-            data[SLEEP_NEED] ?: 9.75
-        )
-    }
-
-    val loginStatusFlow = context.dataStore.data.map { it[ACCESS_TOKEN] != null }
-
-    fun getAuthUrl(): String {
-        val scope = "sleep heartrate activity"
-        val encodedRedirect = java.net.URLEncoder.encode(redirectUri, "UTF-8")
-        return "https://www.fitbit.com/oauth2/authorize?client_id=$clientId&response_type=code&scope=$scope&redirect_uri=$encodedRedirect&expires_in=604800"
-    }
-
-    suspend fun handleAuthCode(code: String): Boolean = withContext(Dispatchers.IO) {
-        val authHeader = Base64.getEncoder().encodeToString("$clientId:$clientSecret".toByteArray())
-        val formBody = FormBody.Builder()
-            .add("client_id", clientId)
-            .add("grant_type", "authorization_code")
-            .add("redirect_uri", redirectUri)
-            .add("code", code)
-            .build()
-
-        val request = Request.Builder()
-            .url("https://api.fitbit.com/oauth2/token")
-            .post(formBody)
-            .addHeader("Authorization", "Basic $authHeader")
-            .addHeader("Content-Type", "application/x-www-form-urlencoded")
-            .build()
-
-        try {
-            val response = client.newCall(request).execute()
-            if (response.isSuccessful) {
-                val body = response.body?.string() ?: return@withContext false
-                val tokens = json.decodeFromString<FitbitTokens>(body)
-                saveTokens(tokens)
-                return@withContext true
-            }
-        } catch (e: Exception) {
-            Log.e("FitbitManager", "Error exchanging code", e)
-        }
-        return@withContext false
-    }
-
-    suspend fun isLoggedIn(): Boolean = getAccessToken() != null
 
     suspend fun logout() {
-        context.dataStore.edit { it.clear() }
+        PushRegistrationManager.get(context).unregister()
+        http.clearCredentials()
+        store.clearAfterLogout()
     }
 
-    private suspend fun saveTokens(tokens: FitbitTokens) {
-        context.dataStore.edit { prefs ->
-            prefs[ACCESS_TOKEN] = tokens.access_token
-            prefs[REFRESH_TOKEN] = tokens.refresh_token
+    suspend fun fetchSleepLogs(startDate: String, endDate: String): SleepFetchResult = try {
+        SleepResponseParser.parse(http.request("/1.2/user/-/sleep/date/$startDate/$endDate.json").body)
+    } catch (e: FitbitRequestException) { SleepFetchResult.Failed(e.category, e.retryAt) }
+
+    suspend fun fetchHeartRateIntraday(startTimeIso: String, endTimeIso: String): List<HeartRatePointEntry> {
+        val start = LocalDateTime.parse(startTimeIso.removeSuffix("Z"))
+        val end = LocalDateTime.parse(endTimeIso.removeSuffix("Z"))
+        val points = mutableListOf<HeartRatePointEntry>()
+        var date = start.toLocalDate()
+        while (date <= end.toLocalDate()) {
+            val body = http.request("/1/user/-/activities/heart/date/$date/1d/1min.json").body
+            val day = json.decodeFromString<HeartRateResponse>(body).activities_heart_intraday?.dataset.orEmpty()
+            points += day.filter { LocalDateTime.of(date, LocalTime.parse(it.time)).let { time -> time >= start && time <= end } }
+            date = date.plusDays(1)
         }
+        return points
     }
 
-    val sleepLogsFlow = context.dataStore.data.map { prefs ->
-        val jsonString = prefs[LAST_SLEEP_LOGS] ?: return@map emptyList<SleepLogEntry>()
-        try { json.decodeFromString<List<SleepLogEntry>>(jsonString) } catch (e: Exception) { emptyList() }
-    }
+    suspend fun fetchHRV(dateStr: String): Double? = json.decodeFromString<HRVResponse>(http.request("/1/user/-/hrv/date/$dateStr.json").body).hrv.firstOrNull()?.value?.dailyRmssd
 
-    suspend fun getLastSleepLogs(): List<SleepLogEntry> {
-        val jsonString = context.dataStore.data.map { it[LAST_SLEEP_LOGS] }.first() ?: return emptyList()
-        return try { json.decodeFromString<List<SleepLogEntry>>(jsonString) } catch (e: Exception) { emptyList() }
-    }
-
-    private suspend fun saveSleepLogs(logs: List<SleepLogEntry>) {
-        val jsonString = json.encodeToString(logs)
-        context.dataStore.edit { prefs -> prefs[LAST_SLEEP_LOGS] = jsonString }
-    }
-
-    private suspend fun getAccessToken(): String? = context.dataStore.data.map { it[ACCESS_TOKEN] }.first()
-
-    private suspend fun refreshTokens(): Boolean = withContext(Dispatchers.IO) {
-        val refreshToken = context.dataStore.data.map { it[REFRESH_TOKEN] }.first() ?: return@withContext false
-        val authHeader = Base64.getEncoder().encodeToString("$clientId:$clientSecret".toByteArray())
-        val formBody = FormBody.Builder()
-            .add("grant_type", "refresh_token")
-            .add("refresh_token", refreshToken)
-            .build()
-
-        val request = Request.Builder()
-            .url("https://api.fitbit.com/oauth2/token")
-            .post(formBody)
-            .addHeader("Authorization", "Basic $authHeader")
-            .addHeader("Content-Type", "application/x-www-form-urlencoded")
-            .build()
-
-        val response = client.newCall(request).execute()
-        if (response.isSuccessful) {
-            val body = response.body?.string() ?: return@withContext false
-            val tokens = json.decodeFromString<FitbitTokens>(body)
-            saveTokens(tokens)
-            return@withContext true
+    override suspend fun fetchDailyMetrics(startDate: String, endDate: String): List<DailyExerciseMetrics> {
+        val settings = SettingsManager(context).modelSettingsFlow.first()
+        val results = mutableListOf<DailyExerciseMetrics>()
+        var date = LocalDate.parse(startDate)
+        val end = minOf(LocalDate.parse(endDate), LocalDate.now())
+        while (date <= end) {
+            val hr = json.decodeFromString<HeartRateResponse>(http.request("/1/user/-/activities/heart/date/$date/1d/1min.json").body)
+            val points = hr.activities_heart_intraday?.dataset.orEmpty()
+            val rhr = hr.activities_heart?.firstOrNull()?.value?.restingHeartRate?.toDouble()
+            val hrv = fetchHRV(date.toString())
+            results += DailyExerciseMetrics(date.toString(),
+                ExerciseMetricsCalculator.calculateTrimp(points.map { it.value }, rhr ?: settings.restingHR, settings.maxHR, settings.isMale),
+                hrv, rhr, hrMissing = points.isEmpty(), hrvMissing = hrv == null,
+                dataStatus = if (points.isEmpty() && hrv == null) "missing" else "valid")
+            date = date.plusDays(1)
         }
-        return@withContext false
+        return results
     }
+    override suspend fun fetchSessions(startDate: String, endDate: String): List<ExerciseSession> = emptyList()
 
-    suspend fun fetchSleepLogs(startDate: String, endDate: String): List<SleepLogEntry> = withContext(Dispatchers.IO) {
-        val token = getAccessToken() ?: return@withContext emptyList()
-        val url = "https://api.fitbit.com/1.2/user/-/sleep/date/$startDate/$endDate.json"
-        val request = Request.Builder().url(url).addHeader("Authorization", "Bearer $token").build()
-
-        var response = client.newCall(request).execute()
-        if (response.code == 401 && refreshTokens()) {
-            val newToken = getAccessToken()
-            response = client.newCall(request.newBuilder().header("Authorization", "Bearer $newToken").build()).execute()
+    /** Maintenance reads the published sleep cache; it cannot change its freshness. */
+    suspend fun refreshMetrics() {
+        val settings = SettingsManager(context).modelSettingsFlow.first()
+        val mainLogs = getLastSleepLogs().filter { it.isMainSleep }
+        mainLogs.maxByOrNull { it.endTime }?.let { main ->
+            val efficiency = mainLogs.map { if (it.timeInBed > 0) it.minutesAsleep.toDouble() / it.timeInBed else .92 }.average()
+            val hr = fetchHeartRateIntraday(main.startTime, main.endTime)
+            saveMetrics(EnergyCalculator.findBathyphase(hr.map { HeartRatePoint(it.time, it.value) }), efficiency, settings.bedtimeGoal * efficiency)
         }
-
-        if (response.isSuccessful) {
-            val body = response.body?.string() ?: return@withContext emptyList()
-            val logs = json.decodeFromString<SleepResponse>(body).sleep
-            saveSleepLogs(logs)
-            return@withContext logs
-        }
-        return@withContext emptyList()
+        val today = LocalDate.now()
+        // Reconcile older exercise history daily; repeated seven-day downloads compete with sleep's rate budget.
+        val maintenance = context.getSharedPreferences("fitbit_maintenance", Context.MODE_PRIVATE)
+        val fullHistory = maintenance.getString("history_day", "") != today.toString()
+        ExerciseRepository(context, this).syncExerciseData(today.minusDays(if (fullHistory) 6 else 1), today)
+        if (fullHistory) maintenance.edit().putString("history_day", today.toString()).apply()
     }
-
-    suspend fun fetchHeartRateIntraday(startTimeIso: String, endTimeIso: String): List<HeartRatePointEntry> = withContext(Dispatchers.IO) {
-        val token = getAccessToken() ?: return@withContext emptyList()
-        val startDt = try { LocalDateTime.parse(startTimeIso.replace("Z", "")) } catch (e: Exception) { return@withContext emptyList() }
-        val endDt = try { LocalDateTime.parse(endTimeIso.replace("Z", "")) } catch (e: Exception) { return@withContext emptyList() }
-        
-        val datesNeeded = mutableListOf<String>()
-        var cursor = startDt.toLocalDate()
-        while (!cursor.isAfter(endDt.toLocalDate())) {
-            datesNeeded.add(cursor.toString())
-            cursor = cursor.plusDays(1)
-        }
-
-        val allPoints = mutableListOf<HeartRatePointEntry>()
-        for (dateStr in datesNeeded) {
-            val url = "https://api.fitbit.com/1/user/-/activities/heart/date/$dateStr/1d/1min.json"
-            val request = Request.Builder().url(url).addHeader("Authorization", "Bearer $token").build()
-
-            var response = client.newCall(request).execute()
-            if (response.code == 401 && refreshTokens()) {
-                val newToken = getAccessToken()
-                response = client.newCall(request.newBuilder().header("Authorization", "Bearer $newToken").build()).execute()
-            }
-
-            if (response.isSuccessful) {
-                val body = response.body?.string() ?: continue
-                val points = try { json.decodeFromString<HeartRateResponse>(body).activities_heart_intraday?.dataset } catch (e: Exception) { null } ?: continue
-                for (p in points) {
-                    val ptDt = LocalDateTime.of(LocalDate.parse(dateStr), LocalTime.parse(p.time))
-                    if (!ptDt.isBefore(startDt) && !ptDt.isAfter(endDt)) allPoints.add(p)
-                }
-            }
-        }
-        return@withContext allPoints
-    }
-
-    suspend fun fetchHRV(dateStr: String): Double? = withContext(Dispatchers.IO) {
-        val token = getAccessToken() ?: return@withContext null
-        val url = "https://api.fitbit.com/1/user/-/hrv/date/$dateStr.json"
-        val request = Request.Builder().url(url).addHeader("Authorization", "Bearer $token").build()
-        var response = client.newCall(request).execute()
-        if (response.code == 401 && refreshTokens()) {
-            val newToken = getAccessToken()
-            response = client.newCall(request.newBuilder().header("Authorization", "Bearer $newToken").build()).execute()
-        }
-        if (response.isSuccessful) {
-            val body = response.body?.string() ?: return@withContext null
-            try { json.decodeFromString<HRVResponse>(body).hrv.firstOrNull()?.value?.dailyRmssd } catch (e: Exception) { null }
-        } else null
-    }
-
-    suspend fun refreshMetrics(force: Boolean = false) {
-        val settingsManager = SettingsManager(context)
-        val modelSettings = settingsManager.modelSettingsFlow.first()
-        val now = LocalDate.now()
-        val logs = fetchSleepLogs(now.minusDays(14).toString(), now.toString())
-        
-        if (logs.isNotEmpty()) {
-            val mainSleep = logs.filter { it.isMainSleep }.maxByOrNull { it.dateOfSleep }
-            if (mainSleep != null) {
-                val mainSleepLogs = logs.filter { it.isMainSleep }
-                val avgEff = if (mainSleepLogs.isNotEmpty()) {
-                    mainSleepLogs.map { if (it.timeInBed > 0) it.minutesAsleep.toDouble() / it.timeInBed else 0.92 }.average()
-                } else 0.92
-                val eff = if (avgEff.isNaN()) 0.92 else avgEff
-                val hrPoints = fetchHeartRateIntraday(mainSleep.startTime, mainSleep.endTime)
-                val bathy = EnergyCalculator.findBathyphase(hrPoints.map { HeartRatePoint(it.time, it.value) })
-                bathy?.let { b -> saveMetrics(b, eff, modelSettings.bedtimeGoal * eff) }
-            }
-        }
-
-        val exerciseRepository = ExerciseRepository(context, this)
-        exerciseRepository.syncExerciseData(now.minusDays(6), now)
-    }
+    companion object { const val REDIRECT = "fitbit24h://callback" }
 }

@@ -28,7 +28,9 @@ private data class DataSnapshot(
     val calendar: CalendarSettings,
     val logs: List<SleepLogEntry>,
     val debt: Double,
-    val bathy: Double?
+    val bathy: Double?,
+    val sync: SleepSyncStatus,
+    val reconnect: Boolean
 )
 
 class ClockWallpaperService : WallpaperService() {
@@ -59,7 +61,6 @@ class ClockWallpaperService : WallpaperService() {
                 scope.launch {
                     try {
                         updateCelestialData()
-                        updateFitbitData()
                         updateCalendarData()
                         drawFrame()
                     } catch (e: Exception) {
@@ -84,6 +85,9 @@ class ClockWallpaperService : WallpaperService() {
         private var moonPhaseValue = 0.0
         private var sunElevation = 0.0
         private var sleepLogs = emptyList<SleepLogEntry>()
+        private var sleepStatus = SleepSyncStatus()
+        private var reconnectRequired = false
+        private val sleepSurface = "wallpaper-${UUID.randomUUID()}"
         private var sleepDebt = 0.0
         private var bathyphaseHour: Double? = null
         private var calendarEvents = emptyList<CalendarEvent>()
@@ -210,18 +214,21 @@ class ClockWallpaperService : WallpaperService() {
                     uiFlow,
                     settingsManager.modelSettingsFlow,
                     settingsManager.calendarSettingsFlow,
-                    fitbitManager.sleepLogsFlow,
+                    fitbitManager.sleepSnapshotFlow,
                     fitbitManager.metricsFlow
-                ) { ui, model, cal, logs, metrics ->
+                ) { ui, model, cal, sleep, metrics ->
+                    val logs = sleep.logs
                     val (_, _, sleepNeed) = metrics
                     val mappedLogs = logs.map { SleepLog(it.dateOfSleep, it.minutesAsleep, it.isMainSleep, it.timeInBed) }
                     val debt = EnergyCalculator.computeSleepDebt(mappedLogs, sleepNeed, model.includeNaps, model.excludedDates)
-                    DataSnapshot(ui, model, cal, logs, debt, metrics.first)
+                    DataSnapshot(ui, model, cal, logs, debt, metrics.first, sleep.status, sleep.auth.reconnectEpisode != null)
                 }.collect { snapshot ->
                     currentSettings = snapshot.settings
                     modelSettings = snapshot.model
                     calendarSettings = snapshot.calendar
                     sleepLogs = snapshot.logs
+                    sleepStatus = snapshot.sync
+                    reconnectRequired = snapshot.reconnect
                     sleepDebt = snapshot.debt
                     bathyphaseHour = snapshot.bathy
                     if (isVisible) {
@@ -235,6 +242,7 @@ class ClockWallpaperService : WallpaperService() {
         }
 
         override fun onVisibilityChanged(visible: Boolean) {
+            SleepSyncCoordinator.get(applicationContext).setVisible(sleepSurface, visible)
             if (visible) {
                 updateLockState()
                 startRendering()
@@ -357,7 +365,6 @@ class ClockWallpaperService : WallpaperService() {
                 while (isActive) {
                     try {
                         updateCelestialData()
-                        updateFitbitData()
                         updateCalendarData()
                         withContext(Dispatchers.Main) { drawFrame() }
                     } catch (e: Exception) {
@@ -381,74 +388,6 @@ class ClockWallpaperService : WallpaperService() {
             sunElevation = celestial.sunElevation
 
             solarIrradiance = celestialManager.getSolarIrradiance()
-        }
-
-        private suspend fun updateFitbitData() {
-            try {
-                val today = java.time.LocalDate.now()
-                val todayStr = today.toString()
-                val startStr = today.minusDays(14).toString()
-                
-                val logs = fitbitManager.fetchSleepLogs(startStr, todayStr)
-                if (logs.isNotEmpty()) {
-                    // Parity with Python: 
-                    // 1. Try to find TODAY'S main sleep record
-                    var targetLog = logs.filter { it.dateOfSleep == todayStr && it.isMainSleep }
-                        .maxByOrNull { it.endTime }
-                    
-                    val isRealToday = targetLog != null
-                    
-                    // 2. Fallback to the LATEST main sleep record available (usually yesterday)
-                    if (targetLog == null) {
-                        targetLog = logs.filter { it.isMainSleep }.maxByOrNull { it.dateOfSleep }
-                        Log.d(TAG, "Today's sleep missing, falling back to: ${targetLog?.dateOfSleep}")
-                    }
-                    
-                    if (targetLog != null) {
-                        sleepLogs = logs
-                        
-                        // Efficiency and Sleep Need (calculated from full 14-day history)
-                        val totalAsleepMins = logs.sumOf { it.minutesAsleep }
-                        val totalBedMins = logs.sumOf { it.timeInBed }
-                        val empiricalEfficiency = if (totalBedMins > 0) totalAsleepMins.toDouble() / totalBedMins.toDouble() else 0.92
-                        val sleepNeedHours = modelSettings.bedtimeGoal * empiricalEfficiency
-
-                        // Auto-toggle today's date if no data yet (exclude it so it doesn't skew debt)
-                        // Trigger only on MAIN sleep (wake up time)
-                        val hasMainTodayLog = logs.any { it.dateOfSleep == todayStr && it.isMainSleep }
-                        var newExcludedDates = modelSettings.excludedDates
-                        
-                        if (todayStr !in modelSettings.explicitDates) {
-                            if (hasMainTodayLog && newExcludedDates.contains(todayStr)) {
-                                newExcludedDates = newExcludedDates.filter { it != todayStr }
-                            } else if (!hasMainTodayLog && !newExcludedDates.contains(todayStr)) {
-                                newExcludedDates = newExcludedDates + todayStr
-                            }
-                        }
-
-                        if (newExcludedDates != modelSettings.excludedDates) {
-                            settingsManager.updateModelSettings(modelSettings.copy(excludedDates = newExcludedDates))
-                            modelSettings = modelSettings.copy(excludedDates = newExcludedDates)
-                        }
-
-                        // Sleep debt calculation (weighted 14-day window)
-                        val mappedLogs = logs.map { SleepLog(it.dateOfSleep, it.minutesAsleep, it.isMainSleep, it.timeInBed) }
-                        sleepDebt = EnergyCalculator.computeSleepDebt(mappedLogs, sleepNeedHours, modelSettings.includeNaps, modelSettings.excludedDates)
-                        
-                        // Bathyphase (from the target session)
-                        val hrPoints = fitbitManager.fetchHeartRateIntraday(targetLog.startTime, targetLog.endTime)
-                        val mappedHr = hrPoints.map { HeartRatePoint(it.time, it.value) }
-                        bathyphaseHour = EnergyCalculator.findBathyphase(mappedHr)
-                        
-                        // Notify managers/UI
-                        fitbitManager.saveMetrics(bathyphaseHour, empiricalEfficiency, sleepNeedHours)
-                        
-                        Log.d(TAG, "Fitbit Sync: Date=${targetLog.dateOfSleep}, RealToday=$isRealToday, Debt=$sleepDebt")
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to update Fitbit data", e)
-            }
         }
 
         private fun updateCalendarData() {
@@ -479,6 +418,8 @@ class ClockWallpaperService : WallpaperService() {
                     calendarEvents = calendarEvents,
                     showNumbers = currentSettings.showNumbers,
                     showSleep = currentSettings.showSleep,
+                    sleepOpacity = sleepStatus.opacity(System.currentTimeMillis(), reconnectRequired),
+                    sleepSavedAt = sleepStatus.lastSavedAt,
                     showSunMoon = currentSettings.showSunMoon,
                     showSleepDebtText = currentSettings.showSleepDebtText,
                     showEnergy = currentSettings.showEnergy,
@@ -520,6 +461,8 @@ class ClockWallpaperService : WallpaperService() {
         }
 
         override fun onDestroy() {
+            SleepSyncCoordinator.get(applicationContext).setVisible(sleepSurface, false)
+            scope.cancel()
             super.onDestroy()
             unregisterReceiver(refreshReceiver)
             unregisterReceiver(lockStateReceiver)

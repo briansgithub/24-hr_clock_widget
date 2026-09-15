@@ -29,6 +29,9 @@ Alertness_Master_Log*.csv
 !package.json
 !google-services.json
 !project.json
+!relay/tsconfig.json
+!relay/package-lock.json
+/.wrangler/
 python/*.json
 !python/fitbit_config.json.example
 python/saved_curves/

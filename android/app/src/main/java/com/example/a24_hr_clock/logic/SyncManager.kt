@@ -12,7 +12,7 @@ class SyncManager(private val context: Context) {
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
 
-        val syncRequest = PeriodicWorkRequestBuilder<SyncWorker>(
+        val syncRequest = PeriodicWorkRequestBuilder<SleepSyncWorker>(
             15, TimeUnit.MINUTES, // Minimum interval allowed
             5, TimeUnit.MINUTES   // Flex interval
         )
@@ -22,9 +22,20 @@ class SyncManager(private val context: Context) {
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             SYNC_WORK_NAME,
-            ExistingPeriodicWorkPolicy.KEEP, // Keep existing if already scheduled
+            ExistingPeriodicWorkPolicy.UPDATE,
             syncRequest
         )
+    }
+
+    fun scheduleMaintenance() {
+        if (com.example.a24_hr_clock.BuildConfig.SLEEP_RELAY_URL.isNotBlank()) {
+            val registration = PeriodicWorkRequestBuilder<PushRegistrationWorker>(24, TimeUnit.HOURS)
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build()
+            WorkManager.getInstance(context).enqueueUniquePeriodicWork("push_health", ExistingPeriodicWorkPolicy.KEEP, registration)
+        }
+        val request = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES, 5, TimeUnit.MINUTES)
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork("fitbit_metrics_backup", ExistingPeriodicWorkPolicy.KEEP, request)
     }
 
     fun scheduleEmpiricalEnergyWorker() {
@@ -70,6 +81,8 @@ class SyncManager(private val context: Context) {
 
     fun cancelPeriodicSync() {
         WorkManager.getInstance(context).cancelUniqueWork(SYNC_WORK_NAME)
+        WorkManager.getInstance(context).cancelUniqueWork("fitbit_metrics_backup")
+        WorkManager.getInstance(context).cancelUniqueWork("sleep_processing_retry")
         WorkManager.getInstance(context).cancelUniqueWork("empirical_energy_work")
         WorkManager.getInstance(context).cancelUniqueWork("missed_data_check_work")
     }

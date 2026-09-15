@@ -35,6 +35,8 @@ class SyncWorker(
             
             Log.d("SyncWorker", "Background sync and backup completed successfully")
             Result.success()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e("SyncWorker", "Background sync failed", e)
             Result.retry()

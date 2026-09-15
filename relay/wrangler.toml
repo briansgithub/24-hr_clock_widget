@@ -1,0 +1,34 @@
+name = "clock-sleep-relay"
+main = "src/index.ts"
+compatibility_date = "2026-09-15"
+workers_dev = true
+preview_urls = false
+account_id = "09fbf1131eb5c889fd58afea870d5d35"
+# Deployment must remain on Workers Free. No paid plan or billing dependency.
+
+[vars]
+FIREBASE_PROJECT_ID = "clock-sleep-relay-20260915"
+FITBIT_SUBSCRIBER_ID = "clock-sleep-relay"
+FITBIT_SUBSCRIPTION_ID = "clock-sleep"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "clock-sleep-relay"
+database_id = "88cbbe0d-be11-4301-8ce3-ba4aabd9059c"
+migrations_dir = "migrations"
+
+[[queues.producers]]
+binding = "EVENTS"
+queue = "clock-sleep-events"
+
+[[queues.consumers]]
+queue = "clock-sleep-events"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 8
+
+[triggers]
+crons = ["17 13 * * *"]
+
+[observability]
+enabled = false
