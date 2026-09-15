@@ -18,3 +18,8 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Change: Recorded the completed awake-only implementation and retained M8 after the provisional M9 candidate failed the promotion gates.
 - Validation/decision: Python compilation, adaptive-model tests, fitter tests, debt tests, Android unit tests, and deterministic export drift check all passed locally. The owner authorized a local commit; push, PR, and merge remain unauthorized.
 - Restriction: No commands or interaction may target the Pixel 7a without fresh explicit owner permission. Three local Android inspection screenshots remain deliberately untracked.
+
+### 2026-09-15 — Merged into main and archived
+- Commit/base: final tip `393c533`; `main` fast-forwarded through `5c6e028` / `393c533`, then `.gitignore` commit `1c4b1f4`.
+- Change: Owner merged the branch into local `main`. Awake-only energy work and the Python reauth tooltip fix are reachable from `main`. Handoff/history moved to `archive/feature/`.
+- Validation/decision: `git merge-base --is-ancestor feature/awake-energy-model main` confirmed. Local branch label deleted after archive. Push of `main` remains unauthorized unless the owner requests it.

@@ -2,11 +2,11 @@
 
 ## Identity
 
-- Tip: `62adb6d` — Merge git history cleanup.
-- Upstream: `origin/main` (ahead; verify before push)
+- Tip: `1c4b1f4` — Ignore generated preview GIFs and local analysis media
+- Upstream: `origin/main` (local ahead; verify before push)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
-- Last verified: `2026-07-31`
+- Last verified: `2026-09-15`
 
 ## Goal and scope
 
@@ -14,19 +14,19 @@ Maintain the stable integration branch for feature work, with permanent handoff 
 
 ## Changes since previous published tip
 
-- Merged `feature/personal-energy-model-m4` at `62cb343` and its adaptive refinements at `aec4184`.
-- Applied Python hover timing and bedtime countdown startup fixes at `343ec00`.
+- Fast-forwarded `feature/awake-energy-model` (`5c6e028` / `393c533`): awake-only energy prediction, gated M9 tooling, and Python reauth tooltip fix.
+- `.gitignore` updates for generated GIF artifacts and local analysis media (`1c4b1f4`).
 
 ## Current status
 
-- Clean at tip `62adb6d`; synchronized with `origin/main` before this bookkeeping branch.
-- The `feature/energy-refit-jul29` branch label is deleted; its dirty files remain preserved in a detached worktree at `3a13b4b`.
+- Clean integration tip at `1c4b1f4` after awake-energy merge and branch cleanup.
+- No active feature branches in the handoff index.
+- Preserve sibling worktree `H:/Desktop/widgets/24-hr_clock_widget-wt-energy-refit` on `feature/energy-refit-aug09` (unmerged unique commits).
 
 ## Next actions
 
-1. Validate the merged Python and Android head.
-2. Owner push `main` when validation and history review are complete.
-3. Review the preserved detached worktree and two historical stashes before discarding their unique files.
+1. Owner push `main` when ready (still unauthorized unless requested).
+2. Decide whether to merge, park, or abandon `feature/energy-refit-aug09` and its worktree.
 
 ## Merge and cleanup
 

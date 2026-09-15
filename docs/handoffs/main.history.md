@@ -100,3 +100,8 @@ Append-only milestones for `main`. Current state and next actions belong in [mai
 - Commit/base: merge `43f0872`; feature tip `a45246e`
 - Change: Folded Calendar bottom-nav into Display accordion picker; added `DisplayElementGlyphs.kt` calendar glyph.
 - Validation/decision: Local merge onto `main`; handoff archived 2026-07-22; local git branch deleted.
+
+### 2026-09-15 — Merged awake-energy-model and cleaned merged labels
+- Commit/base: tip `1c4b1f4` after ff of `feature/awake-energy-model` through `393c533`
+- Change: Awake-only energy prediction landed on `main`; handoff archived; deleted merged local labels `feature/awake-energy-model`, `feature/exercise-redesign`, and `codex/apply-m8-to-original`. Preserved `feature/energy-refit-aug09` worktree.
+- Validation/decision: Ancestor checks confirmed for deleted labels; `python scripts/validate_handoffs.py --quiet` after archive.

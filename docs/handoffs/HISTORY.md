@@ -153,3 +153,9 @@ Disposition phrases: `merged into main`, `superseded` (commits landed via descen
 - Merge / PR: local explicit merge
 - Summary: Deleted the fully merged energy-refit branch label while preserving its dirty worktree at detached `3a13b4b`.
 - Archive: `archive/chore/finalize-energy-refit-cleanup.md`
+
+### 2026-09-15 — `feature/awake-energy-model` → merged into `main`
+- Final tip: `393c533`
+- Merge / PR: local fast-forward on `main` through `5c6e028` / `393c533` (not pushed)
+- Summary: Awake-only energy prediction on Python/Android with gated M9 candidate retained as non-production; also included the Python reauth tooltip redraw fix.
+- Archive: `archive/feature/awake-energy-model.md`
