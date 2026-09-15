@@ -33,6 +33,13 @@ python/*.json
 !python/fitbit_config.json.example
 python/saved_curves/
 
+# Generated media previews
+/.artifacts/generated-gifs/
+
 # System
 .DS_Store
 Thumbs.db
+analysis/android_awake_energy_inspection.png
+analysis/android_energy_normalized.png
+analysis/android_energy_sleep_arc_hidden.png
+python/generate_day_night_year_gif.py
