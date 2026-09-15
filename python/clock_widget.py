@@ -4056,13 +4056,15 @@ class ClockWidget:
         def draw_reauth_indicators():
             if not self.reauth_needed_fitbit and not self.reauth_needed_calendar:
                 return
-            
+            if not hasattr(self, '_reauth_bound_tags'):
+                self._reauth_bound_tags = set()
+
             # Draw a warning icon in the top-left of the clock face
             icon_r = radius * 0.15
             margin = radius * 0.2
             ix = center_x - radius + margin
             iy = center_y - radius + margin
-            
+
             # Fitbit warning (blue-ish)
             if self.reauth_needed_fitbit:
                 fid = self.canvas.create_oval(
@@ -4070,10 +4072,17 @@ class ClockWidget:
                     fill="#00ccff", outline="white", width=2, tags="reauth_icon_fitbit"
                 )
                 self.canvas.create_text(ix, iy, text="F", fill="white", font=("Arial", int(icon_r), "bold"), tags="reauth_icon_fitbit")
-                self.canvas.tag_bind("reauth_icon_fitbit", "<Button-1>", lambda e: self.relink_fitbit_and_refresh())
-                Tooltip(self.canvas, "Fitbit Auth Expired - Click to Re-link", tag="reauth_icon_fitbit")
+                # Tag bindings persist on the canvas across delete("all")/redraw
+                # cycles, so bind and create the Tooltip only once. Re-binding on
+                # every redraw replaces the old callbacks, orphaning any Tooltip
+                # that currently has its popup open (it stops receiving <Leave>
+                # and never gets to destroy its window).
+                if "reauth_icon_fitbit" not in self._reauth_bound_tags:
+                    self.canvas.tag_bind("reauth_icon_fitbit", "<Button-1>", lambda e: self.relink_fitbit_and_refresh())
+                    Tooltip(self.canvas, "Fitbit Auth Expired - Click to Re-link", tag="reauth_icon_fitbit")
+                    self._reauth_bound_tags.add("reauth_icon_fitbit")
                 iy += icon_r * 2.5
-                
+
             # Calendar warning (purple-ish)
             if self.reauth_needed_calendar:
                 cid = self.canvas.create_oval(
@@ -4081,13 +4090,15 @@ class ClockWidget:
                     fill="#9370DB", outline="white", width=2, tags="reauth_icon_cal"
                 )
                 self.canvas.create_text(ix, iy, text="C", fill="white", font=("Arial", int(icon_r), "bold"), tags="reauth_icon_cal")
-                # Trigger Google Calendar auth
-                def trigger_cal_auth(e):
-                    # Reset service to force re-auth flow
-                    self.calendar_svc = None
-                    self.update_calendar_data()
-                self.canvas.tag_bind("reauth_icon_cal", "<Button-1>", trigger_cal_auth)
-                Tooltip(self.canvas, "Calendar Auth Expired - Click to Re-link", tag="reauth_icon_cal")
+                if "reauth_icon_cal" not in self._reauth_bound_tags:
+                    # Trigger Google Calendar auth
+                    def trigger_cal_auth(e):
+                        # Reset service to force re-auth flow
+                        self.calendar_svc = None
+                        self.update_calendar_data()
+                    self.canvas.tag_bind("reauth_icon_cal", "<Button-1>", trigger_cal_auth)
+                    Tooltip(self.canvas, "Calendar Auth Expired - Click to Re-link", tag="reauth_icon_cal")
+                    self._reauth_bound_tags.add("reauth_icon_cal")
 
         # Map string names to their drawing functions
         layers = {
