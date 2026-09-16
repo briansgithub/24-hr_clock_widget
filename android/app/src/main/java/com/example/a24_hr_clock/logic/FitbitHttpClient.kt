@@ -17,12 +17,14 @@ import kotlin.coroutines.resumeWithException
 data class FitbitCredentials(
     val accessToken: String = "", val refreshToken: String = "", val expiresAt: Long = 0,
     val accountId: String = "", val provider: String = "fitbit", val reconnectEpisode: String? = null,
-    val dismissedEpisode: String? = null
+    val dismissedEpisode: String? = null,
+    val googleAccount: String = ""
 )
 
 interface FitbitCredentialStore {
     suspend fun credentials(): FitbitCredentials
     suspend fun saveCredentials(credentials: FitbitCredentials)
+    suspend fun requireReconnectForProvider(provider: String) { if (credentials().provider == provider) requireReconnect() }
     suspend fun requireReconnect()
     suspend fun retryAt(): Long
     suspend fun deferUntil(time: Long)
@@ -45,6 +47,7 @@ class FitbitHttpClient(
 
     suspend fun accessToken(rejectedToken: String? = null): String = tokenMutex.withLock {
         val current = store.credentials()
+        if (current.provider != "fitbit") throw FitbitRequestException(SyncError.CONFIGURATION)
         if (current.reconnectEpisode != null) throw FitbitRequestException(SyncError.AUTH_REQUIRED)
         if (current.accessToken.isBlank()) throw FitbitRequestException(SyncError.AUTH_REQUIRED)
         val retry = store.retryAt()
@@ -52,7 +55,7 @@ class FitbitHttpClient(
         if (rejectedToken != null && rejectedToken != current.accessToken && current.expiresAt > now()) return@withLock current.accessToken
         if (rejectedToken == null && current.expiresAt > now() + 60_000) return@withLock current.accessToken
         if (current.refreshToken.isBlank()) {
-            store.requireReconnect()
+            store.requireReconnectForProvider("fitbit")
             throw FitbitRequestException(SyncError.AUTH_REQUIRED)
         }
         val form = FormBody.Builder().add("grant_type", "refresh_token").add("refresh_token", current.refreshToken).build()
@@ -125,7 +128,7 @@ class FitbitHttpClient(
                 ?: result.headers["fitbit-rate-limit-reset"]?.toLongOrNull() ?: 60L
             (now() + seconds.coerceAtLeast(1) * 1000L).also { store.deferUntil(it) }
         } else 0L
-        if (category == SyncError.AUTH_REQUIRED) store.requireReconnect()
+        if (category == SyncError.AUTH_REQUIRED) store.requireReconnectForProvider("fitbit")
         throw FitbitRequestException(category, retryAt)
     }
 

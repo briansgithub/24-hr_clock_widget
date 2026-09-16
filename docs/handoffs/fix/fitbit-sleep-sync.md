@@ -1,62 +1,48 @@
 # Branch: `fix/fitbit-sleep-sync`
 
-## Identity
+## Identity and scope
 
-- Base: local `main` at `1c4b1f4`; preserve its existing local commits.
-- Role: Fitbit sleep reliability and free push delivery.
-- Worktree: `H:/Desktop/widgets/24-hr_clock_widget` (single agent, primary checkout).
-- Runtime model: unknown. Sequential Android, TypeScript relay, then local/Pixel validation.
-- Owned paths: Android sleep/auth/render integration, `relay/`, configuration example and related docs.
-- History: [fitbit-sleep-sync.history.md](fitbit-sleep-sync.history.md)
-- Last verified: 2026-09-15.
+- Base local `main` at `1c4b1f4`; preserve existing work. Single agent, primary checkout `H:/Desktop/widgets/24-hr_clock_widget`. Runtime model unknown.
+- Migrate Python/Android clocks and relay to Google Health, preserving caches/settings/energy and Fitbit reliability repairs. Two-minute visible checks; google-sources includes wearables/manual/Health Connect.
+- Cloudflare Free and dedicated Firebase Spark only; no billing/domain purchase/paid assessment. Leave `acquiring-testing` untouched. Never clear phone data or automatically revoke Fitbit credentials.
+- History: [fitbit-sleep-sync.history.md](fitbit-sleep-sync.history.md). Details: [GOOGLE_HEALTH_MIGRATION.md](../../GOOGLE_HEALTH_MIGRATION.md).
 
-## Goal and scope
+## Completed baseline
 
-Deliver main sleep/naps promptly after Fitbit exposes them, silently renew ordinary expiry, preserve/fade stale sleep, and support personal devices with silent push. Workers Free and dedicated Firebase Spark only; no billing, domain purchase, app-data clearing, or changes to `acquiring-testing`.
+Owner-authorized Fitbit checkpoint: `026782c`. Prior Fitbit test/timing results are not Google acceptance.
 
-Implementation/recovery: [FITBIT_SLEEP_SYNC.md](../../FITBIT_SLEEP_SYNC.md). Deferred Google Health work: [GOOGLE_HEALTH_MIGRATION.md](../../GOOGLE_HEALTH_MIGRATION.md). Existing preview-label overlap and unrelated energy behavior are excluded.
+## Migration active on both clients
 
-## Changes since branch creation
+- Google Health enabled in `clock-sleep-relay-20260915`, number `856746798164`, with owner-approved Terms. OAuth **24-Hour Clock** External app published to production; separate Android/desktop clients created. Personal unverified-app notice remains expected.
+- Only sleep and health-measurement read scopes. User grant completed. Expired desktop loopback listener caused the refused connection; fresh authorization worked. DPAPI credentials saved; no helper remains running. Old error tab can be closed.
+- Python HealthIntegration uses DPAPI/state/PKCE, serialized renewal, shared polling, early sleep publication, status/reconnect and fading. Compatibility outputs retained.
+- Pixel upgraded without clearing data and activated after identity/full history verification. Health-only grant returned no email hint: removed mandatory-email rejection; validate identity on renewal too. App shows Google Health, Sleep verified, push Ready, 16 records.
+- Shared fixtures cover main/two naps/manual/travel/DST/mixed classification. All pages must complete before deletion/verification. Prefer live `mainSleep`/`dataPointName`; accept old aliases. HR uses UTC-minute averages. No workout import/model refit.
+- Python active Google and polling CURRENT; retain heart points across sleep-only checks and compatibility files. Sixteen paired sessions match times/time-in-bed/main. Reported asleep totals differ +3..48 minutes; no formula refit. Live HR 239 UTC-minute buckets, RHR and RMSSD available. Exact energy parity unproven.
 
-Shared token renewal and atomic credentials; typed sleep results and authoritative range reconciliation; one coordinator for visibility/manual/push/background with retries; immediate sleep/status publication before other work; reconnect modal/notification with state/PKCE; opacity-only freshness; account-restricted queued FCM relay and subscription health.
+## Relay and setup
 
-Live Fitbit callbacks append `#_=_`; only this inert fragment or no fragment is accepted. Live introspection uses millisecond expiry and map-like permissions. Both compatibility fixes have regression coverage.
+- Worker `https://clock-sleep-relay.clock-sleep-personal.workers.dev`; Google route deployed alongside Fitbit. D1 `clock-sleep-relay`, ID `88cbbe0d-be11-4301-8ce3-ba4aabd9059c`; migrations 0001/0002 applied; queue `clock-sleep-events`.
+- Google subscriber confirmed live: `projects/856746798164/subscribers/clock-sleep`, AUTOMATIC sleep. Endpoint handshake passed. Events require auth + raw-body Tink ECDSA, rotating keyset; queue ack before 204.
+- Dedicated SA `clock-health-reader` custom role contains only `health.subscribers.list`; key in Worker secret. FCM sender unchanged (`cloudmessaging.messages.create` only). Setup owner CLI token requires `x-goog-user-project` set to dedicated project.
+- Worker Google secrets complete, including verified GOOGLE_ALLOWED_ACCOUNT. Live Firebase-authenticated Google enrollment returned active; temporary device/user removed afterward. Pixel enrollment Ready. Legacy route retained.
+- Live subscriber flag is `endpointAuthorization.secretSet`; old guide's `authorizationTokenSet` also accepted. Cloud Billing API disabled; not enabled. No paid settings changed.
+- Desktop config ignored `python/google_health_client.json`, credentials `*.dpapi`; never print/commit. Root ignored `local.properties` contains Firebase/Fitbit config. Android signing SHA-1 in migration doc.
 
-## Current status
+## Validation
 
-Android and relay are deployed and working on the Pixel 7a. Fresh authorization reused its browser login, recorded expiry, cleared the reconnect episode/notification, and downloaded September 15 sleep (old cache ended September 10). Push is Ready, with an active subscription. All upgrades used `adb install -r` and preserved data.
+- `gradlew.bat :app:testDebugUnitTest :app:assembleDebug` passed: 57 tests (`google-health-android-account-hint`). JAVA_HOME Android Studio jbr.
+- `python -m unittest discover -s python -p "test_*.py"` passed after final Python edits (`google-health-desktop-final-regressions`). Targeted health tests passed. Prior eight-caller renewal/DPAPI checks passed.
+- Relay 21 tests/typecheck/dry-run passed; D1 migration/deployment passed. Crypto/rotation, account/provider restrictions, quota/outages, handshake and live subscriber shape tested.
+- Google direct awake FCM: receive 735 ms, verification 2,848 ms, redraw 52 ms. Preview/home purple visible. Offline preserved logs/verification, NETWORK without reconnect; online restored CURRENT. Forced idle deferred FCM; verified after exit (19,224 ms total). Connectivity/battery/idle restored.
+- Rejected-token fault-injection helper appended an empty preference entry and caused startup failure. Removed only that artifact with byte-verified copy; all named preferences/credentials/16 records preserved; app restored CURRENT, push Ready. SDK renewal test remains unclaimed. Do not use that helper's stdin binary-write path.
 
-- Worker: `https://clock-sleep-relay.clock-sleep-personal.workers.dev`; version `b9f9f176-6ebb-49ad-a28b-599338db011d`.
-- D1 `clock-sleep-relay`, ID `88cbbe0d-be11-4301-8ce3-ba4aabd9059c`; queue `clock-sleep-events`.
-- Firebase Spark `clock-sleep-relay-20260915`; Android app `1:856746798164:android:f1d2ae677f56b6b9a251c1`; billing disabled.
-- FCM sender has only `cloudmessaging.messages.create`. Secrets are in Worker secrets; Android configuration is in ignored root `local.properties`. Do not print either. Temporary provisioning secret files were removed.
-- Fitbit subscriber `clock-sleep-relay` verified; sleep subscription `clock-sleep`. One active device; controlled push delivery is healthy.
-- Wrangler device login resolved timed-out Cloudflare browser OAuth.
+## Resume
 
-### Validation
+1. Observe natural Google sleep/nap webhook through relay; direct FCM acceptance is not upstream latency.
+2. Reliable Android SDK renewal/denial/reconnect replay/process recreation tests; actual locked wallpaper and desktop visual freshness checks. Lock preview passed; wake returned to unlocked launcher. Native automation did not expose borderless desktop widget.
+3. Preserve active operation. Already-staged desktop grant can activate via `python python/stage_google_health.py --legacy-account 6D7XXB --activate-verified` only with widget stopped. No second state writer. Fresh setup supports --timeout 3600; never reuse callback codes.
 
-- `gradlew.bat :app:testDebugUnitTest :app:assembleDebug` — PASS, 48 tests/seven suites, no failures (wrapper label `android-reconnect-replay`). Root wrapper; Android Studio `jbr`.
-- In `relay`: `npm test`, `npm run check`, `npm run dry-run` — PASS, 12 tests (label `relay-live-shape-tests`). D1 migration passed; `npm audit --omit=dev --json`: zero production vulnerabilities.
-- `npx wrangler deploy` — PASS. Live Firebase authentication/status, rejection of unauthenticated/bad-verification requests, and Fitbit subscriber verification passed.
-- Pixel real authorization: recovered invalid refresh credentials; fresh sleep restored purple opacity. Preview Complete-response redraws: 40–119 ms.
-- Awake preview push: webhook accepted 820 ms, received 5,808 ms, verified 7,069 ms, redrawn 54 ms after persistence.
-- Home wallpaper/app background: identical second webhook got a distinct revision; accepted 598 ms, received 4,492 ms, verified 5,706 ms, redrawn 26 ms.
-- Offline refresh: NETWORK, cache/verification time unchanged, no reauth. Automatic retry recovered after connectivity returned.
-- Forced Doze: accepted 1,369 ms; delivery deferred until wake, then received 2,923 ms/verified 4,568 ms. Lock redraws 25–80 ms. Forced idle/battery simulation reset; original Wi-Fi/mobile-data settings restored.
-- Preview/home/lock visually checked.
-- `python scripts/validate_handoffs.py --quiet` and `git diff --check` — PASS. The local validator does not support `--require-current-handoff`.
+## Git
 
-### Limits and remaining acceptance
-
-Controlled pushes fetched existing Fitbit records; they do not measure future Fitbit detection/processing delay. Natural Android background scheduling remains subject to Doze. Multi-device routing, corrections/deletions, pending/rate/quota failures, token concurrency and fading boundaries use deterministic/local tests without changing the user's health history.
-
-Live ADB notification-intent tests passed: foreground/cold starts, browser cancellation, simulated valid-state `access_denied`, and process death during authorization. Cancellation/denial preserve credentials, cache and navigation. A replay bug was fixed by persisting notification request consumption; recreation now authorizes exactly once and duplicate intents are ignored. Final installed-build push verified in 6,020 ms and redrew in 29 ms. Serial `3C081JEHN14930`; ADB under `C:/Users/user1/AppData/Local/Android/Sdk/platform-tools/adb.exe`. Private recovery backup: `%TEMP%/clock-sleep-preupgrade.preferences_pb`; never print/commit.
-
-## Next actions
-
-1. Observe a future real sleep/nap, separating Fitbit publication time from delivery latency.
-2. Implement Google Health migration separately using the migration note.
-
-## Merge and cleanup
-
-PR base `main`. Owner authorized a local checkpoint commit of the completed Fitbit work on 2026-09-15. Push/PR/merge still require authorization. No sibling worktree created/removed. After authorized merge, verify remote-default reachability and archive handoff/history; obtain missing cleanup authorization. Never delete branch documentation.
+Owner authorized this migration checkpoint. Remaining validation is listed above. Push/PR/merge still require authorization under REPOSITORY.md. No worktree/branch cleanup performed; never delete branch documentation.

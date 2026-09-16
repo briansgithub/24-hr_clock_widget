@@ -42,17 +42,25 @@ class FitbitStore(context: Context) : FitbitCredentialStore {
 
     override suspend fun credentials() = auth(data.data.first())
     override suspend fun saveCredentials(credentials: FitbitCredentials) {
+        var saved = false
         data.edit {
+            // A late legacy refresh/callback must never undo a verified provider switch.
+            if (credentials.accessToken.isNotBlank() && credentials.provider != auth(it).provider) return@edit
+            saved = true
             it[authKey] = json.encodeToString(credentials)
-            it[stringPreferencesKey("access_token")] = credentials.accessToken
-            it[stringPreferencesKey("refresh_token")] = credentials.refreshToken
+            if (credentials.provider == "fitbit") {
+                it[stringPreferencesKey("access_token")] = credentials.accessToken
+                it[stringPreferencesKey("refresh_token")] = credentials.refreshToken
+            }
             if (credentials.reconnectEpisode == null) it.remove(notifiedKey)
         }
-        if (credentials.reconnectEpisode == null) AuthNotificationManager(context).cancel()
+        if (saved && credentials.reconnectEpisode == null) AuthNotificationManager(context).cancel()
     }
-    override suspend fun requireReconnect() {
+    override suspend fun requireReconnect() = requireReconnectForProvider(credentials().provider)
+    override suspend fun requireReconnectForProvider(provider: String) {
         data.edit {
             val current = auth(it)
+            if (current.provider != provider) return@edit
             if (current.accessToken.isNotBlank() && current.reconnectEpisode == null) {
                 it[authKey] = json.encodeToString(current.copy(reconnectEpisode = UUID.randomUUID().toString()))
             }
@@ -64,7 +72,7 @@ class FitbitStore(context: Context) : FitbitCredentialStore {
         val episode = auth(p).reconnectEpisode ?: return@withLock
         val installedAt = context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime
         // Android may remove notifications during an APK upgrade. Re-arm once for that installation.
-        if ((p[notifiedKey] != episode || p[notifiedInstallKey] != installedAt) && AuthNotificationManager(context).showReauthNotification("$episode:$installedAt")) {
+        if ((p[notifiedKey] != episode || p[notifiedInstallKey] != installedAt) && AuthNotificationManager(context).showReauthNotification("$episode:$installedAt", if (auth(p).provider == "google_health") "Google Health" else "Fitbit")) {
             data.edit { it[notifiedKey] = episode; it[notifiedInstallKey] = installedAt }
         }
     }
@@ -83,9 +91,10 @@ class FitbitStore(context: Context) : FitbitCredentialStore {
     override suspend fun deferUntil(time: Long) { data.edit { it[retryKey] = maxOf(it[retryKey] ?: 0, time) } }
     suspend fun snapshot() = snapshotFlow.first()
     suspend fun beginAttempt(now: Long) { data.edit { it[statusKey] = json.encodeToString(status(it).copy(lastAttemptAt = now, phase = SleepSyncPhase.CHECKING)) } }
-    suspend fun record(result: SleepFetchResult, start: String, end: String, now: Long): SleepSyncStatus {
+    suspend fun record(result: SleepFetchResult, start: String, end: String, now: Long, provider: String? = null): SleepSyncStatus {
         var updated = SleepSyncStatus()
         data.edit { p ->
+            if (provider != null && auth(p).provider != provider) { updated = status(p); return@edit }
             val old = logs(p)
             val prior = status(p)
             val incoming = when (result) {
@@ -105,7 +114,25 @@ class FitbitStore(context: Context) : FitbitCredentialStore {
         return updated
     }
     suspend fun setRetry(time: Long, count: Int) { data.edit { it[statusKey] = json.encodeToString(status(it).copy(nextRetryAt = time, retryCount = count)) } }
-    suspend fun saveMetrics(bathy: Double?, efficiency: Double, need: Double) { data.edit {
+    /** Switch credentials/cache/status together; retain the last legacy snapshot for recovery. */
+    suspend fun activateGoogle(credentials: FitbitCredentials, logs: List<SleepLogEntry>, now: Long) {
+        require(credentials.provider == "google_health" && credentials.accountId.isNotBlank())
+        data.edit { p ->
+            if (auth(p).provider == "fitbit") {
+                p[stringPreferencesKey("legacy_fitbit_credentials")] = json.encodeToString(auth(p))
+                p[stringPreferencesKey("legacy_fitbit_sleep_logs")] = json.encodeToString(this.logs(p))
+            }
+            p[authKey] = json.encodeToString(credentials)
+            p[logsKey] = json.encodeToString(logs)
+            p[statusKey] = json.encodeToString(SleepSyncStatus(lastAttemptAt = now, lastVerifiedAt = now, lastDataChangedAt = now, phase = SleepSyncPhase.CURRENT, lastSavedAt = now))
+            p.remove(retryKey); p.remove(notifiedKey)
+            p.remove(doublePreferencesKey("bathyphase"))
+        }
+        AuthNotificationManager(context).cancel()
+    }
+    suspend fun saveMetrics(bathy: Double?, efficiency: Double, need: Double, provider: String? = null, clearMissingBathy: Boolean = false) { data.edit {
+        if (provider != null && auth(it).provider != provider) return@edit
+        if (clearMissingBathy && bathy == null) it.remove(doublePreferencesKey("bathyphase"))
         if (bathy != null) it[doublePreferencesKey("bathyphase")] = bathy
         it[doublePreferencesKey("efficiency")] = efficiency
         it[doublePreferencesKey("sleep_need")] = need
@@ -125,6 +152,8 @@ data class OAuthAttempt(val state: String, val verifier: String, val createdAt: 
 class FitbitSession private constructor(context: Context) {
     val store = FitbitStore(context)
     val http = FitbitHttpClient(store, com.example.a24_hr_clock.BuildConfig.FITBIT_CLIENT_ID, com.example.a24_hr_clock.BuildConfig.FITBIT_CLIENT_SECRET)
+    val googleAuth = GoogleHealthAuthorization(context, store)
+    val google = GoogleHealthClient(googleAuth, store::deferUntil, store::retryAt, { store.requireReconnectForProvider("google_health") })
     companion object {
         @Volatile private var instance: FitbitSession? = null
         fun get(context: Context): FitbitSession = instance ?: synchronized(this) {

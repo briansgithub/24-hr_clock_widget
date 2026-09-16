@@ -26,7 +26,7 @@ import java.util.concurrent.TimeUnit
 @Serializable
 data class PushStatus(val message: String = "Not configured; polling continues", val registeredAt: Long = 0,
     val receivedAt: Long = 0, val revision: String = "", val token: String = "", val lastCheckedAt: Long = 0,
-    val sentAt: Long = 0, val healthy: Boolean = false)
+    val sentAt: Long = 0, val healthy: Boolean = false, val provider: String = "fitbit")
 
 class PushRegistrationManager private constructor(private val context: Context) {
     private val data = context.fitbitDataStore
@@ -46,13 +46,14 @@ class PushRegistrationManager private constructor(private val context: Context) 
         if (BuildConfig.SLEEP_RELAY_URL.isBlank()) return@withLock
         val session = FitbitSession.get(context)
         val credentials = session.store.credentials()
+        val providerName = if (credentials.provider == "google_health") "Google Health" else "Fitbit"
         if (credentials.accessToken.isBlank()) return@withLock
         if (credentials.reconnectEpisode != null) {
-            update { it.copy(message = "Reconnect Fitbit to enable push", healthy = false) }
+            update { it.copy(message = "Reconnect $providerName to enable push", healthy = false) }
             return@withLock
         }
         val prior = statusFlow.first()
-        if (!force && System.currentTimeMillis() - prior.lastCheckedAt < 60_000) return@withLock
+        if (!force && prior.provider == credentials.provider && System.currentTimeMillis() - prior.lastCheckedAt < 60_000) return@withLock
         try {
             val app = FirebaseApp.getApps(context).firstOrNull() ?: FirebaseApp.initializeApp(context)
                 ?: throw IllegalStateException("configuration")
@@ -64,18 +65,23 @@ class PushRegistrationManager private constructor(private val context: Context) 
             if (!installation.exists()) installation.writeText("enrolled")
             val token = FirebaseMessaging.getInstance().token.await()
             val idToken = auth.currentUser!!.getIdToken(false).await().token!!
-            if (!force && prior.token == token && System.currentTimeMillis() - prior.registeredAt < 86_400_000) {
+            if (!force && prior.provider == credentials.provider && prior.token == token && System.currentTimeMillis() - prior.registeredAt < 86_400_000) {
                 readStatus(idToken)
                 return@withLock
             }
-            val body = buildJsonObject { put("fcmToken", token); put("fitbitToken", session.http.accessToken()) }
+            val healthToken = if (credentials.provider == "google_health") session.googleAuth.accessToken() else session.http.accessToken()
+            if (session.store.credentials().provider != credentials.provider) return@withLock
+            val body = buildJsonObject {
+                put("fcmToken", token); put("provider", credentials.provider)
+                put(if (credentials.provider == "google_health") "googleToken" else "fitbitToken", healthToken)
+            }
             val response = send("/devices", "POST", idToken, body.toString())
             val subscription = response["subscription"]?.jsonPrimitive?.content ?: "unavailable"
-            update { it.copy(message = if (subscription == "active") "Ready" else "Push setup incomplete; polling continues", registeredAt = System.currentTimeMillis(), lastCheckedAt = System.currentTimeMillis(), token = token, healthy = subscription == "active") }
+            update { it.copy(message = if (subscription == "active") "Ready" else "Push setup incomplete; polling continues", provider = credentials.provider, registeredAt = System.currentTimeMillis(), lastCheckedAt = System.currentTimeMillis(), token = token, healthy = subscription == "active") }
             readStatus(idToken)
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) {
-            val message = if (e is FitbitRequestException && e.category == SyncError.AUTH_REQUIRED) "Reconnect Fitbit to enable push" else "Push unavailable; polling continues"
+            val message = if (e is FitbitRequestException && e.category == SyncError.AUTH_REQUIRED) "Reconnect $providerName to enable push" else "Push unavailable; polling continues"
             update { it.copy(message = message, lastCheckedAt = System.currentTimeMillis(), healthy = false) }
         }
     }
@@ -147,12 +153,14 @@ class SleepMessagingService : FirebaseMessagingService() {
         // Append ensures a second nap's push arriving during a worker cannot be lost.
         WorkManager.getInstance(this).enqueueUniqueWork("sleep_push", ExistingWorkPolicy.APPEND_OR_REPLACE,
             OneTimeWorkRequestBuilder<SleepPushWorker>().setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-                .setInputData(workDataOf("revision" to message.data["revision"].orEmpty())).build())
+                .setInputData(workDataOf("revision" to message.data["revision"].orEmpty(), "provider" to (message.data["provider"] ?: "fitbit"))).build())
     }
 }
 
 class SleepPushWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
+        val provider = inputData.getString("provider") ?: "fitbit"
+        if (FitbitSession.get(applicationContext).store.credentials().provider != provider) return Result.success()
         PushRegistrationManager.get(applicationContext).received(inputData.getString("revision").orEmpty())
         val result = SleepSyncCoordinator.get(applicationContext).request(history = true, immediate = true).await()
         return if (result is SleepFetchResult.Complete) Result.success() else Result.failure()

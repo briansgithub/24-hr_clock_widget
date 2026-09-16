@@ -88,7 +88,7 @@ class SleepSyncCoordinator private constructor(private val context: Context) {
                 manager.fetchSleepLogs(start, end)
             } ?: SleepFetchResult.Failed(SyncError.NETWORK)
             val savedAt = System.currentTimeMillis()
-            val status = store.record(result, start, end, savedAt)
+            val status = store.record(result, start, end, savedAt, before.auth.provider)
             Log.i("SleepSync", "saved=${result.javaClass.simpleName} elapsedMs=${savedAt - now} category=${status.error ?: "none"}")
             when (result) {
                 is SleepFetchResult.Complete -> {

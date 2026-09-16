@@ -80,6 +80,16 @@ class MainActivity : ComponentActivity() {
     private lateinit var settingsManager: SettingsManager
     private lateinit var exerciseRepository: ExerciseRepository
     private var initialAction by mutableStateOf<String?>(null)
+    private var showHealthDisclosure by mutableStateOf(false)
+    private val healthAuthorization = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        if (result.resultCode == RESULT_OK && result.data != null) {
+            try {
+                finishHealthAuthorization(FitbitSession.get(this).googleAuth.client.getAuthorizationResultFromIntent(result.data!!))
+            } catch (_: com.google.android.gms.common.api.ApiException) {
+                Toast.makeText(this, "Google Health connection was not completed. Cached sleep remains visible.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 
     val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -113,6 +123,13 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             _24_hr_clockTheme {
+                if (showHealthDisclosure) AlertDialog(
+                    onDismissRequest = { showHealthDisclosure = false },
+                    title = { Text("Connect Google Health") },
+                    text = { Text("The clock reads your sleep and heart measurements to draw sleep sections and calculate energy. Health records stay on this device; the push relay receives only account and device routing information. Your cached sleep stays visible while connecting.") },
+                    confirmButton = { TextButton(onClick = { showHealthDisclosure = false; beginHealthAuthorization() }) { Text("Continue with Google") } },
+                    dismissButton = { TextButton(onClick = { showHealthDisclosure = false }) { Text("Later") } }
+                )
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     MainScreen(
                         fitbitManager = fitbitManager,
@@ -201,7 +218,34 @@ class MainActivity : ComponentActivity() {
     private fun launchFitbitAuth() {
         lifecycleScope.launch {
             FitbitSession.get(this@MainActivity).store.dismissReconnect()
-            CustomTabsIntent.Builder().build().launchUrl(this@MainActivity, Uri.parse(fitbitManager.getAuthUrl()))
+            if (fitbitManager.store.credentials().provider == "google_health") beginHealthAuthorization()
+            else showHealthDisclosure = true
+        }
+    }
+
+    private fun beginHealthAuthorization() {
+        lifecycleScope.launch {
+            try {
+                val result = FitbitSession.get(this@MainActivity).googleAuth.begin()
+                if (result.hasResolution()) healthAuthorization.launch(androidx.activity.result.IntentSenderRequest.Builder(result.pendingIntent!!.intentSender).build())
+                else finishHealthAuthorization(result)
+            } catch (_: FitbitRequestException) {
+                Toast.makeText(this@MainActivity, "Google Health authorization is unavailable. Cached sleep remains visible.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun finishHealthAuthorization(result: com.google.android.gms.auth.api.identity.AuthorizationResult) {
+        lifecycleScope.launch {
+            try {
+                FitbitSession.get(this@MainActivity).googleAuth.complete(result)
+                Toast.makeText(this@MainActivity, "Google Health connected. Sleep updated.", Toast.LENGTH_SHORT).show()
+                SleepSyncCoordinator.get(this@MainActivity).request(history = true, immediate = true)
+                PushRegistrationManager.get(this@MainActivity).register(force = true)
+            } catch (e: FitbitRequestException) {
+                android.util.Log.w("GoogleHealthAuth", "Connection verification failed: category=${e.category}")
+                Toast.makeText(this@MainActivity, "Connection could not be verified (${e.category}). Cached sleep remains visible.", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -256,9 +300,9 @@ fun MainScreen(
         fun later() { scope.launch { FitbitSession.get(context).store.dismissReconnect() } }
         AlertDialog(
             onDismissRequest = { later() },
-            title = { Text("Reconnect Fitbit") },
-            text = { Text("Fitbit needs your permission again. Your cached sleep remains visible while you reconnect.") },
-            confirmButton = { TextButton(onClick = onLoginClick) { Text("Reconnect Fitbit") } },
+            title = { Text("Reconnect Google Health") },
+            text = { Text("Health access needs your permission again. Your cached sleep remains visible while you reconnect.") },
+            confirmButton = { TextButton(onClick = onLoginClick) { Text("Reconnect Google Health") } },
             dismissButton = { TextButton(onClick = { later() }) { Text("Later") } }
         )
     }
@@ -468,7 +512,7 @@ fun MainScreen(
                     onLogoutClick = onLogoutClick,
                     onRefresh = {
                         scope.launch {
-                            Toast.makeText(context, "Refreshing Fitbit data...", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Refreshing sleep data...", Toast.LENGTH_SHORT).show()
                             SleepSyncCoordinator.get(context).request(history = true, immediate = true).await()
                         }
                     },
@@ -1078,6 +1122,9 @@ fun SleepLogScreen(
     onRefresh: () -> Unit,
     onUpdateModel: (ModelSettings) -> Unit
 ) {
+    val healthContext = LocalContext.current
+    val healthAuth by FitbitSession.get(healthContext).store.credentialsFlow.collectAsState(initial = FitbitCredentials())
+    val providerName = if (healthAuth.provider == "google_health") "Google Health" else "Fitbit"
     val scope = rememberCoroutineScope()
     Column(
         modifier = Modifier
@@ -1085,22 +1132,22 @@ fun SleepLogScreen(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        Text(text = "Fitbit Connection", style = MaterialTheme.typography.headlineMedium)
+        Text(text = "$providerName Connection", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
             text = "Status: " + when {
-                reconnectRequired -> "Reconnect Fitbit"
+                reconnectRequired -> "Reconnect Google Health"
                 !isLoggedIn -> "Not connected"
                 syncStatus.phase == SleepSyncPhase.CHECKING -> "Checking sleep..."
-                syncStatus.phase == SleepSyncPhase.PROCESSING -> "Fitbit is still processing sleep"
+                syncStatus.phase == SleepSyncPhase.PROCESSING -> "$providerName is still processing sleep"
                 syncStatus.error != null -> when (syncStatus.error) {
-                    SyncError.NETWORK -> "Unable to reach Fitbit"
-                    SyncError.RATE_LIMIT -> "Fitbit has asked us to wait"
-                    SyncError.SERVER -> "Fitbit is temporarily unavailable"
-                    SyncError.DECODING -> "Fitbit returned an unreadable response"
-                    SyncError.CONFIGURATION -> "Fitbit connection settings need attention"
-                    else -> "Reconnect Fitbit"
+                    SyncError.NETWORK -> "Unable to reach $providerName"
+                    SyncError.RATE_LIMIT -> "$providerName has asked us to wait"
+                    SyncError.SERVER -> "$providerName is temporarily unavailable"
+                    SyncError.DECODING -> "$providerName returned an unreadable response"
+                    SyncError.CONFIGURATION -> "$providerName connection settings need attention"
+                    else -> "Reconnect Google Health"
                 }
                 syncStatus.lastVerifiedAt > 0 -> "Sleep verified"
                 else -> "Cached sleep has not been verified"
@@ -1146,7 +1193,7 @@ fun SleepLogScreen(
         Spacer(modifier = Modifier.height(16.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onLoginClick, modifier = Modifier.weight(1f)) {
-                Text(if (reconnectRequired) "Reconnect Fitbit" else if (isLoggedIn) "Relink Fitbit" else "Login with Fitbit")
+                Text(if (healthAuth.provider == "google_health") "Reconnect Google Health" else "Connect Google Health")
             }
             if (isLoggedIn) {
                 OutlinedButton(onClick = onLogoutClick) {

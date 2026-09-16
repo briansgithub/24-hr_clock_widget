@@ -193,7 +193,7 @@ class FitbitClient:
                 # A) It matches today's date AND it's "Real" data (already found today's sleep)
                 # B) It matches today's date AND it's "Fallback" data but was fetched < 1 hr ago
                 if cached.get('date') == end_date:
-                    if was_real or elapsed_sec < 3600: # 3600s = 1h
+                    if elapsed_sec < 30: # Never let an earlier sleep hide a later same-day nap.
                         label = "Real" if was_real else f"Fallback, {elapsed_sec/60:.1f}m old"
                         print(f"[get_sleep_range] Using cached sleep logs for {end_date} ({label})")
                         return cached.get('sleep_logs', [])
@@ -400,7 +400,7 @@ class FitbitClient:
                 # A) It's "Real" data (already found today's sleep)
                 # B) It's "Fallback" data but was fetched < 1 hr ago
                 if not force and cached.get('date') == today_str and 'inputs' in cached:
-                    if was_real or elapsed_sec < 3600:
+                    if elapsed_sec < 30 and cached['inputs'].get('raw_sleep_logs') == sleep_logs:
                         print(f"[get_all_energy_inputs] Using cached energy inputs for {today_str} ({'Real' if was_real else 'Fallback'})")
                         res = cached['inputs']
 

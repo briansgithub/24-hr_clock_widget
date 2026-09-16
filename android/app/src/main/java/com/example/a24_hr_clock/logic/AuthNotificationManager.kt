@@ -35,7 +35,7 @@ class AuthNotificationManager(private val context: Context) {
 
     fun cancel() { NotificationManagerCompat.from(context).cancel(notificationId) }
 
-    fun showReauthNotification(requestId: String): Boolean {
+    fun showReauthNotification(requestId: String, provider: String = "Fitbit"): Boolean {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return false
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -51,11 +51,11 @@ class AuthNotificationManager(private val context: Context) {
 
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
-            .setContentTitle("Fitbit Reconnection Needed")
+            .setContentTitle("$provider Reconnection Needed")
             .setContentText("Tap to quickly reconnect and resume syncing sleep data.")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
-            .addAction(0, "Reconnect Fitbit", pendingIntent)
+            .addAction(0, "Reconnect $provider", pendingIntent)
             .setOnlyAlertOnce(true)
             .setAutoCancel(true)
 

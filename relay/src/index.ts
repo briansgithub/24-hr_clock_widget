@@ -1,4 +1,6 @@
 import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from 'jose';
+import { informationPage } from './privacy';
+import { GoogleHealthError, googleWebhook, googleIdentity, googleSubscriptionHealth } from './google-health';
 
 export interface Env {
   DB: D1Database; EVENTS: Queue<Invalidation>;
@@ -7,8 +9,10 @@ export interface Env {
   FITBIT_ALLOWED_ACCOUNT: string; FITBIT_VERIFY_CODE: string;
   FITBIT_SUBSCRIBER_ID: string; FITBIT_SUBSCRIPTION_ID: string;
   FCM_SERVICE_ACCOUNT: string;
+  GOOGLE_WEBHOOK_AUTH?: string; GOOGLE_ALLOWED_ACCOUNT?: string;
+  GOOGLE_SUBSCRIBER_NAME?: string; GOOGLE_SUBSCRIBER_READER?: string;
 }
-export interface Invalidation { revision: string; receivedAt: number; account: string; type: 'sleep_invalidated' | 'registration_refresh' }
+export interface Invalidation { revision: string; receivedAt: number; account: string; provider?: 'fitbit' | 'google_health'; type: 'sleep_invalidated' | 'registration_refresh' }
 interface Device { uid: string; account_id: string; fcm_token: string }
 class HttpError extends Error { constructor(readonly status: number, readonly category: string) { super(category); } }
 const reply = (value: unknown, status = 200) => Response.json(value, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -72,18 +76,21 @@ export async function ensureSubscription(token: string, env: Env): Promise<strin
 async function enrollment(request: Request, env: Env, uid: string) {
   const body = await request.text();
   if (body.length > 16_384) throw new HttpError(413, 'too_large');
-  let input: { fitbitToken?: string; fcmToken?: string };
+  let input: { provider?: string; googleToken?: string; fitbitToken?: string; fcmToken?: string };
   try { input = JSON.parse(body); } catch { throw new HttpError(400, 'invalid_json'); }
-  if (typeof input.fitbitToken !== 'string' || input.fitbitToken.length > 4096 || typeof input.fcmToken !== 'string' ||
+  const provider = input.provider ?? 'fitbit';
+  if (provider !== 'fitbit' && provider !== 'google_health') throw new HttpError(400, 'invalid_provider');
+  const token = provider === 'google_health' ? input.googleToken : input.fitbitToken;
+  if (typeof token !== 'string' || !token || token.length > 4096 || typeof input.fcmToken !== 'string' ||
     input.fcmToken.length < 20 || input.fcmToken.length > 4096) throw new HttpError(400, 'invalid_registration');
-  const account = await fitbitIdentity(input.fitbitToken, env);
-  const subscription = await ensureSubscription(input.fitbitToken, env);
+  const account = provider === 'google_health' ? await googleIdentity(token, env) : await fitbitIdentity(token, env);
+  const subscription = provider === 'google_health' ? await googleSubscriptionHealth(env) : await ensureSubscription(token, env);
   await env.DB.batch([
-    env.DB.prepare('DELETE FROM devices WHERE fcm_token = ? AND account_id = ? AND uid != ?').bind(input.fcmToken, account, uid),
-    env.DB.prepare(`INSERT INTO devices(uid, account_id, fcm_token, subscription_status, registered_at) VALUES(?,?,?,?,?)
-      ON CONFLICT(uid) DO UPDATE SET account_id=excluded.account_id, fcm_token=excluded.fcm_token,
+    env.DB.prepare('DELETE FROM devices WHERE fcm_token = ? AND uid != ?').bind(input.fcmToken, uid),
+    env.DB.prepare(`INSERT INTO devices(uid, account_id, fcm_token, subscription_status, registered_at, provider) VALUES(?,?,?,?,?,?)
+      ON CONFLICT(uid) DO UPDATE SET account_id=excluded.account_id, fcm_token=excluded.fcm_token, provider=excluded.provider,
       subscription_status=excluded.subscription_status, registered_at=excluded.registered_at, last_error=NULL`)
-      .bind(uid, account, input.fcmToken, subscription, Date.now())
+      .bind(uid, account, input.fcmToken, subscription, Date.now(), provider)
   ]);
   return reply({ subscription });
 }
@@ -127,7 +134,7 @@ async function fcmAccess(env: Env): Promise<string> {
 }
 
 export function pushMessage(token: string, event: Invalidation) {
-  return { message: { token, data: { type: event.type, revision: event.revision },
+  return { message: { token, data: { type: event.type, revision: event.revision, provider: event.provider ?? 'fitbit' },
     android: { priority: 'normal', collapse_key: event.type, ttl: '86400s' } } };
 }
 export function invalidRegistration(status: number, body: { error?: { details?: { errorCode?: string }[] } }) {
@@ -136,7 +143,7 @@ export function invalidRegistration(status: number, body: { error?: { details?: 
 }
 
 async function deliver(event: Invalidation, env: Env) {
-  const devices = await env.DB.prepare('SELECT uid, account_id, fcm_token FROM devices WHERE account_id = ?').bind(event.account).all<Device>();
+  const devices = await env.DB.prepare('SELECT uid, account_id, fcm_token FROM devices WHERE account_id = ? AND provider = ?').bind(event.account, event.provider ?? 'fitbit').all<Device>();
   let retry = false;
   for (const device of devices.results) {
     const prior = await env.DB.prepare('SELECT sent_at FROM deliveries WHERE revision = ? AND uid = ?').bind(event.revision, device.uid).first<{ sent_at: number | null }>();
@@ -175,6 +182,8 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     try {
       const path = new URL(request.url).pathname;
+      if (request.method === 'GET') { const page = informationPage(path); if (page) return page; }
+      if (path === '/google-health/webhook') return await googleWebhook(request, env);
       if (path === '/fitbit/webhook') return await webhook(request, env);
       if (path === '/health' && request.method === 'GET') return reply({ service: 'clock-sleep-relay' });
       if (path !== '/devices' && path !== '/status') return reply({ error: 'not_found' }, 404);
@@ -184,12 +193,12 @@ export default {
         await env.DB.prepare('DELETE FROM devices WHERE uid = ?').bind(uid).run(); return reply({ removed: true });
       }
       if (path === '/status' && request.method === 'GET') {
-        const device = await env.DB.prepare('SELECT subscription_status, registered_at, last_delivery_at, last_error FROM devices WHERE uid = ?').bind(uid).first();
+        const device = await env.DB.prepare('SELECT provider, subscription_status, registered_at, last_delivery_at, last_error FROM devices WHERE uid = ?').bind(uid).first();
         return reply({ device: device ?? null });
       }
       return reply({ error: 'method' }, 405);
     } catch (error) {
-      const known = error instanceof HttpError;
+      const known = error instanceof HttpError || error instanceof GoogleHealthError;
       return reply({ error: known ? error.category : 'unavailable', pollingFallback: true }, known ? error.status : 503);
     }
   },
@@ -202,6 +211,11 @@ export default {
   async scheduled(_event: ScheduledController, env: Env) {
     // Phones hold Fitbit refresh tokens. Ask each phone to validate its subscription daily using a fresh short-lived token.
     await env.EVENTS.send({ revision: crypto.randomUUID(), receivedAt: Date.now(), account: env.FITBIT_ALLOWED_ACCOUNT, type: 'registration_refresh' });
+    if (env.GOOGLE_ALLOWED_ACCOUNT) {
+      const status = await googleSubscriptionHealth(env);
+      await env.DB.prepare("UPDATE devices SET subscription_status = ? WHERE provider = 'google_health'").bind(status).run();
+      await env.EVENTS.send({ revision: crypto.randomUUID(), receivedAt: Date.now(), account: env.GOOGLE_ALLOWED_ACCOUNT, provider: 'google_health', type: 'registration_refresh' });
+    }
     await env.DB.prepare('DELETE FROM deliveries WHERE created_at < ?').bind(Date.now() - 7 * 86_400_000).run();
   }
 } satisfies ExportedHandler<Env, Invalidation>;

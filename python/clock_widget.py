@@ -210,6 +210,9 @@ class ClockWidget:
         # The integration client is imported and created on its first worker
         # request so importing OAuth/browser dependencies cannot delay the clock.
         self.fitbit = None
+        from health_contract import SleepStatus
+        self.health_status = SleepStatus()
+        self.health_provider = 'fitbit'
         self.sleep_hour         = None
         self.wake_hour          = None
         self.sleep_duration     = 7.5   # hours; updated after first Fitbit fetch
@@ -681,17 +684,21 @@ class ClockWidget:
 
         energy_actions = self._settings_section(energy_tab, "Refresh data")
         self.refresh_btn = self._settings_button(
-            energy_actions, "Refresh Fitbit now", lambda: self.update_fitbit_data(force=True), accent=True
+            energy_actions, "Refresh sleep now", lambda: self.update_fitbit_data(force=True), accent=True
         )
         self.refresh_btn.pack(anchor=tk.W, padx=6, pady=4)
 
         fitbit = self._settings_section(
-            integrations_tab, "Fitbit", "Sleep, heart-rate, and recovery data used by the energy model."
+            integrations_tab, "Sleep connection", "Sleep, heart-rate, and recovery data used by the energy model."
         )
         fitbit_btn = self._settings_button(
-            fitbit, "Refresh Fitbit", lambda: self.update_fitbit_data(force=True), accent=True
+            fitbit, "Refresh sleep", lambda: self.update_fitbit_data(force=True), accent=True
         )
         fitbit_btn.pack(anchor=tk.W, padx=6, pady=4)
+        self._settings_button(fitbit, "Connect / reconnect Google Health", self.relink_fitbit_and_refresh).pack(anchor=tk.W, padx=6, pady=4)
+        self.health_status_label = tk.Label(fitbit, text="", bg=self.UI_BG, fg=self.UI_TEXT, justify=tk.LEFT, anchor=tk.W)
+        self.health_status_label.pack(anchor=tk.W, padx=6, pady=4)
+        self._refresh_health_status_text()
         calendar = self._settings_section(
             integrations_tab, "Google Calendar", "Events are rendered as colored arcs on the clock face."
         )
@@ -2049,28 +2056,44 @@ class ClockWidget:
                 "night_shading", "sun_and_moon", "ticks_and_numbers", "solar_circle"
             })
 
+    def _refresh_health_status_text(self):
+        if not hasattr(self, 'health_status_label'):
+            return
+        def stamp(value):
+            return datetime.datetime.fromtimestamp(value).strftime('%b %d, %Y %I:%M %p') if value else 'Never'
+        status = self.health_status
+        latest = max(self.raw_sleep_logs, key=lambda item: item.get('endTime', ''), default=None)
+        latest_text = f"{latest['dateOfSleep']}, {latest['startTime'][11:16]} to {latest['endTime'][11:16]}" if latest else 'None'
+        label = {'CURRENT': 'Sleep verified', 'CHECKING': 'Checking sleep', 'PROCESSING': 'Sleep is still processing', 'UNKNOWN': 'Cached sleep has not been verified'}.get(status.phase, status.error or status.phase)
+        self.health_status_label.configure(text=f"Status: {label}\nLast checked: {stamp(status.last_attempt)}\nLast successful check: {stamp(status.last_verified)}\nLatest sleep: {latest_text}\nSleep records last changed: {stamp(status.last_changed)}")
+
     def _get_fitbit_client_worker(self):
         if self.fitbit is None:
             from fitbit_client import FitbitClient
-            self.fitbit = FitbitClient(
+            from health_integration import HealthIntegration
+            self.fitbit = HealthIntegration(FitbitClient(
                 client_id=self.FITBIT_CLIENT_ID,
                 client_secret=self.FITBIT_CLIENT_SECRET,
-            )
+            ))
         return self.fitbit
 
     def relink_fitbit_and_refresh(self):
         """Re-authorize Fitbit OAuth, then force-fetch fresh sleep data."""
+        from tkinter import messagebox
+        if not messagebox.askokcancel("Connect Google Health", "The clock reads sleep and heart measurements to draw sleep sections and estimate energy. Records and credentials stay on this computer. Your cached sleep remains visible while connecting."):
+            return
         def _task():
             try:
-                print("[ClockWidget] Starting Fitbit re-authorization...")
+                print("[ClockWidget] Starting Google Health authorization...")
                 with self._fitbit_operation_lock:
                     self._get_fitbit_client_worker().authorize()
                 print("[ClockWidget] Fitbit re-authorization succeeded — refreshing data.")
                 self._post_ui(self._set_reauth_status, 'fitbit', False)
                 self._post_ui(self.update_fitbit_data, True, "reauth")
             except Exception as e:
-                print(f"[ClockWidget] Fitbit re-link failed: {e}")
-                self._post_ui(self._set_reauth_status, 'fitbit', True)
+                category = getattr(getattr(e, 'category', None), 'value', 'CONNECTION_INCOMPLETE')
+                print(f"[ClockWidget] Health connection: {category}")
+                self._post_ui(messagebox.showinfo, "Google Health", "Connection was not completed. Cached sleep remains visible. Status: " + category)
 
         self._submit_background(_task)
 
@@ -2080,13 +2103,12 @@ class ClockWidget:
         Calls FitbitClient and updates self.fitbit_data.
         """
         if self._fitbit_refreshing:
-            if force:
-                self._fitbit_refresh_pending = True
-                self._fitbit_pending_force = True
+            self._fitbit_refresh_pending = True
+            self._fitbit_pending_force = self._fitbit_pending_force or force
             return
 
         now_monotonic = time.monotonic()
-        if not force and now_monotonic - self._fitbit_last_request_monotonic < 15.0:
+        if not force and now_monotonic - self._fitbit_last_request_monotonic < 30.0:
             return
 
         self._fitbit_refreshing = True
@@ -2099,6 +2121,11 @@ class ClockWidget:
         excluded_dates = list(self.excluded_dates) # Thread-safe copy
         explicit_dates = set(getattr(self, 'explicit_dates', ()))
 
+        def publish_sleep(inputs):
+            day = datetime.datetime.now().date().isoformat()
+            main = any(s.get('dateOfSleep') == day and s.get('isMainSleep') for s in inputs.get('raw_sleep_logs', []))
+            self._post_ui(self._apply_fitbit_results, inputs, day, main, day in explicit_dates, False)
+
         def _task():
             try:
                 with self._fitbit_operation_lock:
@@ -2106,11 +2133,13 @@ class ClockWidget:
                         bedtime_goal_hours=bedtime_goal,
                         include_naps=include_naps,
                         force=force,
-                        excluded_dates=excluded_dates
+                        excluded_dates=excluded_dates,
+                        on_sleep=publish_sleep,
+                        history=reason in ('startup', 'midnight', 'reauth')
                     )
                 
                 # If we got here, reauth is NOT needed
-                self._post_ui(self._set_reauth_status, 'fitbit', False)
+                self._post_ui(self._set_reauth_status, 'fitbit', inputs.get('health_status', {}).get('error') == 'AUTH_REQUIRED')
 
                 # ... (rest of the logic)
                 
@@ -2176,6 +2205,12 @@ class ClockWidget:
 
     def _apply_fitbit_results_now(self, inputs, today_str, has_today_main, has_saved_setting, should_save_image):
         """Apply Fitbit fetch results on the main thread (thread-safe)."""
+        if 'health_status' in inputs:
+            from health_contract import SleepStatus
+            self.health_status = SleepStatus(**inputs['health_status'])
+            self.health_provider = inputs.get('provider', 'fitbit')
+            self._set_reauth_status('fitbit', self.health_status.error == 'AUTH_REQUIRED')
+            self._schedule_clock_redraw({'sleep_arc'})
         eff   = inputs.get('empirical_efficiency', 1.0)
         need  = inputs.get('sleep_need_hours', self.bedtime_goal.get())
         wake  = inputs.get('wake_hour')
@@ -2199,6 +2234,7 @@ class ClockWidget:
         data_changed = next_signature != getattr(self, '_fitbit_display_signature', None)
         self._fitbit_display_signature = next_signature
         self.raw_sleep_logs = next_raw_logs
+        self._refresh_health_status_text()
         if data_changed:
             self._sleep_table_needs_refresh = True
 
@@ -2231,7 +2267,7 @@ class ClockWidget:
             self.raw_sleep_logs     = next_raw_logs
             self.active_sleep_date  = inputs.get('active_sleep_date')
 
-            self.last_fitbit_update = datetime.datetime.now()
+            self.last_fitbit_update = datetime.datetime.fromtimestamp(self.health_status.last_verified) if self.health_status.last_verified else None
 
             if data_changed:
                 # Push main sleep and time-local naps into the adaptive model.
@@ -2245,6 +2281,10 @@ class ClockWidget:
 
             if should_save_image and data_changed:
                 self.root.after(1000, self.save_clock_image)
+        elif inputs.get('health_status', {}).get('phase') == 'CURRENT':
+            self.wake_hour = self.sleep_hour = self.sleep_duration = None
+            self.active_sleep_date = None
+            self._schedule_clock_redraw()
         else:
             print("[update_fitbit_data] wake_hour still None after fetch.")
 
@@ -2952,6 +2992,8 @@ class ClockWidget:
 
     def show_widget(self):
         self.root.deiconify()
+        self.update_fitbit_data(reason="visible")
+        self._schedule_clock_redraw({'sleep_arc'})
         self.root.lift()
         self.root.focus_force()
         self.make_clock_solid()
@@ -3018,7 +3060,15 @@ class ClockWidget:
     def update_clock(self):
         now = datetime.datetime.now()
         current_minute = now.hour * 60 + now.minute
-        
+        age = time.monotonic() - self._fitbit_last_request_monotonic
+        interval = 120 if self.root.winfo_viewable() else 900
+        retry = self.health_status.next_retry
+        if not self._fitbit_refreshing and (age >= interval or (retry and time.time() >= retry)):
+            self.update_fitbit_data(reason="sleep_poll")
+        opacity = self.health_status.opacity(time.time())
+        if opacity != getattr(self, '_last_sleep_opacity', None):
+            self._last_sleep_opacity = opacity
+            self._schedule_clock_redraw({'sleep_arc'})
         if not hasattr(self, '_last_drawn_minute'):
             self._last_drawn_minute = -1
         
@@ -3033,7 +3083,6 @@ class ClockWidget:
             # 2. 10-minute polling (Fitbit + Calendar + Celestial)
             elif now.minute % 10 == 0:
                 print(f"[ClockWidget] 10-minute polling refresh at {now}")
-                self.update_fitbit_data(reason="poll")
                 self.update_calendar_data(reason="poll")
 
             self._last_drawn_minute = current_minute
@@ -3671,6 +3720,8 @@ class ClockWidget:
             )
            
         def draw_sleep_arc():
+            from PIL import Image, ImageDraw, ImageTk
+            self._sleep_arc_images = []
             if not self.show_sleep.get() or not self.raw_sleep_logs or not self.active_sleep_date:
                 return
 
@@ -3713,13 +3764,14 @@ class ClockWidget:
                     is_main = log.get('isMainSleep', False)
                     arc_color = "#6A5ACD" if is_main else "#8A7AED"
                     
-                    self.canvas.create_arc(
-                        center_x - (radius - sleep_margin), center_y - (radius - sleep_margin),
-                        center_x + (radius - sleep_margin), center_y + (radius - sleep_margin),
-                        start=sleep_start_angle, extent=sleep_extent,
-                        fill=arc_color, outline="", style=tk.PIESLICE,
-                        tags="sleep_arc"
-                    )
+                    layer = Image.new('RGBA', (int(w), int(h)), (0, 0, 0, 0))
+                    rgba = tuple(int(arc_color[i:i+2], 16) for i in (1, 3, 5)) + (round(255 * self.health_status.opacity(time.time())),)
+                    ImageDraw.Draw(layer).pieslice((center_x - (radius - sleep_margin), center_y - (radius - sleep_margin),
+                        center_x + (radius - sleep_margin), center_y + (radius - sleep_margin)),
+                        start=-sleep_start_angle, end=-sleep_start_angle - sleep_extent, fill=rgba)
+                    photo = ImageTk.PhotoImage(layer)
+                    self._sleep_arc_images.append(photo)
+                    self.canvas.create_image(0, 0, image=photo, anchor=tk.NW, tags='sleep_arc')
                 except (KeyError, ValueError):
                     continue
 
@@ -4054,7 +4106,7 @@ class ClockWidget:
             self._draw_solar_circle(center_x, center_y, radius)
 
         def draw_reauth_indicators():
-            if not self.reauth_needed_fitbit and not self.reauth_needed_calendar:
+            if not self.reauth_needed_calendar:
                 return
             if not hasattr(self, '_reauth_bound_tags'):
                 self._reauth_bound_tags = set()
@@ -4064,24 +4116,6 @@ class ClockWidget:
             margin = radius * 0.2
             ix = center_x - radius + margin
             iy = center_y - radius + margin
-
-            # Fitbit warning (blue-ish)
-            if self.reauth_needed_fitbit:
-                fid = self.canvas.create_oval(
-                    ix - icon_r, iy - icon_r, ix + icon_r, iy + icon_r,
-                    fill="#00ccff", outline="white", width=2, tags="reauth_icon_fitbit"
-                )
-                self.canvas.create_text(ix, iy, text="F", fill="white", font=("Arial", int(icon_r), "bold"), tags="reauth_icon_fitbit")
-                # Tag bindings persist on the canvas across delete("all")/redraw
-                # cycles, so bind and create the Tooltip only once. Re-binding on
-                # every redraw replaces the old callbacks, orphaning any Tooltip
-                # that currently has its popup open (it stops receiving <Leave>
-                # and never gets to destroy its window).
-                if "reauth_icon_fitbit" not in self._reauth_bound_tags:
-                    self.canvas.tag_bind("reauth_icon_fitbit", "<Button-1>", lambda e: self.relink_fitbit_and_refresh())
-                    Tooltip(self.canvas, "Fitbit Auth Expired - Click to Re-link", tag="reauth_icon_fitbit")
-                    self._reauth_bound_tags.add("reauth_icon_fitbit")
-                iy += icon_r * 2.5
 
             # Calendar warning (purple-ish)
             if self.reauth_needed_calendar:

@@ -29,7 +29,14 @@ data class SleepLogEntry(
     val startTime: String,
     val endTime: String,
     val duration: Long = 0,
-    val sourceRecordId: String? = null
+    val sourceRecordId: String? = null,
+    val provider: String = "fitbit",
+    val startInstant: String? = null,
+    val endInstant: String? = null,
+    val startUtcOffset: String? = null,
+    val endUtcOffset: String? = null,
+    val isNap: Boolean = false,
+    val processed: Boolean = true
 )
 
 @Serializable

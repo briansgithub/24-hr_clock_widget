@@ -33,6 +33,10 @@ Alertness_Master_Log*.csv
 !relay/package-lock.json
 /.wrangler/
 python/*.json
+python/*.dpapi
+python/google_health_credentials.tmp
+python/google_health_credentials.lock
+python/health_state.json.tmp
 !python/fitbit_config.json.example
 python/saved_curves/
 
@@ -46,3 +50,5 @@ analysis/android_awake_energy_inspection.png
 analysis/android_energy_normalized.png
 analysis/android_energy_sleep_arc_hidden.png
 python/generate_day_night_year_gif.py
+
+!fixtures/google-health-sleep.json

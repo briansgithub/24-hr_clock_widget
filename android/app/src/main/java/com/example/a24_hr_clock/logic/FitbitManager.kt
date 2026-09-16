@@ -27,7 +27,7 @@ class FitbitManager(private val context: Context) : ExerciseDataSource {
     val metricsFlow = store.metricsFlow
     val loginStatusFlow = authFlow.map { it.accessToken.isNotBlank() }
 
-    override suspend fun getSourceInfo() = "Fitbit Web API"
+    override suspend fun getSourceInfo() = if (store.credentials().provider == "google_health") "Google Health API" else "Fitbit Web API"
     suspend fun isLoggedIn() = store.credentials().accessToken.isNotBlank()
     suspend fun getLastSleepLogs() = store.snapshot().logs
     suspend fun saveMetrics(bathyphase: Double?, efficiency: Double, sleepNeed: Double) = store.saveMetrics(bathyphase, efficiency, sleepNeed)
@@ -63,10 +63,17 @@ class FitbitManager(private val context: Context) : ExerciseDataSource {
     }
 
     suspend fun fetchSleepLogs(startDate: String, endDate: String): SleepFetchResult = try {
-        SleepResponseParser.parse(http.request("/1.2/user/-/sleep/date/$startDate/$endDate.json").body)
+        if (store.credentials().provider == "google_health") session.google.sleep(startDate, endDate)
+        else SleepResponseParser.parse(http.request("/1.2/user/-/sleep/date/$startDate/$endDate.json").body)
     } catch (e: FitbitRequestException) { SleepFetchResult.Failed(e.category, e.retryAt) }
 
     suspend fun fetchHeartRateIntraday(startTimeIso: String, endTimeIso: String): List<HeartRatePointEntry> {
+        if (store.credentials().provider == "google_health") {
+            val log = getLastSleepLogs().firstOrNull { it.startTime == startTimeIso && it.endTime == endTimeIso }
+                ?: throw FitbitRequestException(SyncError.DECODING)
+            return session.google.heartRate(log.startInstant ?: throw FitbitRequestException(SyncError.DECODING),
+                log.endInstant ?: throw FitbitRequestException(SyncError.DECODING)).map { it.point }
+        }
         val start = LocalDateTime.parse(startTimeIso.removeSuffix("Z"))
         val end = LocalDateTime.parse(endTimeIso.removeSuffix("Z"))
         val points = mutableListOf<HeartRatePointEntry>()
@@ -80,7 +87,9 @@ class FitbitManager(private val context: Context) : ExerciseDataSource {
         return points
     }
 
-    suspend fun fetchHRV(dateStr: String): Double? = json.decodeFromString<HRVResponse>(http.request("/1/user/-/hrv/date/$dateStr.json").body).hrv.firstOrNull()?.value?.dailyRmssd
+    suspend fun fetchHRV(dateStr: String): Double? = if (store.credentials().provider == "google_health")
+        session.google.dailyValue("daily-heart-rate-variability", "dailyHeartRateVariability", "averageHeartRateVariabilityMilliseconds", dateStr)
+        else json.decodeFromString<HRVResponse>(http.request("/1/user/-/hrv/date/$dateStr.json").body).hrv.firstOrNull()?.value?.dailyRmssd
 
     override suspend fun fetchDailyMetrics(startDate: String, endDate: String): List<DailyExerciseMetrics> {
         val settings = SettingsManager(context).modelSettingsFlow.first()
@@ -88,9 +97,12 @@ class FitbitManager(private val context: Context) : ExerciseDataSource {
         var date = LocalDate.parse(startDate)
         val end = minOf(LocalDate.parse(endDate), LocalDate.now())
         while (date <= end) {
-            val hr = json.decodeFromString<HeartRateResponse>(http.request("/1/user/-/activities/heart/date/$date/1d/1min.json").body)
-            val points = hr.activities_heart_intraday?.dataset.orEmpty()
-            val rhr = hr.activities_heart?.firstOrNull()?.value?.restingHeartRate?.toDouble()
+            val google = store.credentials().provider == "google_health"
+            val hr = if (!google) json.decodeFromString<HeartRateResponse>(http.request("/1/user/-/activities/heart/date/$date/1d/1min.json").body) else null
+            val points = if (google) GoogleHealthParser.heartRate(session.google.points("heart-rate", "heart_rate.sample_time.civil_time", date.toString(), date.plusDays(1).toString())).map { it.point }
+                else hr?.activities_heart_intraday?.dataset.orEmpty()
+            val rhr = if (google) session.google.dailyValue("daily-resting-heart-rate", "dailyRestingHeartRate", "beatsPerMinute", date.toString())
+                else hr?.activities_heart?.firstOrNull()?.value?.restingHeartRate?.toDouble()
             val hrv = fetchHRV(date.toString())
             results += DailyExerciseMetrics(date.toString(),
                 ExerciseMetricsCalculator.calculateTrimp(points.map { it.value }, rhr ?: settings.restingHR, settings.maxHR, settings.isMale),
@@ -105,11 +117,13 @@ class FitbitManager(private val context: Context) : ExerciseDataSource {
     /** Maintenance reads the published sleep cache; it cannot change its freshness. */
     suspend fun refreshMetrics() {
         val settings = SettingsManager(context).modelSettingsFlow.first()
-        val mainLogs = getLastSleepLogs().filter { it.isMainSleep }
+        val snapshot = store.snapshot()
+        val mainLogs = snapshot.logs.filter { it.isMainSleep }
         mainLogs.maxByOrNull { it.endTime }?.let { main ->
             val efficiency = mainLogs.map { if (it.timeInBed > 0) it.minutesAsleep.toDouble() / it.timeInBed else .92 }.average()
             val hr = fetchHeartRateIntraday(main.startTime, main.endTime)
-            saveMetrics(EnergyCalculator.findBathyphase(hr.map { HeartRatePoint(it.time, it.value) }), efficiency, settings.bedtimeGoal * efficiency)
+            store.saveMetrics(EnergyCalculator.findBathyphase(hr.map { HeartRatePoint(it.time, it.value) }), efficiency,
+                settings.bedtimeGoal * efficiency, snapshot.auth.provider, clearMissingBathy = true)
         }
         val today = LocalDate.now()
         // Reconcile older exercise history daily; repeated seven-day downloads compete with sleep's rate budget.

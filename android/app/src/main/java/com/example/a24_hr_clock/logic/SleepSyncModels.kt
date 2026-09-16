@@ -61,8 +61,8 @@ object SleepCache {
         val result = old.filterNot { complete && it.dateOfSleep >= start && it.dateOfSleep <= end }.toMutableList()
         for (log in incoming.filter { it.dateOfSleep >= start && it.dateOfSleep <= end }) {
             result.removeAll {
-                (log.sourceRecordId != null && it.sourceRecordId == log.sourceRecordId) ||
-                    (it.dateOfSleep == log.dateOfSleep && it.startTime == log.startTime && it.endTime == log.endTime)
+                it.provider == log.provider && ((log.sourceRecordId != null && it.sourceRecordId == log.sourceRecordId) ||
+                    (it.dateOfSleep == log.dateOfSleep && it.startTime == log.startTime && it.endTime == log.endTime))
             }
             result.add(log)
         }

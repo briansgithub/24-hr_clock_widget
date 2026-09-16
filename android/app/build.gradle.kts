@@ -52,12 +52,15 @@ android {
     defaultConfig {
         buildConfigField("String", "FITBIT_CLIENT_ID", "\"$fitbitClientId\"")
         buildConfigField("String", "FITBIT_CLIENT_SECRET", "\"$fitbitClientSecret\"")
+        buildConfigField("String", "HEALTH_LEGACY_ACCOUNT", "\"${localProperties.getProperty("HEALTH_LEGACY_ACCOUNT", "")}\"")
         buildConfigField("String", "SLEEP_RELAY_URL", "\"${localProperties.getProperty("SLEEP_RELAY_URL", "")}\"")
         resValue("string", "google_app_id", localProperties.getProperty("FIREBASE_APP_ID", ""))
         resValue("string", "google_api_key", localProperties.getProperty("FIREBASE_API_KEY", ""))
         resValue("string", "gcm_defaultSenderId", localProperties.getProperty("FIREBASE_SENDER_ID", ""))
         resValue("string", "project_id", localProperties.getProperty("FIREBASE_PROJECT_ID", ""))
     }
+
+    sourceSets.getByName("test").resources.srcDir(rootProject.file("fixtures"))
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -85,6 +88,7 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-messaging")
+    implementation("com.google.android.gms:play-services-auth:21.5.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
 
     // DataStore for settings and tokens

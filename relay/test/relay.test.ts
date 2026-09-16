@@ -112,9 +112,17 @@ describe('device enrollment', () => {
 });
 
 describe('silent delivery and recovery', () => {
+  it('never routes legacy events to Google registrations', async () => {
+    const { env, queries } = environment();
+    const message = { body: event, attempts: 1, ack: vi.fn(), retry: vi.fn() };
+    await worker.queue({ messages: [message] } as unknown as MessageBatch<Invalidation>, env);
+    const lookup = queries.find(q => q.sql.startsWith('SELECT uid'))!;
+    expect(lookup.sql).toContain('account_id = ? AND provider = ?');
+    expect(lookup.values).toEqual(['allowed', 'fitbit']);
+  });
   it('contains only an invalidation and revision, with normal priority and collapse key', () => {
     const payload = pushMessage('token', event);
-    expect(payload.message.data).toEqual({ type: 'sleep_invalidated', revision: 'revision' });
+    expect(payload.message.data).toEqual({ type: 'sleep_invalidated', revision: 'revision', provider: 'fitbit' });
     expect(payload.message.android.priority).toBe('normal'); expect(payload.message).not.toHaveProperty('notification');
   });
   it('deletes only explicitly unregistered FCM tokens', () => {
