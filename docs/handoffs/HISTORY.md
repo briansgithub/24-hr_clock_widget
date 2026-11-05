@@ -171,3 +171,9 @@ Disposition phrases: `merged into main`, `superseded` (commits landed via descen
 - Merge / PR: `477d4c2` (local merge; not pushed)
 - Summary: Aug 9 M8 circadian baseline and reproducible fitter merged onto the awake-only model. Legacy fitters removed.
 - Archive: `archive/feature/energy-refit-aug09.md`
+
+### 2026-11-05 — `fix/pixel-launcher-surface` → merged into `main`
+- Final tip: `7173dca`
+- Merge / PR: fast-forward of local `main` from `99756fe` (not pushed)
+- Summary: Live wallpaper draws only while visible and zoom-idle, and location, calendar, and the bedtime countdown no longer run with every wallpaper engine.
+- Archive: `archive/fix/pixel-launcher-surface.md`

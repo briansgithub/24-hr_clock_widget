@@ -111,3 +111,9 @@ Append-only milestones for `main`. Current state and next actions belong in [mai
 - Commit/base: `main` fast-forwarded `e03fa48`..`68b6ff8`, then merge `477d4c2` of `feature/energy-refit-aug09` (`edd8eb1`).
 - Change: Google Health sleep sync and the Aug 9 circadian baseline are on local `main`. Handoffs archived and the energy-refit worktree removed after the merge.
 - Validation/decision: Owner asked to merge loose branches. Model export check and adaptive energy tests passed before the merge commit.
+
+### 2026-11-05 — Fast-forwarded the Pixel Launcher wallpaper fix
+
+- Commit/base: `main` fast-forwarded `99756fe`..`7173dca`.
+- Change: Wallpaper surface, bedtime notification, and location permission changes from `fix/pixel-launcher-surface` are on local `main`.
+- Validation/decision: Android unit tests and debug assemble passed before the fast-forward. Handoff archived after the merge.
