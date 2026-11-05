@@ -8,12 +8,11 @@ Last verified: 2026-09-15
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | `1c4b1f4` (local) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
-| `fix/fitbit-sleep-sync` | See Git | Fitbit recovery and free silent-push delivery | [handoff](fix/fitbit-sleep-sync.md) | [history](fix/fitbit-sleep-sync.history.md) |
+| `main` | `68b6ff8` plus energy-refit merge | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
 
 ## Current merge order
 
-`fix/fitbit-sleep-sync` targets local `main`, pending owner authorization for commit/push/merge. `feature/awake-energy-model` was merged into local `main` and archived on 2026-09-15. Preserve the sibling worktree `H:/Desktop/widgets/24-hr_clock_widget-wt-energy-refit` on `feature/energy-refit-aug09` (unmerged unique commits) until the owner authorizes merge or abandonment.
+`fix/fitbit-sleep-sync` is fast-forwarded into local `main`. `feature/energy-refit-aug09` is merged here; its Aug 9 circadian baseline is applied through `personal_energy_fit.json` and `GeneratedEnergyModel`. Handoff archival follows this merge.
 
 Parallel agents must use separate Git worktrees — see [MULTI_AGENT.md](MULTI_AGENT.md).
 

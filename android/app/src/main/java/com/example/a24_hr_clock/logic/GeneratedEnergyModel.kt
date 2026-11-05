@@ -6,14 +6,14 @@ internal object GeneratedEnergyModel {
     const val MODEL_ID = "M8_adaptive_sleep"
     const val HARMONICS = 2
     val CIRCADIAN_COEFS = doubleArrayOf(
-        51.760499671310974,
-        -7.1539665570855036,
-        -20.118284343254899,
-        5.7484813638146228,
-        -6.1023302906539998
+        51.798298997986237,
+        -8.9701198634215888,
+        -19.404416546936549,
+        4.839958739091168,
+        -5.4631602759944471
     )
     const val REFERENCE_SLEEP_HOURS = 8.0
-    const val REFERENCE_PEAK_CLOCK = 20.0
+    const val REFERENCE_PEAK_CLOCK = 13.48
     const val MAX_PHASE_SHIFT_HOURS = 3.0
     const val TAU_WAKE = 23.0
     const val TAU_SLEEP = 4.0

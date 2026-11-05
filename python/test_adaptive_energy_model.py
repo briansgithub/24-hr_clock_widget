@@ -105,10 +105,10 @@ class TestAdaptiveSleepEnergy(unittest.TestCase):
 
     def test_shared_reference_vectors(self):
         cases = [
-            ((14.0, 9.0, 7.0, 3.0, None, None, ()), 0.6464512909036823),
-            ((20.0, 9.0, 8.0, 0.0, 5.0, None, ()), 0.6801698896361507),
-            ((18.0, 8.0, 5.5, 8.0, None, 12.0, ((4.0, 4.5),)), 0.6397337294750542),
-            ((8.0, 8.0, 8.0, 0.0, None, None, ()), 0.28325070000118563),
+            ((14.0, 9.0, 7.0, 3.0, None, None, ()), 0.6599810557700918),
+            ((20.0, 9.0, 8.0, 0.0, 5.0, None, ()), 0.6594005145987748),
+            ((18.0, 8.0, 5.5, 8.0, None, 12.0, ((4.0, 4.5),)), 0.6424203612753479),
+            ((8.0, 8.0, 8.0, 0.0, None, None, ()), 0.2978989746884647),
         ]
         for args, expected in cases:
             self.assertAlmostEqual(adaptive_sleep_energy(*args), expected, places=12)

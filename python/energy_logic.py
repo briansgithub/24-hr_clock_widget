@@ -240,14 +240,14 @@ AWAKE_HYBRID_MODEL_ID = "M9_awake_hybrid"
 ADAPTIVE_MODEL_IDS = {ADAPTIVE_MODEL_ID, AWAKE_HYBRID_MODEL_ID}
 ADAPTIVE_MODEL_DEFAULTS = {
     "circadian_coefs": [
-        51.760499671310974,
-        -7.1539665570855036,
-        -20.1182843432549,
-        5.748481363814623,
-        -6.102330290654,
+        51.79829899798624,
+        -8.970119863421589,
+        -19.40441654693655,
+        4.839958739091168,
+        -5.463160275994447,
     ],
     "reference_sleep_hours": 8.0,
-    "reference_peak_clock": 20.0,
+    "reference_peak_clock": 13.48,
     "max_phase_shift_hours": 3.0,
     "tau_wake": 23.0,
     "tau_sleep": 4.0,
