@@ -31,3 +31,9 @@ Append-only milestones for this branch. Current state and next actions belong in
 - Change: deleted `python/optimize_energy_model.py` and `python/tune_k_s.py`; rewrote the k_S section of `docs/energy_model_refinement.md` as historical. Added `Alertness_Master_Log*.csv` to `.gitignore` and removed `Alertness_Master_Log.csv` and `(2).csv` from the index (both remain on disk).
 - Validation/decision: `optimize_energy_model.py` overwrote the production `personal_energy_fit.json` with an M1-M6 winner and was referenced only by a frozen archived handoff. `tune_k_s.py` tuned `k_s`, which is not an M8 parameter, and its objective was hardcoded to 2026-07-21/22 while scoring missing dates as zero error, so it rewarded absent data. Tracking the CSVs contradicted the "never commit personal CSV" policy at `docs/energy_model_refinement.md:18`.
 - Consequence: a fresh clone has no training data and must be given a local export before `fit_adaptive_sleep_model.py` will run. Git history still contains the previously committed copies; purging those requires a history rewrite and force-push and has not been done.
+
+### 2026-11-05 — Merged into local main
+
+- Final tip: `edd8eb1`. Merge commit `477d4c2` on local `main`. Not pushed.
+- Awake-only structure on `main` was kept. The Aug 9 circadian coefficients and `reference_peak_clock` 13.48 landed through `personal_energy_fit.json`, `energy_logic.py`, and `GeneratedEnergyModel.kt`.
+- `python python/export_energy_model.py --check` and `python -m unittest python.test_adaptive_energy_model` passed (15 tests).

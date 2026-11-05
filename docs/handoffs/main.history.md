@@ -105,3 +105,9 @@ Append-only milestones for `main`. Current state and next actions belong in [mai
 - Commit/base: tip `1c4b1f4` after ff of `feature/awake-energy-model` through `393c533`
 - Change: Awake-only energy prediction landed on `main`; handoff archived; deleted merged local labels `feature/awake-energy-model`, `feature/exercise-redesign`, and `codex/apply-m8-to-original`. Preserved `feature/energy-refit-aug09` worktree.
 - Validation/decision: Ancestor checks confirmed for deleted labels; `python scripts/validate_handoffs.py --quiet` after archive.
+
+### 2026-11-05 — Fast-forwarded sleep sync and merged the Aug 9 energy refit
+
+- Commit/base: `main` fast-forwarded `e03fa48`..`68b6ff8`, then merge `477d4c2` of `feature/energy-refit-aug09` (`edd8eb1`).
+- Change: Google Health sleep sync and the Aug 9 circadian baseline are on local `main`. Handoffs archived and the energy-refit worktree removed after the merge.
+- Validation/decision: Owner asked to merge loose branches. Model export check and adaptive energy tests passed before the merge commit.

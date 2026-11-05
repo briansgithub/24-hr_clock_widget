@@ -33,3 +33,8 @@ Published personal OAuth application and created native clients. Wired Python/An
 ## 2026-09-16 — Google cutover and live validation
 
 Recovered expired desktop loopback sign-in and activated Python using the saved DPAPI grant. Sixteen paired sessions matched timing/time-in-bed/main; asleep totals differ (+3..48 minutes), documented without changing formulas. Fixed Android rejection of grants without email hints; Pixel activated and enrolled after data-preserving upgrade. Awake direct FCM verified in 2,848 ms/redrew in 52 ms; offline preservation/recovery and post-Doze delivery passed. Google owner routing and live subscriber health/enrollment verified. Final Python regression and Android 57 tests/build passed. Rejected-token fault-injection helper appended an empty preference entry; byte-verified repair preserved all named preferences/data and restored operation. SDK renewal acceptance remains unclaimed, along with natural upstream webhooks and listed visual/reconnect checks. Migration remains uncommitted.
+
+### 2026-11-05 — Fast-forwarded into local main
+
+- Final tip: `68b6ff8`. Local `main` fast-forwarded from `e03fa48` to that tip. Not pushed.
+- Handoff archived. Natural webhook and SDK renewal checks remain open on the product, not on this branch.

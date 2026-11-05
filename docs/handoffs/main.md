@@ -2,11 +2,11 @@
 
 ## Identity
 
-- Tip: `1c4b1f4` — Ignore generated preview GIFs and local analysis media
-- Upstream: `origin/main` (local ahead; verify before push)
+- Tip: `477d4c2` — Merge branch `feature/energy-refit-aug09`
+- Upstream: `origin/main` (local ahead; push only when asked)
 - Role: shared feature-PR base / integration branch
 - History: [main.history.md](main.history.md)
-- Last verified: `2026-09-15`
+- Last verified: `2026-11-05`
 
 ## Goal and scope
 
@@ -14,19 +14,19 @@ Maintain the stable integration branch for feature work, with permanent handoff 
 
 ## Changes since previous published tip
 
-- Fast-forwarded `feature/awake-energy-model` (`5c6e028` / `393c533`): awake-only energy prediction, gated M9 tooling, and Python reauth tooltip fix.
-- `.gitignore` updates for generated GIF artifacts and local analysis media (`1c4b1f4`).
+- Fast-forwarded `fix/fitbit-sleep-sync` through `68b6ff8`: Google Health sleep sync and the circadian-helix launcher icon.
+- Merged `feature/energy-refit-aug09` at `477d4c2`: Aug 9 circadian baseline, generated Android constants, and the reproducible fitter.
 
 ## Current status
 
-- Clean integration tip at `1c4b1f4` after awake-energy merge and branch cleanup.
+- Clean integration tip at `477d4c2`.
 - No active feature branches in the handoff index.
-- Preserve sibling worktree `H:/Desktop/widgets/24-hr_clock_widget-wt-energy-refit` on `feature/energy-refit-aug09` (unmerged unique commits).
+- Both merged local branches and the energy-refit sibling worktree are removed after this archive commit.
 
 ## Next actions
 
-1. Owner push `main` when ready (still unauthorized unless requested).
-2. Decide whether to merge, park, or abandon `feature/energy-refit-aug09` and its worktree.
+1. Pixel Launcher wallpaper work proceeds on a new branch from this tip.
+2. Owner push `main` when ready.
 
 ## Merge and cleanup
 

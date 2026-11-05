@@ -159,3 +159,15 @@ Disposition phrases: `merged into main`, `superseded` (commits landed via descen
 - Merge / PR: local fast-forward on `main` through `5c6e028` / `393c533` (not pushed)
 - Summary: Awake-only energy prediction on Python/Android with gated M9 candidate retained as non-production; also included the Python reauth tooltip redraw fix.
 - Archive: `archive/feature/awake-energy-model.md`
+
+### 2026-11-05 — `fix/fitbit-sleep-sync` → merged into `main`
+- Final tip: `68b6ff8`
+- Merge / PR: fast-forward of local `main` from `e03fa48` (not pushed)
+- Summary: Fitbit sleep recovery and the Google Health clock/relay cutover, including the circadian-helix launcher icon.
+- Archive: `archive/fix/fitbit-sleep-sync.md`
+
+### 2026-11-05 — `feature/energy-refit-aug09` → merged into `main`
+- Final tip: `edd8eb1`
+- Merge / PR: `477d4c2` (local merge; not pushed)
+- Summary: Aug 9 M8 circadian baseline and reproducible fitter merged onto the awake-only model. Legacy fitters removed.
+- Archive: `archive/feature/energy-refit-aug09.md`
