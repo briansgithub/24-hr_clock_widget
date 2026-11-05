@@ -269,7 +269,10 @@ class ClockRenderer {
         showBedtimeCountdown: Boolean = false,
         isPreview: Boolean = false,
         previewIsLockScreen: Boolean = false,
-        modelSettings: ModelSettings? = null
+        modelSettings: ModelSettings? = null,
+        topInsetPx: Float = 150f,
+        sideInsetPx: Float = 80f,
+        dialMarginPx: Float = 150f
     ) {
         // Clear background to OLED black
         canvas.drawColor(Color.BLACK)
@@ -286,12 +289,12 @@ class ClockRenderer {
         if (smallTopRight) {
             // Small clock in top right (~10% smaller than original /6 sizing)
             radius = min(width, height) / 6f * 0.9f
-            centerX = width - radius - 80f
-            centerY = radius + 150f // Leave some space for status bar
+            centerX = width - radius - sideInsetPx
+            centerY = radius + topInsetPx
         } else {
             // Large centered clock
             centerX = width / 2f
-            radius = min(width, height) / 2f - 150f
+            radius = min(width, height) / 2f - dialMarginPx
             val moonDiameter = max(12f, radius / 7f)
             centerY = height / 2f - (1.75f * moonDiameter)
         }
@@ -504,7 +507,7 @@ class ClockRenderer {
         if (wakeHour != null && showTimezoneMap) {
             drawTimezoneMap(
                 canvas, width, height, wakeHour, sunriseHour,
-                userLatitude, userLongitude
+                userLatitude, userLongitude, dialMarginPx
             )
         }
 
@@ -531,9 +534,9 @@ class ClockRenderer {
             val padding = 20f
             val rect = RectF(
                 centerX - textWidth / 2f - padding,
-                150f - textPaint.textSize - padding,
+                topInsetPx - textPaint.textSize - padding,
                 centerX + textWidth / 2f + padding,
-                150f + padding
+                topInsetPx + padding
             )
             val bgPaint = Paint().apply {
                 color = Color.parseColor("#AA000000")
@@ -542,7 +545,7 @@ class ClockRenderer {
             canvas.drawRoundRect(rect, 20f, 20f, bgPaint)
             
             // Adjust descent so it's centered
-            val textY = 150f - (textPaint.descent() + textPaint.ascent()) / 2f
+            val textY = topInsetPx - (textPaint.descent() + textPaint.ascent()) / 2f
             canvas.drawText(text, centerX, textY, textPaint)
         }
     }
@@ -554,12 +557,13 @@ class ClockRenderer {
         wakeHour: Double,
         sunriseHour: Double,
         userLatitude: Double?,
-        userLongitude: Double?
+        userLongitude: Double?,
+        dialMarginPx: Float
     ) {
         val bitmap = timezoneMapBitmap ?: return
 
         // Anchor to the large centered clock layout (lock default), not the active dial.
-        val clockRadius = min(width, height) / 2f - 150f
+        val clockRadius = min(width, height) / 2f - dialMarginPx
         if (clockRadius < 20f) return
         val moonDiameter = max(12f, clockRadius / 7f)
         val clockCenterY = height / 2f - (1.75f * moonDiameter)

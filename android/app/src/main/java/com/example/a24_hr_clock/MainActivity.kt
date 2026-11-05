@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import androidx.lifecycle.repeatOnLifecycle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -49,6 +50,7 @@ import com.example.a24_hr_clock.logic.*
 import com.example.a24_hr_clock.ui.*
 import com.example.a24_hr_clock.wallpaper.ClockRenderer
 import com.example.a24_hr_clock.wallpaper.ClockWallpaperService
+import com.example.a24_hr_clock.wallpaper.clockInsets
 import com.example.a24_hr_clock.ui.theme._24_hr_clockTheme
 import java.util.*
 import kotlin.math.*
@@ -172,30 +174,15 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.ACCESS_COARSE_LOCATION)
+        }
+
         if (permissionsToRequest.isNotEmpty()) {
             requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
-        }
-
-        val hasFineLocation = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val hasBackgroundLocation = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
-        } else {
-            hasFineLocation
-        }
-
-        if (!hasBackgroundLocation || !hasFineLocation) {
-            Toast.makeText(this, "Please select 'Allow all the time' for Location", Toast.LENGTH_LONG).show()
-            try {
-                val intent = Intent("android.intent.action.MANAGE_APP_PERMISSION")
-                intent.putExtra("android.intent.extra.PERMISSION_GROUP_NAME", "android.permission-group.LOCATION")
-                intent.putExtra(Intent.EXTRA_PACKAGE_NAME, packageName)
-                startActivity(intent)
-            } catch (e: Exception) {
-                val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                    data = Uri.fromParts("package", packageName, null)
-                }
-                startActivity(intent)
-            }
         }
     }
 
@@ -370,21 +357,25 @@ fun MainScreen(
         }
     }
 
-    LaunchedEffect(isLoggedIn, calendarSettings.enabledIds) {
-        while (true) {
-            val loc = locationManager.getLastKnownLocation() ?: locationManager.getCurrentLocation()
-            if (loc != null) {
-                deviceLatitude = loc.first
-                deviceLongitude = loc.second
-                val cm = CelestialManager(loc.first, loc.second)
-                sunTimes = cm.getSunTimes()
-                celestialPositions = cm.getCelestialPositions()
-                solarIrradiance = cm.getSolarIrradiance()
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner, isLoggedIn, calendarSettings.enabledIds) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            while (true) {
+                val loc = locationManager.getLastKnownLocation() ?: locationManager.getCurrentLocation()
+                if (loc != null) {
+                    deviceLatitude = loc.first
+                    deviceLongitude = loc.second
+                    settingsManager.saveLocation(loc.first, loc.second)
+                    val cm = CelestialManager(loc.first, loc.second)
+                    sunTimes = cm.getSunTimes()
+                    celestialPositions = cm.getCelestialPositions()
+                    solarIrradiance = cm.getSolarIrradiance()
+                }
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
+                    calendarEvents = calendarManager.getTodayEvents(calendarSettings.enabledIds)
+                }
+                delay(600000)
             }
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
-                calendarEvents = calendarManager.getTodayEvents(calendarSettings.enabledIds)
-            }
-            delay(600000) // Update celestial and calendar data every 10 mins
         }
     }
 
@@ -621,7 +612,10 @@ fun ClockPreviewScreen(
                     showBedtimeCountdown = settings.showBedtimeCountdown,
                     isPreview = true,
                     previewIsLockScreen = title.contains("Lock Screen"),
-                    modelSettings = modelSettings
+                    modelSettings = modelSettings,
+                    topInsetPx = clockInsets(context).topPx,
+                    sideInsetPx = clockInsets(context).sidePx,
+                    dialMarginPx = clockInsets(context).dialMarginPx
                 )
             }
         }
@@ -1485,13 +1479,7 @@ fun PermissionsChecklist() {
 
     refreshTrigger.let { }
 
-    val hasFineLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-    val hasBackgroundLocation = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
-    } else {
-        hasFineLocation
-    }
-    val locationOk = hasFineLocation && hasBackgroundLocation
+    val locationOk = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
     val calendarOk = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
 
@@ -1517,20 +1505,15 @@ fun PermissionsChecklist() {
         Spacer(modifier = Modifier.height(8.dp))
 
         ChecklistItem(
-            title = "1. Location: 'Allow all the time'",
+            title = "1. Location: Allowed",
             isOk = locationOk,
             onClick = {
-                try {
-                    val intent = Intent("android.intent.action.MANAGE_APP_PERMISSION")
-                    intent.putExtra("android.intent.extra.PERMISSION_GROUP_NAME", "android.permission-group.LOCATION")
-                    intent.putExtra(Intent.EXTRA_PACKAGE_NAME, context.packageName)
-                    context.startActivity(intent)
-                } catch (e: Exception) {
-                    val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                        data = Uri.fromParts("package", context.packageName, null)
-                    }
-                    context.startActivity(intent)
-                }
+                (context as? MainActivity)?.requestPermissionLauncher?.launch(
+                    arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    )
+                )
             }
         )
         ChecklistItem(

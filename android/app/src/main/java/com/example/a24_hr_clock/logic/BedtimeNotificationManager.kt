@@ -6,12 +6,20 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.os.Build
 import android.util.Log
+import android.view.View
+import android.widget.RemoteViews
+import androidx.core.app.NotificationCompat
+import com.example.a24_hr_clock.MainActivity
+import com.example.a24_hr_clock.R
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 class BedtimeNotificationManager(private val context: Context) {
 
@@ -19,6 +27,7 @@ class BedtimeNotificationManager(private val context: Context) {
         const val REMINDER_CHANNEL_ID = "bedtime_reminder_channel"
         const val COUNTDOWN_CHANNEL_ID = "bedtime_countdown_channel"
         const val REMINDER_NOTIFICATION_ID = 3001
+        const val COUNTDOWN_NOTIFICATION_ID = 3002
         private const val TAG = "BedtimeNotifManager"
         private const val STATE_PREFS_NAME = "bedtime_notification_state"
         private const val KEY_LAST_WAKE_END_TIME = "last_wake_end_time"
@@ -132,7 +141,7 @@ class BedtimeNotificationManager(private val context: Context) {
 
         clearStaleReminderIfWakeChanged(logs)
         scheduleReminder(bedtimeMillis)
-        startCountdownService(bedtimeMillis)
+        postCountdownNotification(bedtimeMillis)
     }
 
     /**
@@ -168,25 +177,67 @@ class BedtimeNotificationManager(private val context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (alarmManager.canScheduleExactAlarms()) {
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, bedtimeMillis, pendingIntent)
-            } else {
-                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, bedtimeMillis, pendingIntent)
-            }
-        } else {
-            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, bedtimeMillis, pendingIntent)
+        alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, bedtimeMillis, pendingIntent)
+    }
+
+    private fun postCountdownNotification(bedtimeMillis: Long) {
+        val notificationManager = context.getSystemService(NotificationManager::class.java)
+        try {
+            notificationManager.notify(COUNTDOWN_NOTIFICATION_ID, countdownNotification(bedtimeMillis))
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Countdown notification was not posted", e)
         }
     }
 
-    private fun startCountdownService(bedtimeMillis: Long) {
-        val intent = Intent(context, BedtimeCountdownService::class.java).apply {
-            putExtra("bedtime_millis", bedtimeMillis)
+    private fun countdownNotification(bedtimeMillis: Long): android.app.Notification {
+        var targetMillis = bedtimeMillis
+        val now = System.currentTimeMillis()
+        if (now >= targetMillis) targetMillis += 24L * 60L * 60L * 1000L
+
+        val lastBedtimeMillis = targetMillis - 24L * 60L * 60L * 1000L
+        val isOverdue = now >= lastBedtimeMillis && now < lastBedtimeMillis + 6L * 60L * 60L * 1000L
+        val minutesRemaining = (targetMillis - now) / 60000
+        val color = when {
+            isOverdue -> Color.parseColor("#888888")
+            minutesRemaining > 90 -> Color.WHITE
+            else -> {
+                val progress = (90 - minutesRemaining).toFloat() / 90f
+                val channel = (255 - (255 - 136) * progress).toInt()
+                Color.rgb(channel, channel, channel)
+            }
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(intent)
-        } else {
-            context.startService(intent)
+        val timeStr = LocalDateTime.ofInstant(Instant.ofEpochMilli(targetMillis), ZoneId.systemDefault())
+            .format(DateTimeFormatter.ofPattern("h:mm a"))
+        val remoteViews = RemoteViews(context.packageName, R.layout.notification_bedtime).apply {
+            setChronometerCountDown(R.id.bedtime_chronometer, true)
+            if (isOverdue) {
+                setViewVisibility(R.id.bedtime_chronometer, View.GONE)
+                setViewVisibility(R.id.bedtime_overdue_text, View.VISIBLE)
+                setTextColor(R.id.bedtime_overdue_text, color)
+            } else {
+                setViewVisibility(R.id.bedtime_chronometer, View.VISIBLE)
+                setViewVisibility(R.id.bedtime_overdue_text, View.GONE)
+                val elapsedRealtimeBase = android.os.SystemClock.elapsedRealtime() + (targetMillis - now)
+                setChronometer(R.id.bedtime_chronometer, elapsedRealtimeBase, null, true)
+                setTextColor(R.id.bedtime_chronometer, color)
+            }
         }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            200,
+            Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return NotificationCompat.Builder(context, COUNTDOWN_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_menu_recent_history)
+            .setContentTitle("Bedtime")
+            .setSubText("Target: $timeStr")
+            .setCustomContentView(remoteViews)
+            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+            .setOngoing(true)
+            .setShowWhen(false)
+            .setContentIntent(pendingIntent)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .build()
     }
 }

@@ -8,11 +8,12 @@ Last verified: 2026-11-05
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
-| `main` | `477d4c2` (local) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `main` | `99756fe` (local) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `fix/pixel-launcher-surface` | See Git | Pixel Launcher wallpaper compatibility | [handoff](fix/pixel-launcher-surface.md) | [history](fix/pixel-launcher-surface.history.md) |
 
 ## Current merge order
 
-Local `main` is the integration tip. No feature branch is waiting to merge.
+`fix/pixel-launcher-surface` merges into local `main` after the debug unit tests and assemble pass.
 
 Parallel agents must use separate Git worktrees — see [MULTI_AGENT.md](MULTI_AGENT.md).
 

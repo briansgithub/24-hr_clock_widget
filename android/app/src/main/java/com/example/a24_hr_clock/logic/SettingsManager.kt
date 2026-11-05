@@ -1,6 +1,7 @@
 package com.example.a24_hr_clock.logic
 
 import android.content.Context
+import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -19,6 +20,8 @@ class SettingsManager(private val context: Context) {
         private val LOCK_SETTINGS_JSON = stringPreferencesKey("lock_settings_json")
         private val MODEL_SETTINGS_JSON = stringPreferencesKey("model_settings_json")
         private val CALENDAR_SETTINGS_JSON = stringPreferencesKey("calendar_settings_json")
+        private val DEVICE_LATITUDE = doublePreferencesKey("device_latitude")
+        private val DEVICE_LONGITUDE = doublePreferencesKey("device_longitude")
 
         // DEFAULT SETTINGS TEMPLATES
         private val DEFAULT_HOME_SETTINGS = ClockSettings(
@@ -126,6 +129,19 @@ class SettingsManager(private val context: Context) {
         prefs[CALENDAR_SETTINGS_JSON]?.let {
             try { json.decodeFromString<CalendarSettings>(it) } catch (e: Exception) { DEFAULT_CALENDAR_SETTINGS }
         } ?: DEFAULT_CALENDAR_SETTINGS
+    }
+
+    val locationFlow: Flow<Pair<Double, Double>?> = context.settingsDataStore.data.map { prefs ->
+        val latitude = prefs[DEVICE_LATITUDE]
+        val longitude = prefs[DEVICE_LONGITUDE]
+        if (latitude == null || longitude == null) null else latitude to longitude
+    }
+
+    suspend fun saveLocation(latitude: Double, longitude: Double) {
+        context.settingsDataStore.edit { prefs ->
+            prefs[DEVICE_LATITUDE] = latitude
+            prefs[DEVICE_LONGITUDE] = longitude
+        }
     }
 
 

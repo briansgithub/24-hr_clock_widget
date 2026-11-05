@@ -1,13 +1,10 @@
 package com.example.a24_hr_clock.wallpaper
 
-import android.Manifest
-import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.PackageManager
-import android.graphics.Rect
+import android.graphics.Color
 import android.os.Build
 import android.service.wallpaper.WallpaperService
 import android.view.SurfaceHolder
@@ -17,10 +14,9 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import java.util.*
-import kotlin.math.max
-import kotlin.math.min
 
 private const val TAG = "ClockWallpaper"
+private const val ZOOM_IDLE = 0.01f
 
 private data class DataSnapshot(
     val settings: ClockSettings,
@@ -40,20 +36,13 @@ class ClockWallpaperService : WallpaperService() {
     inner class ClockEngine : Engine() {
         private val renderer = ClockRenderer()
         private lateinit var fitbitManager: FitbitManager
-        private lateinit var calendarManager: CalendarManager
         private lateinit var celestialManager: CelestialManager
         private lateinit var settingsManager: SettingsManager
-        private lateinit var locationManager: LocationManager
 
         private var renderJob: Job? = null
-        private var countdownJob: Job? = null
         private var dataUpdateJob: Job? = null
         private var settingsJob: Job? = null
-        private var locationJob: Job? = null
-        private var calendarObserver: android.database.ContentObserver? = null
         private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-        /** Prior countdown content bounds; unioned with the next dirty clear to erase shrinking glyphs. */
-        private var lastCountdownDirty: Rect? = null
 
         private val refreshReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
@@ -61,7 +50,6 @@ class ClockWallpaperService : WallpaperService() {
                 scope.launch {
                     try {
                         updateCelestialData()
-                        updateCalendarData()
                         drawFrame()
                     } catch (e: Exception) {
                         Log.e(TAG, "Error during manual refresh", e)
@@ -77,7 +65,6 @@ class ClockWallpaperService : WallpaperService() {
             }
         }
 
-        // Data state
         private var sunriseHour = 6.0
         private var sunsetHour = 18.0
         private var sunRad = 0.0
@@ -87,36 +74,42 @@ class ClockWallpaperService : WallpaperService() {
         private var sleepLogs = emptyList<SleepLogEntry>()
         private var sleepStatus = SleepSyncStatus()
         private var reconnectRequired = false
-        private val sleepSurface = "wallpaper-${UUID.randomUUID()}"
         private var sleepDebt = 0.0
         private var bathyphaseHour: Double? = null
         private var calendarEvents = emptyList<CalendarEvent>()
         private var solarIrradiance = 0
 
-        // Settings
         private var currentSettings = ClockSettings()
         private var modelSettings = ModelSettings()
-        private var calendarSettings = CalendarSettings()
         private val isLockedState = MutableStateFlow(false)
         private var previewLockScreen = false
+        private var zoomSettled = true
 
         override fun onCreate(surfaceHolder: SurfaceHolder?) {
             super.onCreate(surfaceHolder)
             fitbitManager = FitbitManager(applicationContext)
-            calendarManager = CalendarManager(applicationContext)
             settingsManager = SettingsManager(applicationContext)
-            locationManager = LocationManager(applicationContext)
-            // Initial default location (will be updated)
-            celestialManager = CelestialManager(40.7128, -74.0060) // NYC
+            celestialManager = CelestialManager(40.7128, -74.0060)
             renderer.ensureMapBitmap(applicationContext.resources)
-            
+
             updateLockState()
             startDataUpdates()
             observeAllData()
-            startLocationUpdates()
+            observeStoredLocation()
+            SharedCalendarFeed.ensureStarted(applicationContext)
+            scope.launch {
+                SharedCalendarFeed.eventsFlow.collect { events ->
+                    calendarEvents = events
+                    drawFrame()
+                }
+            }
 
             val filter = IntentFilter("com.example.a24_hr_clock.REFRESH_DATA")
-            registerReceiver(refreshReceiver, filter, RECEIVER_EXPORTED)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(refreshReceiver, filter, RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(refreshReceiver, filter)
+            }
 
             val lockFilter = IntentFilter().apply {
                 addAction(Intent.ACTION_SCREEN_ON)
@@ -124,26 +117,24 @@ class ClockWallpaperService : WallpaperService() {
                 addAction(Intent.ACTION_USER_PRESENT)
             }
             registerReceiver(lockStateReceiver, lockFilter)
+            notifyColorsChanged()
+        }
 
-            calendarObserver = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
-                override fun onChange(selfChange: Boolean) {
-                    super.onChange(selfChange)
-                    Log.d(TAG, "Calendar provider changed, updating events")
-                    scope.launch(Dispatchers.IO) {
-                        updateCalendarData()
-                        withContext(Dispatchers.Main) { drawFrame() }
-                    }
-                }
-            }
-            try {
-                applicationContext.contentResolver.registerContentObserver(
-                    android.provider.CalendarContract.Events.CONTENT_URI,
-                    true,
-                    calendarObserver!!
-                )
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to register calendar observer", e)
-            }
+        override fun onComputeColors(): android.app.WallpaperColors {
+            val black = Color.valueOf(0f, 0f, 0f)
+            return android.app.WallpaperColors(
+                black,
+                black,
+                black,
+                android.app.WallpaperColors.HINT_SUPPORTS_DARK_THEME
+            )
+        }
+
+        override fun onZoomChanged(zoom: Float) {
+            val settled = zoom <= ZOOM_IDLE
+            if (settled == zoomSettled) return
+            zoomSettled = settled
+            if (isVisible && zoomSettled) startRendering() else stopRendering()
         }
 
         private fun updateLockState() {
@@ -151,7 +142,7 @@ class ClockWallpaperService : WallpaperService() {
                 isLockedState.value = previewLockScreen
                 return
             }
-            val km = applicationContext.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+            val km = applicationContext.getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
             isLockedState.value = km.isKeyguardLocked
         }
 
@@ -163,38 +154,13 @@ class ClockWallpaperService : WallpaperService() {
             }
         }
 
-        private fun startLocationUpdates() {
-            locationJob?.cancel()
-            locationJob = scope.launch {
-                try {
-                    // 1. Get last known location immediately for instant draw
-                    val lastLoc = locationManager.getLastKnownLocation()
-                    if (lastLoc != null) {
-                        Log.d(TAG, "Using last known location: $lastLoc")
-                        celestialManager = CelestialManager(lastLoc.first, lastLoc.second)
-                        updateCelestialData()
-                        drawFrame()
-                    }
-
-                    while (isActive) {
-                        // 2. Refine with current location in background
-                        val currentLoc = try {
-                            locationManager.getCurrentLocation()
-                        } catch (e: SecurityException) {
-                            Log.w(TAG, "Location permission missing during update")
-                            null
-                        }
-                        
-                        if (currentLoc != null) {
-                            Log.d(TAG, "Updated with precise location: $currentLoc")
-                            celestialManager = CelestialManager(currentLoc.first, currentLoc.second)
-                            updateCelestialData()
-                            drawFrame()
-                        }
-                        delay(3600000) // Update location every hour
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Location update job failed", e)
+        private fun observeStoredLocation() {
+            scope.launch {
+                settingsManager.locationFlow.collect { location ->
+                    if (location == null) return@collect
+                    celestialManager = CelestialManager(location.first, location.second)
+                    updateCelestialData()
+                    drawFrame()
                 }
             }
         }
@@ -225,153 +191,55 @@ class ClockWallpaperService : WallpaperService() {
                 }.collect { snapshot ->
                     currentSettings = snapshot.settings
                     modelSettings = snapshot.model
-                    calendarSettings = snapshot.calendar
                     sleepLogs = snapshot.logs
                     sleepStatus = snapshot.sync
                     reconnectRequired = snapshot.reconnect
                     sleepDebt = snapshot.debt
                     bathyphaseHour = snapshot.bathy
-                    if (isVisible) {
-                        drawFrame()
-                        startRendering()
-                    } else {
-                        stopCountdownTicks()
-                    }
+                    drawFrame()
+                    if (isVisible && zoomSettled) startRendering() else stopRendering()
                 }
             }
         }
 
         override fun onVisibilityChanged(visible: Boolean) {
-            SleepSyncCoordinator.get(applicationContext).setVisible(sleepSurface, visible)
             if (visible) {
                 updateLockState()
-                startRendering()
+                if (zoomSettled) startRendering()
             } else {
                 stopRendering()
             }
         }
 
+        private fun canDraw(): Boolean = isVisible && zoomSettled
 
         private fun startRendering() {
+            if (!canDraw()) return
             renderJob?.cancel()
             renderJob = scope.launch {
-                while (isActive) {
+                while (isActive && canDraw()) {
                     drawFrame()
-                    // Full canvas redraw at 10s; countdown seconds use a separate dirty-rect 1 Hz job.
                     delay(10000)
                 }
             }
-            syncCountdownTicks()
         }
 
         private fun stopRendering() {
             renderJob?.cancel()
-            stopCountdownTicks()
-        }
-
-        private fun syncCountdownTicks() {
-            if (!isVisible || !currentSettings.showBedtimeCountdown) {
-                stopCountdownTicks()
-                return
-            }
-            val bedtimeMillis = BedtimeNotificationManager.resolveBedtimeMillis(sleepLogs)
-            if (!renderer.isBedtimeCountdownTicking(bedtimeMillis)) {
-                stopCountdownTicks()
-                return
-            }
-            if (countdownJob?.isActive == true) return
-            countdownJob = scope.launch {
-                while (isActive) {
-                    delay(1000)
-                    if (!isVisible || !currentSettings.showBedtimeCountdown) break
-                    val millis = BedtimeNotificationManager.resolveBedtimeMillis(sleepLogs)
-                    if (!renderer.isBedtimeCountdownTicking(millis)) break
-                    drawCountdownDirty(millis)
-                }
-                countdownJob = null
-            }
-        }
-
-        private fun stopCountdownTicks() {
-            countdownJob?.cancel()
-            countdownJob = null
-        }
-
-        private fun clockLayout(width: Int, height: Int, smallTopRight: Boolean): Triple<Float, Float, Float> {
-            return if (smallTopRight) {
-                val radius = min(width, height) / 6f * 0.9f
-                val centerX = width - radius - 80f
-                val centerY = radius + 150f
-                Triple(centerX, centerY, radius)
-            } else {
-                val centerX = width / 2f
-                val radius = min(width, height) / 2f - 150f
-                val moonDiameter = max(12f, radius / 7f)
-                val centerY = height / 2f - (1.75f * moonDiameter)
-                Triple(centerX, centerY, radius)
-            }
-        }
-
-        private fun drawCountdownDirty(bedtimeMillis: Long) {
-            val holder = surfaceHolder
-            val frame = holder.surfaceFrame
-            if (frame.isEmpty) return
-            val width = frame.width()
-            val height = frame.height()
-            val smallTopRight = currentSettings.smallTopRight
-            val (centerX, centerY, radius) = clockLayout(width, height, smallTopRight)
-            if (radius < 20f) return
-
-            // Measure first so we can skip unsafe clears that would erase the dial.
-            val prior = lastCountdownDirty
-            val probeResult = renderer.measureBedtimeCountdown(
-                width = width,
-                height = height,
-                bedtimeMillis = bedtimeMillis,
-                smallTopRight = smallTopRight,
-                clockCenterX = centerX,
-                clockCenterY = centerY,
-                clockRadius = radius
-            )
-            if (probeResult.intersectsClock || probeResult.isOverdue) return
-
-            val clearRect = Rect(probeResult.contentDirty)
-            if (prior != null) clearRect.union(prior)
-
-            val canvas = holder.lockCanvas(clearRect) ?: return
-            try {
-                val result = renderer.drawBedtimeCountdown(
-                    canvas = canvas,
-                    width = width,
-                    height = height,
-                    bedtimeMillis = bedtimeMillis,
-                    smallTopRight = smallTopRight,
-                    clockCenterX = centerX,
-                    clockCenterY = centerY,
-                    clockRadius = radius,
-                    clearRect = clearRect
-                )
-                if (!result.intersectsClock) {
-                    lastCountdownDirty = Rect(result.contentDirty)
-                }
-            } finally {
-                holder.unlockCanvasAndPost(canvas)
-            }
+            renderJob = null
         }
 
         private fun startDataUpdates() {
             dataUpdateJob?.cancel()
-            dataUpdateJob = scope.launch(Dispatchers.IO) {
+            dataUpdateJob = scope.launch {
                 while (isActive) {
                     try {
                         updateCelestialData()
-                        updateCalendarData()
-                        withContext(Dispatchers.Main) { drawFrame() }
+                        drawFrame()
                     } catch (e: Exception) {
                         Log.e(TAG, "Data update loop error", e)
                     }
-
-                    delay(600000) // Update every 10 minutes
+                    delay(600000)
                 }
             }
         }
@@ -380,7 +248,7 @@ class ClockWallpaperService : WallpaperService() {
             val (sunrise, sunset) = celestialManager.getSunTimes()
             sunriseHour = sunrise
             sunsetHour = sunset
-            
+
             val celestial = celestialManager.getCelestialPositions()
             sunRad = celestial.sunRad
             moonRad = celestial.moonRad
@@ -390,16 +258,11 @@ class ClockWallpaperService : WallpaperService() {
             solarIrradiance = celestialManager.getSolarIrradiance()
         }
 
-        private fun updateCalendarData() {
-            if (applicationContext.checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
-                calendarEvents = calendarManager.getTodayEvents(calendarSettings.enabledIds)
-                Log.d(TAG, "Calendar data updated: ${calendarEvents.size} events")
-            }
-        }
-
         private fun drawFrame() {
+            if (!canDraw()) return
             val canvas = surfaceHolder.lockCanvas() ?: return
             try {
+                val insets = clockInsets(applicationContext)
                 renderer.draw(
                     canvas = canvas,
                     width = canvas.width,
@@ -450,29 +313,30 @@ class ClockWallpaperService : WallpaperService() {
                     showBedtimeCountdown = currentSettings.showBedtimeCountdown,
                     isPreview = isPreview,
                     previewIsLockScreen = previewLockScreen,
-                    modelSettings = modelSettings
+                    modelSettings = modelSettings,
+                    topInsetPx = insets.topPx,
+                    sideInsetPx = insets.sidePx,
+                    dialMarginPx = insets.dialMarginPx
                 )
             } finally {
                 surfaceHolder.unlockCanvasAndPost(canvas)
             }
-            // Seed dirty bounds after a full frame so the 1 Hz path can union correctly.
-            lastCountdownDirty = renderer.lastCountdownDrawResult?.contentDirty?.let { Rect(it) }
-            syncCountdownTicks()
         }
 
         override fun onDestroy() {
-            SleepSyncCoordinator.get(applicationContext).setVisible(sleepSurface, false)
             scope.cancel()
-            super.onDestroy()
-            unregisterReceiver(refreshReceiver)
-            unregisterReceiver(lockStateReceiver)
-            calendarObserver?.let {
-                applicationContext.contentResolver.unregisterContentObserver(it)
+            try {
+                unregisterReceiver(refreshReceiver)
+            } catch (_: IllegalArgumentException) {
             }
+            try {
+                unregisterReceiver(lockStateReceiver)
+            } catch (_: IllegalArgumentException) {
+            }
+            super.onDestroy()
             stopRendering()
             dataUpdateJob?.cancel()
             settingsJob?.cancel()
-            locationJob?.cancel()
         }
     }
 }
