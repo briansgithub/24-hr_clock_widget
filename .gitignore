@@ -8,6 +8,10 @@ build/
 *.iml
 local.properties
 
+# Local profiling output
+*.prof
+*.log
+
 # Python
 __pycache__/
 *.py[cod]
@@ -38,6 +42,7 @@ python/google_health_credentials.tmp
 python/google_health_credentials.lock
 python/health_state.json.tmp
 !python/fitbit_config.json.example
+!python/personal_energy_fit.example.json
 python/saved_curves/
 
 # Generated media previews

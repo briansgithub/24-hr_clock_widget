@@ -1,0 +1,28 @@
+{
+  "_comment": "Example schema only. Copy to python/personal_energy_fit.json after a local fit. Do not commit the real file, personal dates, or training counts. If the real file is missing, the app falls back to built-in defaults.",
+  "schema_version": 1,
+  "model_id": "M8_adaptive_sleep",
+  "fitted_at": "1970-01-01T00:00:00+00:00",
+  "params": {
+    "circadian_coefs": [50.0, 0.0, 0.0, 0.0, 0.0],
+    "reference_sleep_hours": 8.0,
+    "reference_peak_clock": 12.0,
+    "max_phase_shift_hours": 3.0,
+    "tau_wake": 23.0,
+    "tau_sleep": 4.0,
+    "inertia_tau": 0.75,
+    "homeostatic_scale": 25.0,
+    "debt_scale": 2.0,
+    "debt_saturation_hours": 12.0,
+    "inertia_scale": 12.0,
+    "process_s_min": 0.05,
+    "process_s_max": 1.0,
+    "homeostatic_delta_min": -0.15,
+    "homeostatic_delta_max": 0.35
+  },
+  "training": {
+    "csv": "Alertness_Master_Log.csv",
+    "fitter": "python/fit_adaptive_sleep_model.py",
+    "note": "Placeholder. Replace this whole file with your local fit output."
+  }
+}
