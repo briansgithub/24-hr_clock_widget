@@ -46,7 +46,7 @@ class GoogleHealthAuthorization(context: Context, private val store: FitbitStore
             // Health-only authorization need not return an email/account profile.
             // Validate renewed tokens by Health identity even when the SDK selects its default account.
             val identity = candidate(token).identity()
-            if (identity.healthUserId != current.accountId || identity.legacyUserId != BuildConfig.HEALTH_LEGACY_ACCOUNT)
+            if (!HealthIdentityRules.renewalMatches(identity, current.accountId, BuildConfig.HEALTH_LEGACY_ACCOUNT))
                 throw FitbitRequestException(SyncError.CONFIGURATION)
             store.saveCredentials(current.copy(accessToken = token, expiresAt = System.currentTimeMillis() + 3_500_000))
             token
@@ -62,9 +62,8 @@ class GoogleHealthAuthorization(context: Context, private val store: FitbitStore
         val candidate = candidate(token)
         val identity = candidate.identity()
         val current = store.credentials()
-        val expected = if (current.provider == "fitbit") current.accountId.ifBlank { BuildConfig.HEALTH_LEGACY_ACCOUNT } else BuildConfig.HEALTH_LEGACY_ACCOUNT
-        if (expected.isBlank() || identity.legacyUserId != expected ||
-            (current.provider == "google_health" && current.accountId != identity.healthUserId)) throw FitbitRequestException(SyncError.CONFIGURATION)
+        if (!HealthIdentityRules.connectMatches(identity, current.provider, current.accountId, BuildConfig.HEALTH_LEGACY_ACCOUNT))
+            throw FitbitRequestException(SyncError.CONFIGURATION)
         val today = LocalDate.now()
         when (val result = candidate.sleep(today.minusDays(14).toString(), today.toString())) {
             is SleepFetchResult.Complete -> store.activateGoogle(FitbitCredentials(accessToken = token, expiresAt = System.currentTimeMillis() + 3_500_000,
@@ -89,4 +88,24 @@ class GoogleHealthAuthorization(context: Context, private val store: FitbitStore
         else -> SyncError.SERVER // SDK availability/cancellation does not establish revoked consent.
         })
     }
+}
+
+/**
+ * Which Health identity a token may belong to. The stored Health user ID was verified when the
+ * account was first connected, so renewal and reconnect only need it to match. The build-time
+ * legacy account is an extra check when it is set; a build without it (a fresh worktree with no
+ * local.properties) must not break renewal, or sleep sync silently stops an hour after install.
+ */
+object HealthIdentityRules {
+    fun renewalMatches(identity: HealthIdentity, storedHealthUserId: String, configuredLegacy: String): Boolean =
+        storedHealthUserId.isNotBlank() && identity.healthUserId == storedHealthUserId &&
+            (configuredLegacy.isBlank() || identity.legacyUserId == configuredLegacy)
+
+    fun connectMatches(identity: HealthIdentity, provider: String, storedAccountId: String, configuredLegacy: String): Boolean =
+        if (provider == "google_health") renewalMatches(identity, storedAccountId, configuredLegacy)
+        else {
+            // First move from Fitbit: the legacy account must be known, from the Fitbit login or the build.
+            val expected = storedAccountId.ifBlank { configuredLegacy }
+            expected.isNotBlank() && identity.legacyUserId == expected
+        }
 }

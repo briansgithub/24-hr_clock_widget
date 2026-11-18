@@ -42,6 +42,12 @@ android {
 
     val fitbitClientId: String = localProperties.getProperty("FITBIT_CLIENT_ID") ?: ""
     val fitbitClientSecret: String = localProperties.getProperty("FITBIT_CLIENT_SECRET") ?: ""
+    // A worktree without the real local.properties builds an APK with no relay or Fitbit login.
+    val missingKeys = listOf("FITBIT_CLIENT_ID", "HEALTH_LEGACY_ACCOUNT", "SLEEP_RELAY_URL", "FIREBASE_APP_ID")
+        .filter { localProperties.getProperty(it).isNullOrBlank() }
+    if (missingKeys.isNotEmpty()) {
+        logger.warn("WARNING: local.properties is missing ${missingKeys.joinToString()}; this APK will lack those features. Copy the real file from the primary checkout.")
+    }
 
     buildFeatures {
         compose = true
