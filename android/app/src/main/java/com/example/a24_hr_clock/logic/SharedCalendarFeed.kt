@@ -11,6 +11,7 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -19,6 +20,7 @@ import kotlinx.coroutines.launch
 /** One calendar observer for the process, shared by every wallpaper engine. */
 object SharedCalendarFeed {
     private const val TAG = "SharedCalendarFeed"
+    private const val REFRESH_MS = 60_000L
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val events = MutableStateFlow<List<CalendarEvent>>(emptyList())
     val eventsFlow: StateFlow<List<CalendarEvent>> = events
@@ -49,6 +51,15 @@ object SharedCalendarFeed {
             }
             scope.launch {
                 settings.calendarSettingsFlow.collect {
+                    refresh(app, manager, settings)
+                }
+            }
+            // Event arcs are placed relative to "now", so recompute them as time passes, not only
+            // when calendar data changes. Otherwise ended events stay on the dial (where they read
+            // as tomorrow's) and events that enter the next 24 hours never appear.
+            scope.launch {
+                while (true) {
+                    delay(REFRESH_MS - System.currentTimeMillis() % REFRESH_MS)
                     refresh(app, manager, settings)
                 }
             }

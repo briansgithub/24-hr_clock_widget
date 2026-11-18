@@ -379,6 +379,10 @@ fun MainScreen(
                 enabledIds = primaryIds.ifEmpty { calendarSettings.enabledIds },
                 initialized = true
             ))
+        } else if (calendarSettings.initialized && ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
+            // Saved IDs from another phone (backup restore) or a re-added account no longer exist.
+            val reconciled = CalendarSelection.reconcile(calendarSettings.enabledIds, calendarManager.getAllCalendars())
+            if (reconciled != calendarSettings.enabledIds) settingsManager.updateCalendarSettings(calendarSettings.copy(enabledIds = reconciled))
         }
     }
 
