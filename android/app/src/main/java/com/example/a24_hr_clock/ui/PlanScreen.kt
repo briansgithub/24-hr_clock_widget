@@ -17,6 +17,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -43,12 +45,24 @@ fun PlanScreen(
     tasks: List<PlannedTask>,
     onSave: (PlannedTask) -> Unit,
     onDelete: (String) -> Unit,
+    canUndo: Boolean = false,
+    canRedo: Boolean = false,
+    onUndo: () -> Unit = {},
+    onRedo: () -> Unit = {},
     clock: @Composable (Modifier) -> Unit
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            Text("Plan", style = MaterialTheme.typography.headlineMedium)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Plan", Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium)
+                IconButton(onClick = onUndo, enabled = canUndo, modifier = Modifier.testTag("plan-undo")) {
+                    Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo")
+                }
+                IconButton(onClick = onRedo, enabled = canRedo, modifier = Modifier.testTag("plan-redo")) {
+                    Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "Redo")
+                }
+            }
         }
         item {
             clock(Modifier.fillMaxWidth().height(280.dp))

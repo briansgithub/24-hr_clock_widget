@@ -169,6 +169,11 @@ class SettingsManager(private val dataStore: DataStore<Preferences>) {
         }
     }
 
+    /** Replace the whole plan (undo/redo restores a snapshot). */
+    suspend fun replacePlannedTasks(tasks: List<PlannedTask>) {
+        dataStore.edit { prefs -> prefs[PLANNED_TASKS_JSON] = json.encodeToString(tasks.filter { it.isValid }) }
+    }
+
     suspend fun deletePlannedTask(id: String) {
         dataStore.edit { prefs ->
             prefs[PLANNED_TASKS_JSON] = json.encodeToString(

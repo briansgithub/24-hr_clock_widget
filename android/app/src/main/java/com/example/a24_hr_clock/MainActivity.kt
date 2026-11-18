@@ -303,6 +303,27 @@ fun MainScreen(
     val modelSettings by settingsManager.modelSettingsFlow.collectAsState(initial = ModelSettings())
     val calendarSettings by settingsManager.calendarSettingsFlow.collectAsState(initial = CalendarSettings())
     val plannedTasks by settingsManager.plannedTasksFlow.collectAsState(initial = emptyList())
+    // Session-only undo/redo of plan edits; the version counter makes the buttons recompose.
+    val planHistory = remember { PlanHistory() }
+    var planHistoryVersion by remember { mutableIntStateOf(0) }
+    fun editPlan(after: (List<PlannedTask>) -> List<PlannedTask>) {
+        val before = plannedTasks
+        val next = after(before)
+        planHistory.record(before, next)
+        planHistoryVersion++
+        scope.launch { settingsManager.replacePlannedTasks(next) }
+    }
+    fun savePlanTask(task: PlannedTask) = editPlan { tasks ->
+        if (tasks.any { it.id == task.id }) tasks.map { if (it.id == task.id) task else it } else tasks + task
+    }
+    fun movePlanTask(task: PlannedTask) = editPlan { tasks ->
+        tasks.map { if (it.id == task.id) it.copy(startMinute = task.startMinute) else it }
+    }
+    fun stepPlan(undo: Boolean) {
+        val restored = (if (undo) planHistory.undo(plannedTasks) else planHistory.redo(plannedTasks)) ?: return
+        planHistoryVersion++
+        scope.launch { settingsManager.replacePlannedTasks(restored) }
+    }
     
     // Automatic cleanup: when "today" becomes "yesterday", if it was excluded, re-include it.
     val todayDate = java.time.LocalDate.now().toString()
@@ -457,7 +478,7 @@ fun MainScreen(
                     solarIrradiance = solarIrradiance,
                     calendarEvents = calendarEvents,
                     plannedTasks = plannedTasks,
-                    onMoveTask = { task -> scope.launch { settingsManager.movePlannedTask(task.id, task.startMinute) } },
+                    onMoveTask = { task -> movePlanTask(task) },
                     sleepDebt = sleepDebt,
                     userLatitude = deviceLatitude,
                     userLongitude = deviceLongitude,
@@ -467,8 +488,12 @@ fun MainScreen(
                 )
                 Screen.PLAN -> PlanScreen(
                     tasks = plannedTasks,
-                    onSave = { scope.launch { settingsManager.savePlannedTask(it) } },
-                    onDelete = { scope.launch { settingsManager.deletePlannedTask(it) } }
+                    onSave = { savePlanTask(it) },
+                    onDelete = { id -> editPlan { tasks -> tasks.filterNot { it.id == id } } },
+                    canUndo = planHistoryVersion >= 0 && planHistory.canUndo,
+                    canRedo = planHistoryVersion >= 0 && planHistory.canRedo,
+                    onUndo = { stepPlan(true) },
+                    onRedo = { stepPlan(false) }
                 ) { previewModifier ->
                     ClockPreviewScreen(
                         sleepStatus = sleepSnapshot.status,
@@ -484,7 +509,7 @@ fun MainScreen(
                         solarIrradiance = solarIrradiance,
                         calendarEvents = calendarEvents,
                         plannedTasks = plannedTasks,
-                        onMoveTask = { task -> scope.launch { settingsManager.movePlannedTask(task.id, task.startMinute) } },
+                        onMoveTask = { task -> movePlanTask(task) },
                         sleepDebt = sleepDebt,
                         title = "",
                         showSetWallpaper = false,
