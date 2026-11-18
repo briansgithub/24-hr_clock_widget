@@ -24,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -34,6 +35,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -69,6 +71,7 @@ import kotlin.math.*
 
 enum class Screen {
     PREVIEW,
+    PLAN,
     DISPLAY,
     ENERGY,
     SLEEP,
@@ -299,6 +302,7 @@ fun MainScreen(
     val lockSettings by settingsManager.lockSettingsFlow.collectAsState(initial = ClockSettings())
     val modelSettings by settingsManager.modelSettingsFlow.collectAsState(initial = ModelSettings())
     val calendarSettings by settingsManager.calendarSettingsFlow.collectAsState(initial = CalendarSettings())
+    val plannedTasks by settingsManager.plannedTasksFlow.collectAsState(initial = emptyList())
     
     // Automatic cleanup: when "today" becomes "yesterday", if it was excluded, re-include it.
     val todayDate = java.time.LocalDate.now().toString()
@@ -407,6 +411,12 @@ fun MainScreen(
                     icon = { Icon(Icons.Default.Visibility, contentDescription = null) }
                 )
                 NavigationBarItem(
+                    selected = currentScreen == Screen.PLAN,
+                    onClick = { currentScreen = Screen.PLAN },
+                    label = { Text("Plan") },
+                    icon = { Icon(Icons.Default.EditCalendar, contentDescription = null) }
+                )
+                NavigationBarItem(
                     selected = currentScreen == Screen.DISPLAY,
                     onClick = { currentScreen = Screen.DISPLAY },
                     label = { Text("Display") },
@@ -446,6 +456,8 @@ fun MainScreen(
                     celestialPositions = celestialPositions,
                     solarIrradiance = solarIrradiance,
                     calendarEvents = calendarEvents,
+                    plannedTasks = plannedTasks,
+                    onMoveTask = { task -> scope.launch { settingsManager.movePlannedTask(task.id, task.startMinute) } },
                     sleepDebt = sleepDebt,
                     userLatitude = deviceLatitude,
                     userLongitude = deviceLongitude,
@@ -453,6 +465,33 @@ fun MainScreen(
                     showSetWallpaper = true,
                     modifier = Modifier.clickable { previewIsLockScreen = !previewIsLockScreen }
                 )
+                Screen.PLAN -> PlanScreen(
+                    tasks = plannedTasks,
+                    onSave = { scope.launch { settingsManager.savePlannedTask(it) } },
+                    onDelete = { scope.launch { settingsManager.deletePlannedTask(it) } }
+                ) { previewModifier ->
+                    ClockPreviewScreen(
+                        sleepStatus = sleepSnapshot.status,
+                        reconnectRequired = reconnect,
+                        settings = lockSettings.copy(smallTopRight = false, showTasks = true,
+                            showTimezoneMap = false, showLifeCalendar = false,
+                            showWakeSunriseInfo = false, showBedtimeCountdown = false),
+                        modelSettings = modelSettings,
+                        sleepLogs = sleepLogs,
+                        metrics = metrics,
+                        sunTimes = sunTimes,
+                        celestialPositions = celestialPositions,
+                        solarIrradiance = solarIrradiance,
+                        calendarEvents = calendarEvents,
+                        plannedTasks = plannedTasks,
+                        onMoveTask = { task -> scope.launch { settingsManager.movePlannedTask(task.id, task.startMinute) } },
+                        sleepDebt = sleepDebt,
+                        title = "",
+                        showSetWallpaper = false,
+                        compact = true,
+                        modifier = previewModifier
+                    )
+                }
                 Screen.DISPLAY -> DisplaySettingsScreen(
                     calendarSettings = calendarSettings,
                     homeSettings = homeSettings,
@@ -536,10 +575,17 @@ fun ClockPreviewScreen(
     userLongitude: Double? = null,
     title: String = "Home Screen Preview",
     showSetWallpaper: Boolean = true,
+    plannedTasks: List<PlannedTask> = emptyList(),
+    onMoveTask: (PlannedTask) -> Unit = {},
+    compact: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val renderer = remember { ClockRenderer() }
+    var draggingTask by remember { mutableStateOf<PlannedTask?>(null) }
+    val displayedTasks = plannedTasks.map { task -> draggingTask?.takeIf { it.id == task.id } ?: task }
+    val insets = clockInsets(context)
+    val dialMargin = if (compact) with(LocalDensity.current) { 16.dp.toPx() } else insets.dialMarginPx
     var tick by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     LaunchedEffect(Unit) {
@@ -560,7 +606,14 @@ fun ClockPreviewScreen(
             .background(Color.Black),
         contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
+        Canvas(modifier = Modifier.fillMaxSize().clipToBounds().taskWedgeDrag(
+            tasks = plannedTasks,
+            enabled = settings.showTasks,
+            geometry = { size -> ClockDial.create(size.width, size.height, settings.smallTopRight,
+                insets.topPx, insets.sidePx, dialMargin, centered = compact) },
+            onPreview = { draggingTask = it },
+            onCommit = onMoveTask
+        )) {
             drawIntoCanvas { canvas ->
                 renderer.draw(
                     canvas.nativeCanvas,
@@ -610,17 +663,20 @@ fun ClockPreviewScreen(
                     showGrogginess = settings.showGrogginess,
                     showWindDown = settings.showWindDown,
                     showBedtimeCountdown = settings.showBedtimeCountdown,
-                    isPreview = true,
+                    isPreview = !compact,
                     previewIsLockScreen = title.contains("Lock Screen"),
                     modelSettings = modelSettings,
-                    topInsetPx = clockInsets(context).topPx,
-                    sideInsetPx = clockInsets(context).sidePx,
-                    dialMarginPx = clockInsets(context).dialMarginPx
+                    topInsetPx = insets.topPx,
+                    sideInsetPx = insets.sidePx,
+                    dialMarginPx = dialMargin,
+                    plannedTasks = displayedTasks,
+                    showTasks = settings.showTasks,
+                    centerDial = compact
                 )
             }
         }
         
-        Text(
+        if (title.isNotEmpty()) Text(
             text = title,
             color = Color.White.copy(alpha = 0.5f),
             modifier = Modifier.align(Alignment.TopCenter).padding(top = 48.dp),
@@ -725,6 +781,11 @@ fun DisplaySettingsScreen(
         }
         SettingToggle("Sun & Moon Icons", currentSettings.showSunMoon, { GlyphSunMoon() }) {
             updateFunc(currentSettings.copy(showSunMoon = it))
+        }
+        SettingToggle("Show Planned Tasks", currentSettings.showTasks, {
+            Icon(Icons.Default.EditCalendar, contentDescription = null)
+        }) {
+            updateFunc(currentSettings.copy(showTasks = it))
         }
         SettingToggle("Small Clock in Top-Right", currentSettings.smallTopRight, { GlyphSmallTopRight() }) {
             updateFunc(currentSettings.copy(smallTopRight = it))

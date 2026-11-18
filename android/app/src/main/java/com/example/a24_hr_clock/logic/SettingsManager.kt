@@ -1,6 +1,8 @@
 package com.example.a24_hr_clock.logic
 
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -13,13 +15,15 @@ import kotlinx.serialization.encodeToString
 
 private val Context.settingsDataStore by preferencesDataStore(name = "clock_settings")
 
-class SettingsManager(private val context: Context) {
+class SettingsManager(private val dataStore: DataStore<Preferences>) {
+    constructor(context: Context) : this(context.settingsDataStore)
 
     companion object {
         private val HOME_SETTINGS_JSON = stringPreferencesKey("home_settings_json")
         private val LOCK_SETTINGS_JSON = stringPreferencesKey("lock_settings_json")
         private val MODEL_SETTINGS_JSON = stringPreferencesKey("model_settings_json")
         private val CALENDAR_SETTINGS_JSON = stringPreferencesKey("calendar_settings_json")
+        private val PLANNED_TASKS_JSON = stringPreferencesKey("planned_tasks_json")
         private val DEVICE_LATITUDE = doublePreferencesKey("device_latitude")
         private val DEVICE_LONGITUDE = doublePreferencesKey("device_longitude")
 
@@ -107,38 +111,73 @@ class SettingsManager(private val context: Context) {
         encodeDefaults = true
     }
 
-    val homeSettingsFlow: Flow<ClockSettings> = context.settingsDataStore.data.map { prefs ->
+    val homeSettingsFlow: Flow<ClockSettings> = dataStore.data.map { prefs ->
         prefs[HOME_SETTINGS_JSON]?.let {
             try { json.decodeFromString<ClockSettings>(it) } catch (e: Exception) { DEFAULT_HOME_SETTINGS }
         } ?: DEFAULT_HOME_SETTINGS
     }
 
-    val lockSettingsFlow: Flow<ClockSettings> = context.settingsDataStore.data.map { prefs ->
+    val lockSettingsFlow: Flow<ClockSettings> = dataStore.data.map { prefs ->
         prefs[LOCK_SETTINGS_JSON]?.let {
             try { json.decodeFromString<ClockSettings>(it) } catch (e: Exception) { DEFAULT_LOCK_SETTINGS }
         } ?: DEFAULT_LOCK_SETTINGS
     }
 
-    val modelSettingsFlow: Flow<ModelSettings> = context.settingsDataStore.data.map { prefs ->
+    val modelSettingsFlow: Flow<ModelSettings> = dataStore.data.map { prefs ->
         prefs[MODEL_SETTINGS_JSON]?.let {
             try { json.decodeFromString<ModelSettings>(it) } catch (e: Exception) { DEFAULT_MODEL_SETTINGS }
         } ?: DEFAULT_MODEL_SETTINGS
     }
 
-    val calendarSettingsFlow: Flow<CalendarSettings> = context.settingsDataStore.data.map { prefs ->
+    val calendarSettingsFlow: Flow<CalendarSettings> = dataStore.data.map { prefs ->
         prefs[CALENDAR_SETTINGS_JSON]?.let {
             try { json.decodeFromString<CalendarSettings>(it) } catch (e: Exception) { DEFAULT_CALENDAR_SETTINGS }
         } ?: DEFAULT_CALENDAR_SETTINGS
     }
 
-    val locationFlow: Flow<Pair<Double, Double>?> = context.settingsDataStore.data.map { prefs ->
+    val locationFlow: Flow<Pair<Double, Double>?> = dataStore.data.map { prefs ->
         val latitude = prefs[DEVICE_LATITUDE]
         val longitude = prefs[DEVICE_LONGITUDE]
         if (latitude == null || longitude == null) null else latitude to longitude
     }
 
+    val plannedTasksFlow: Flow<List<PlannedTask>> = dataStore.data.map { prefs ->
+        decodePlannedTasks(prefs[PLANNED_TASKS_JSON])
+    }
+
+    private fun decodePlannedTasks(value: String?): List<PlannedTask> =
+        try { value?.let { json.decodeFromString<List<PlannedTask>>(it).filter { task -> task.isValid } } ?: emptyList() }
+        catch (_: Exception) { emptyList() }
+
+    suspend fun savePlannedTask(task: PlannedTask) {
+        require(task.isValid)
+        dataStore.edit { prefs ->
+            val tasks = decodePlannedTasks(prefs[PLANNED_TASKS_JSON])
+            val updated = if (tasks.any { it.id == task.id }) tasks.map { if (it.id == task.id) task else it }
+                else tasks + task
+            prefs[PLANNED_TASKS_JSON] = json.encodeToString(updated)
+        }
+    }
+
+    suspend fun movePlannedTask(id: String, startMinute: Int) {
+        require(startMinute in 0..1439)
+        dataStore.edit { prefs ->
+            // Read inside the transaction so a drag cannot overwrite concurrent task edits/deletions.
+            val tasks = decodePlannedTasks(prefs[PLANNED_TASKS_JSON])
+                .map { if (it.id == id) it.copy(startMinute = startMinute) else it }
+            prefs[PLANNED_TASKS_JSON] = json.encodeToString(tasks)
+        }
+    }
+
+    suspend fun deletePlannedTask(id: String) {
+        dataStore.edit { prefs ->
+            prefs[PLANNED_TASKS_JSON] = json.encodeToString(
+                decodePlannedTasks(prefs[PLANNED_TASKS_JSON]).filterNot { it.id == id })
+        }
+    }
+
     suspend fun saveLocation(latitude: Double, longitude: Double) {
-        context.settingsDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[DEVICE_LATITUDE] = latitude
             prefs[DEVICE_LONGITUDE] = longitude
         }
@@ -146,49 +185,49 @@ class SettingsManager(private val context: Context) {
 
 
     suspend fun updateHomeSettings(update: ClockSettings) {
-        context.settingsDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[HOME_SETTINGS_JSON] = json.encodeToString(update)
         }
     }
 
     suspend fun updateLockSettings(update: ClockSettings) {
-        context.settingsDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[LOCK_SETTINGS_JSON] = json.encodeToString(update)
         }
     }
 
     suspend fun updateModelSettings(update: ModelSettings) {
-        context.settingsDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[MODEL_SETTINGS_JSON] = json.encodeToString(update)
         }
     }
 
     suspend fun updateCalendarSettings(update: CalendarSettings) {
-        context.settingsDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[CALENDAR_SETTINGS_JSON] = json.encodeToString(update)
         }
     }
 
     suspend fun resetHomeSettings() {
-        context.settingsDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[HOME_SETTINGS_JSON] = json.encodeToString(DEFAULT_HOME_SETTINGS)
         }
     }
 
     suspend fun resetLockSettings() {
-        context.settingsDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[LOCK_SETTINGS_JSON] = json.encodeToString(DEFAULT_LOCK_SETTINGS)
         }
     }
 
     suspend fun resetModelSettings() {
-        context.settingsDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[MODEL_SETTINGS_JSON] = json.encodeToString(DEFAULT_MODEL_SETTINGS)
         }
     }
 
     suspend fun resetCalendarSettings() {
-        context.settingsDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[CALENDAR_SETTINGS_JSON] = json.encodeToString(DEFAULT_CALENDAR_SETTINGS)
         }
     }
@@ -204,6 +243,7 @@ data class ClockSettings(
     val smallTopRight: Boolean = false,
     val showLifeCalendar: Boolean = false,
     val showCalendar: Boolean = true,
+    val showTasks: Boolean = true,
     val showTotalBedtime: Boolean = true,
     val showEnergyPct: Boolean = false,
     val normalizeEnergy: Boolean = false,

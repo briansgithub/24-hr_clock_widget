@@ -9,6 +9,8 @@ import com.example.a24_hr_clock.logic.EnergyPrediction
 import com.example.a24_hr_clock.logic.ModelSettings
 import com.example.a24_hr_clock.logic.SleepLogEntry
 import com.example.a24_hr_clock.logic.SleepModelContext
+import com.example.a24_hr_clock.logic.ClockDial
+import com.example.a24_hr_clock.logic.PlannedTask
 import com.example.a24_hr_clock.logic.TimeZoneUtils
 import java.util.*
 import kotlin.math.*
@@ -272,7 +274,10 @@ class ClockRenderer {
         modelSettings: ModelSettings? = null,
         topInsetPx: Float = 150f,
         sideInsetPx: Float = 80f,
-        dialMarginPx: Float = 150f
+        dialMarginPx: Float = 150f,
+        plannedTasks: List<PlannedTask> = emptyList(),
+        showTasks: Boolean = true,
+        centerDial: Boolean = false
     ) {
         // Clear background to OLED black
         canvas.drawColor(Color.BLACK)
@@ -282,22 +287,8 @@ class ClockRenderer {
             lifeCalendarRenderer.draw(canvas, width, height)
         }
 
-        val centerX: Float
-        val centerY: Float
-        val radius: Float
-
-        if (smallTopRight) {
-            // Small clock in top right (~10% smaller than original /6 sizing)
-            radius = min(width, height) / 6f * 0.9f
-            centerX = width - radius - sideInsetPx
-            centerY = radius + topInsetPx
-        } else {
-            // Large centered clock
-            centerX = width / 2f
-            radius = min(width, height) / 2f - dialMarginPx
-            val moonDiameter = max(12f, radius / 7f)
-            centerY = height / 2f - (1.75f * moonDiameter)
-        }
+        val dial = ClockDial.create(width, height, smallTopRight, topInsetPx, sideInsetPx, dialMarginPx, centerDial)
+        val (centerX, centerY, radius) = dial
 
         if (radius < 20) return
 
@@ -458,6 +449,9 @@ class ClockRenderer {
         if (showSunMoon) {
             drawSunAndMoon(canvas, centerX, centerY, radius, sunRad, moonRad, moonPhaseValue, sunElevation)
         }
+
+        // Tasks cover the clock, sleep, wind-down and grogginess, but the now hand stays above them.
+        if (showTasks) drawTaskWedges(canvas, dial, plannedTasks)
 
         // 11. Draw Clock Hand
         val hour = now.get(Calendar.HOUR_OF_DAY)
@@ -701,6 +695,24 @@ class ClockRenderer {
             val colorStr = if (event.isAllDay) "#8C7EFF" else eventColors[i % eventColors.size]
             eventPaint.color = Color.parseColor(colorStr)
             canvas.drawArc(rect, startAngle.toFloat(), sweepAngle.toFloat(), false, eventPaint)
+        }
+    }
+
+    private fun drawTaskWedges(canvas: Canvas, dial: ClockDial, tasks: List<PlannedTask>) {
+        val bounds = RectF(dial.centerX - dial.radius, dial.centerY - dial.radius,
+            dial.centerX + dial.radius, dial.centerY + dial.radius)
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+        val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f }
+        for (task in tasks.filter { it.isValid }) {
+            fill.color = task.color
+            fill.alpha = 170
+            edge.color = task.color
+            edge.alpha = 255
+            val startAngle = task.startMinute / 4f - 270f
+            val sweep = task.durationMinutes / 4f
+            // useCenter pins both radial edges to the clock's center.
+            canvas.drawArc(bounds, startAngle, sweep, true, fill)
+            canvas.drawArc(bounds, startAngle, sweep, true, edge)
         }
     }
 
