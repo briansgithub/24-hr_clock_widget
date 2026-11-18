@@ -230,14 +230,16 @@ object CalendarWindow {
 object CalendarSelection {
     /**
      * Calendar row IDs are local to one device. After a backup restore onto a new phone, or after
-     * an account is removed and added again, the saved IDs can all point at calendars that no
-     * longer exist, which hides every event. Keep the saved IDs that still exist; if none do,
-     * fall back to the primary calendars, as on first run. An empty choice stays empty.
+     * an account is removed and added again, the saved IDs can point at calendars that no longer
+     * exist, or at a different calendar that is hidden and not synced here, which hides every
+     * event. Keep the saved IDs that still exist. If none of them is a visible calendar, the
+     * choice can never show anything, so fall back to the primary calendars, as on first run.
+     * An empty choice stays empty.
      */
     fun reconcile(enabled: Set<Long>, calendars: List<CalendarInfo>): Set<Long> {
         if (enabled.isEmpty() || calendars.isEmpty()) return enabled
-        val existing = calendars.map { it.id }.toSet()
-        val kept = enabled.filter { it in existing }.toSet()
-        return kept.ifEmpty { calendars.filter { it.isPrimary }.map { it.id }.toSet() }
+        val kept = calendars.filter { it.id in enabled }
+        if (kept.any { it.isVisible }) return kept.map { it.id }.toSet()
+        return calendars.filter { it.isPrimary }.map { it.id }.toSet().ifEmpty { kept.map { it.id }.toSet() }
     }
 }

@@ -40,7 +40,7 @@ class CalendarWindowTest {
         assertTrue(CalendarWindow.build(events, at(9), zone).none { it.title == "holiday" })
     }
 
-    private fun cal(id: Long, primary: Boolean = false) = CalendarInfo(id, "c$id", "a", primary, 0, true)
+    private fun cal(id: Long, primary: Boolean = false, visible: Boolean = true) = CalendarInfo(id, "c$id", "a", primary, 0, visible)
 
     @Test fun savedCalendarIdsFromAnotherPhoneFallBackToPrimaries() {
         assertEquals(setOf(7L), CalendarSelection.reconcile(setOf(1L, 2L), listOf(cal(7, primary = true), cal(8))))
@@ -48,6 +48,13 @@ class CalendarWindowTest {
 
     @Test fun savedCalendarIdsThatStillExistAreKept() {
         assertEquals(setOf(8L), CalendarSelection.reconcile(setOf(8L, 99L), listOf(cal(7, primary = true), cal(8))))
+    }
+
+    @Test fun aChoiceOfOnlyHiddenCalendarsFallsBackToPrimaries() {
+        // The Pixel 9 Pro had only a hidden, unsynced calendar selected, so Personal never showed.
+        val phone = listOf(cal(7, primary = true), cal(15, visible = false))
+        assertEquals(setOf(7L), CalendarSelection.reconcile(setOf(15L), phone))
+        assertEquals(setOf(7L, 15L), CalendarSelection.reconcile(setOf(7L, 15L), phone))
     }
 
     @Test fun choosingNoCalendarsIsRespected() {
