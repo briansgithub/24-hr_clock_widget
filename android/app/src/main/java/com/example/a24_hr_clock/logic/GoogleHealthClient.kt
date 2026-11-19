@@ -23,7 +23,9 @@ class GoogleHealthClient(
     private val requireReconnect: suspend () -> Unit = {},
     private val client: OkHttpClient = OkHttpClient.Builder().callTimeout(20, java.util.concurrent.TimeUnit.SECONDS).build(),
     private val base: String = "https://health.googleapis.com/v4",
-    private val now: () -> Long = System::currentTimeMillis
+    private val now: () -> Long = System::currentTimeMillis,
+    /** Receives field names only (never values) so the stage payload can be checked on a device. */
+    private val shapeLog: (String) -> Unit = {}
 ) : HealthProvider {
     private val json = Json { ignoreUnknownKeys = true }
     suspend fun request(path: String, params: Map<String, String> = emptyMap()): JsonObject {
@@ -95,8 +97,18 @@ class GoogleHealthClient(
     }
 
     override suspend fun sleep(start: String, end: String): SleepFetchResult = try {
-        GoogleHealthParser.sleep(points("sleep", "sleep.interval.civil_end_time", start, LocalDate.parse(end).plusDays(1).toString()))
+        val points = points("sleep", "sleep.interval.civil_end_time", start, LocalDate.parse(end).plusDays(1).toString())
+        runCatching { shapeLog(sleepShape(points)) }
+        GoogleHealthParser.sleep(points)
     } catch (e: FitbitRequestException) { SleepFetchResult.Failed(e.category, e.retryAt) }
+
+    private fun sleepShape(points: List<JsonObject>): String {
+        val sleeps = points.mapNotNull { it["sleep"] as? JsonObject }
+        fun keys(items: List<JsonObject>) = items.flatMap { it.keys }.toSortedSet().joinToString(",")
+        val stages = sleeps.flatMap { (it["stages"] as? JsonArray).orEmpty().mapNotNull { s -> s as? JsonObject } }
+        val shorts = sleeps.flatMap { (it["shortAwakenings"] as? JsonArray).orEmpty().mapNotNull { s -> s as? JsonObject } }
+        return "points=${points.size} sleep{${keys(sleeps)}} stages[]{${keys(stages)}} shortAwakenings[]{${keys(shorts)}}"
+    }
 
     override suspend fun heartRate(start: String, end: String): List<GoogleHealthParser.MinuteHeartRate> = try {
         GoogleHealthParser.heartRate(points("heart-rate", "heart_rate.sample_time.physical_time", start, end))
