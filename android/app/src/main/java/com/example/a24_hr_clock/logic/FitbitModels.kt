@@ -36,7 +36,9 @@ data class SleepLogEntry(
     val startUtcOffset: String? = null,
     val endUtcOffset: String? = null,
     val isNap: Boolean = false,
-    val processed: Boolean = true
+    val processed: Boolean = true,
+    /** Awake stretches from the stage list; null when the log has no usable stage data. */
+    val awakePeriods: List<AwakePeriod>? = null
 )
 
 @Serializable

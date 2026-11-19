@@ -142,6 +142,14 @@ class ClockRenderer {
         isAntiAlias = true
     }
 
+    /** Awake periods: a bold red line on the sleep wedge's rim. Width scales with the dial. */
+    private val awakeMarkerPaint = Paint().apply {
+        color = Color.parseColor("#FF2A2A")
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.BUTT
+        isAntiAlias = true
+    }
+
     private val grogginessArcPaint = Paint().apply {
         color = Color.parseColor("#60BBBBBB") // Solid light gray with transparency
         style = Paint.Style.FILL
@@ -1225,6 +1233,7 @@ class ClockRenderer {
         showTotalBedtime: Boolean,
         opacity: Float
     ) {
+        val markers = mutableListOf<com.example.a24_hr_clock.logic.AwakeArc>()
         targetLogs.forEach { log ->
             if (!includeNaps && !log.isMainSleep) return@forEach
             
@@ -1251,8 +1260,19 @@ class ClockRenderer {
                 sleepArcPaint.color = if (log.isMainSleep) Color.parseColor("#6A5ACD") else Color.parseColor("#8A7AED")
                 sleepArcPaint.alpha = (255 * opacity.coerceIn(0f, 1f)).toInt()
                 canvas.drawArc(rect, sleepStartAngle.toFloat(), sleepSweep.toFloat(), true, sleepArcPaint)
+                // In time-asleep mode the wedge slides off the clock times, so awake times would land wrong: skip them.
+                if (showTotalBedtime) log.awakePeriods?.let {
+                    markers += com.example.a24_hr_clock.logic.AwakePeriods.arcs(sH, sleepSweep, it)
+                }
             } catch (e: Exception) {}
         }
+        if (markers.isEmpty()) return
+        // Drawn after every wedge so a nap wedge never covers a marker; the stroke straddles the rim.
+        val rimR = radius * 0.85f
+        val rect = RectF(cx - rimR, cy - rimR, cx + rimR, cy + rimR)
+        awakeMarkerPaint.strokeWidth = maxOf(5f, radius * 0.055f)
+        awakeMarkerPaint.alpha = (255 * opacity.coerceIn(0f, 1f)).toInt()
+        markers.forEach { canvas.drawArc(rect, it.startDeg, it.sweepDeg, false, awakeMarkerPaint) }
     }
 
     private fun drawGrogginessArc(

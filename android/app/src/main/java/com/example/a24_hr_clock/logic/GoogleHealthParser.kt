@@ -40,11 +40,12 @@ object GoogleHealthParser {
             val flag = (metadata["mainSleep"] ?: metadata["main"])?.jsonPrimitive?.boolean
             flags[name] = flag
             if (sleep["type"]?.jsonPrimitive?.content == "STAGES") staged.add(name)
+            val awake = awakePeriods(sleep, Instant.parse(startInstant), duration / 1000)
             SleepLogEntry(end.toLocalDate().toString(), minutes, flag == true, (duration / 60_000).toInt(),
                 start.format(civilFormat), end.format(civilFormat), duration, name,
                 provider = "google_health", startInstant = startInstant, endInstant = endInstant,
                 startUtcOffset = startOffset, endUtcOffset = endOffset,
-                isNap = metadata["nap"]?.jsonPrimitive?.boolean ?: false, processed = processed)
+                isNap = metadata["nap"]?.jsonPrimitive?.boolean ?: false, processed = processed, awakePeriods = awake)
         }
         val inferred = logs.groupBy { it.dateOfSleep }.values.flatMap { day ->
             val unknown = day.filter { flags[it.sourceRecordId] == null }
@@ -56,6 +57,15 @@ object GoogleHealthParser {
         }
         if (pending) SleepFetchResult.Pending(inferred, 3000) else SleepFetchResult.Complete(inferred)
     } catch (_: Exception) { SleepFetchResult.Failed(SyncError.DECODING) }
+
+    /** A bad or missing stage list costs only the awake markers, never the night. */
+    private fun awakePeriods(sleep: JsonObject, start: Instant, durationSec: Long): List<AwakePeriod>? = runCatching {
+        val stages = sleep["stages"]?.jsonArray ?: return@runCatching null
+        AwakePeriods.normalize(stages.map { it.jsonObject }.filter { AwakePeriods.isAwake(it.text("type")) }.map {
+            java.time.Duration.between(start, Instant.parse(it.text("startTime"))).seconds to
+                java.time.Duration.between(start, Instant.parse(it.text("endTime"))).seconds
+        }, durationSec)
+    }.getOrNull()
 
     data class MinuteHeartRate(val instant: Long, val date: String, val point: HeartRatePointEntry)
     fun heartRate(points: List<JsonObject>): List<MinuteHeartRate> {

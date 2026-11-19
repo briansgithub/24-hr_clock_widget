@@ -123,7 +123,7 @@ class FitbitStore(context: Context) : FitbitCredentialStore {
                 p[stringPreferencesKey("legacy_fitbit_sleep_logs")] = json.encodeToString(this.logs(p))
             }
             p[authKey] = json.encodeToString(credentials)
-            p[logsKey] = json.encodeToString(logs)
+            p[logsKey] = json.encodeToString(AwakePeriods.trim(logs))
             p[statusKey] = json.encodeToString(SleepSyncStatus(lastAttemptAt = now, lastVerifiedAt = if (processingRetryAt > 0) status(p).lastVerifiedAt else now, lastDataChangedAt = now,
                 phase = if (processingRetryAt > 0) SleepSyncPhase.PROCESSING else SleepSyncPhase.CURRENT,
                 nextRetryAt = processingRetryAt, serverRetryAt = processingRetryAt, lastSavedAt = now,
@@ -158,7 +158,8 @@ class FitbitSession private constructor(context: Context) {
     val store = FitbitStore(context)
     val http = FitbitHttpClient(store, com.example.a24_hr_clock.BuildConfig.FITBIT_CLIENT_ID, com.example.a24_hr_clock.BuildConfig.FITBIT_CLIENT_SECRET)
     val googleAuth = GoogleHealthAuthorization(context, store)
-    val google = GoogleHealthClient(googleAuth, store::deferUntil, store::retryAt, { store.requireReconnectForProvider("google_health") })
+    val google = GoogleHealthClient(googleAuth, store::deferUntil, store::retryAt, { store.requireReconnectForProvider("google_health") },
+        shapeLog = { android.util.Log.i("HealthShape", it) })
     companion object {
         @Volatile private var instance: FitbitSession? = null
         fun get(context: Context): FitbitSession = instance ?: synchronized(this) {
