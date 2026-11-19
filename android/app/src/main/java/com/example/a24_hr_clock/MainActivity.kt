@@ -91,9 +91,17 @@ class MainActivity : ComponentActivity() {
             try {
                 finishHealthAuthorization(FitbitSession.get(this).googleAuth.client.getAuthorizationResultFromIntent(result.data!!))
             } catch (e: com.google.android.gms.common.api.ApiException) {
-                connectNotCompleted("Google sign-in returned an error (status ${e.statusCode})")
+                connectNotCompleted(com.example.a24_hr_clock.logic.HealthConnectRules.signInFailure(result.resultCode, e.statusCode))
             }
-        } else connectNotCompleted("Google sign-in was closed before access was granted")
+        } else {
+            // Google returns a refusal as RESULT_CANCELED with its status in the data; read it rather than guess.
+            val status = result.data?.let { data ->
+                try { FitbitSession.get(this).googleAuth.client.getAuthorizationResultFromIntent(data); null }
+                catch (e: com.google.android.gms.common.api.ApiException) { e.statusCode }
+            }
+            android.util.Log.w("GoogleHealthAuth", "Sign-in result: code=${result.resultCode} status=$status extras=${result.data?.extras?.keySet()}")
+            connectNotCompleted(com.example.a24_hr_clock.logic.HealthConnectRules.signInFailure(result.resultCode, status))
+        }
     }
 
     val requestPermissionLauncher = registerForActivityResult(

@@ -135,6 +135,16 @@ object HealthIdentityRules {
 }
 
 object HealthConnectRules {
+    /** Plain words for a sign-in that did not come back with access, keeping Google's status code. */
+    fun signInFailure(resultCode: Int, status: Int?): String = when (status) {
+        null -> "Google sign-in was closed before access was granted (result $resultCode, no status)"
+        CommonStatusCodes.DEVELOPER_ERROR ->
+            "Google rejected this app's signing key or OAuth client (status 10). Register this build's SHA-1 in Google Cloud"
+        CommonStatusCodes.CANCELED, 12501 -> "Google sign-in was cancelled (status $status)"
+        CommonStatusCodes.NETWORK_ERROR -> "Google sign-in could not reach the network (status 7)"
+        else -> "Google sign-in failed (status $status)"
+    }
+
     /**
      * Sleep to save when a verified login connects, and when to check again if Google is still
      * processing some of it (0 = complete). Null only when sleep could not be read at all.

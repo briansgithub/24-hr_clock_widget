@@ -60,4 +60,12 @@ class HealthIdentityRulesTest {
         assertEquals(0L, status.connectAttemptAt)
         assertEquals("", status.connectResult)
     }
+
+    @Test fun aRefusedSignInKeepsGooglesStatusCode() {
+        // A signing key Google doesn't know closes sign-in at once; "closed" alone hid that.
+        assertTrue(HealthConnectRules.signInFailure(0, 10).contains("SHA-1"))
+        assertEquals("Google sign-in was cancelled (status 16)", HealthConnectRules.signInFailure(0, 16))
+        assertTrue(HealthConnectRules.signInFailure(0, null).contains("no status"))
+        assertEquals("Google sign-in failed (status 8)", HealthConnectRules.signInFailure(0, 8))
+    }
 }
