@@ -49,6 +49,8 @@ fun PlanScreen(
     canRedo: Boolean = false,
     onUndo: () -> Unit = {},
     onRedo: () -> Unit = {},
+    dailyClearEnabled: Boolean = false,
+    onDailyClearChange: (Boolean) -> Unit = {},
     clock: @Composable (Modifier) -> Unit
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
@@ -66,6 +68,13 @@ fun PlanScreen(
         }
         item {
             clock(Modifier.fillMaxWidth().height(280.dp))
+        }
+        item {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Clear all tasks daily at 6:00 am", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                Switch(checked = dailyClearEnabled, onCheckedChange = onDailyClearChange,
+                    modifier = Modifier.testTag("plan-daily-clear"))
+            }
         }
         item {
             OutlinedCard(modifier = Modifier.fillMaxWidth().testTag("task-table")) {
