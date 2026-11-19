@@ -37,6 +37,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.example.a24_hr_clock.logic.ClockDial
+import com.example.a24_hr_clock.logic.PlanTime
 import com.example.a24_hr_clock.logic.PlannedTask
 import java.time.LocalTime
 
@@ -82,8 +83,9 @@ fun PlanScreen(
                     .padding(horizontal = 8.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Task", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
-                    Text("Start", Modifier.width(80.dp), style = MaterialTheme.typography.labelMedium)
-                    Text("Dur.", Modifier.width(64.dp), style = MaterialTheme.typography.labelMedium)
+                    Text("Start", Modifier.width(TIME_CELL), style = MaterialTheme.typography.labelMedium)
+                    Text("End", Modifier.width(TIME_CELL), style = MaterialTheme.typography.labelMedium)
+                    Text("Dur.", Modifier.width(DURATION_CELL), style = MaterialTheme.typography.labelMedium)
                     Spacer(Modifier.width(48.dp))
                 }
                 tasks.forEach { task ->
@@ -125,9 +127,15 @@ private fun TaskTableRow(task: PlannedTask, onSave: (PlannedTask) -> Unit, onDel
                     "task-name-${task.id}", Modifier.fillMaxWidth(), dirty && name.isBlank(),
                     color = Color(task.color))
             }
-            StartCell(minute ?: task.startMinute, { start = PlannedTask.formatStartTime(it) },
+            // Start keeps the duration; End changes the duration; Duration moves the end.
+            val startNow = minute ?: task.startMinute
+            val durationNow = minutes ?: task.durationMinutes
+            StartCell(startNow, { start = PlannedTask.formatStartTime(it) },
                 "task-start-${task.id}", "Start time for ${task.name}")
-            DurationCell(minutes ?: task.durationMinutes, { duration = it.toString() },
+            TimeCell("End time", PlanTime.endMinute(startNow, durationNow),
+                { duration = PlanTime.durationTo(startNow, it).toString() },
+                "task-end-${task.id}", "End time for ${task.name}")
+            DurationCell(durationNow, { duration = it.toString() },
                 "task-duration-${task.id}", "Duration for ${task.name}")
             IconButton(onClick = { onDelete(task.id) }) {
                 Icon(Icons.Default.Delete, contentDescription = "Delete ${task.name}")
@@ -171,8 +179,12 @@ private fun NewTaskRow(onSave: (PlannedTask) -> Unit) {
     Column(Modifier.fillMaxWidth().testTag("new-task-row").padding(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TableCell(name, { name = it }, "New task", "New task name", "new-task-name", Modifier.weight(1f))
-            StartCell(minute ?: 0, { start = PlannedTask.formatStartTime(it) }, "new-task-start", "New task start time")
-            DurationCell(minutes ?: 60, { duration = it.toString() }, "new-task-duration", "New task duration")
+            val startNow = minute ?: 0
+            val durationNow = minutes ?: 60
+            StartCell(startNow, { start = PlannedTask.formatStartTime(it) }, "new-task-start", "New task start time")
+            TimeCell("End time", PlanTime.endMinute(startNow, durationNow),
+                { duration = PlanTime.durationTo(startNow, it).toString() }, "new-task-end", "New task end time")
+            DurationCell(durationNow, { duration = it.toString() }, "new-task-duration", "New task duration")
             FilledTonalIconButton(onClick = { add() }, enabled = valid) {
                 Icon(Icons.Default.Add, contentDescription = "Add task")
             }
@@ -202,11 +214,18 @@ private fun SelectorCell(value: String, tag: String, description: String, width:
     }
 }
 
+private val TIME_CELL = 76.dp
+private val DURATION_CELL = 56.dp
+
 @Composable
-private fun StartCell(minute: Int, onChange: (Int) -> Unit, tag: String, description: String) {
+private fun StartCell(minute: Int, onChange: (Int) -> Unit, tag: String, description: String) =
+    TimeCell("Start time", minute, onChange, tag, description)
+
+@Composable
+private fun TimeCell(title: String, minute: Int, onChange: (Int) -> Unit, tag: String, description: String) {
     var open by rememberSaveable { mutableStateOf(false) }
-    SelectorCell(startLabel(minute), tag, description, 80.dp) { open = true }
-    if (open) DialPickerDialog("Start time", minute, false, { open = false }) {
+    SelectorCell(startLabel(minute), tag, description, TIME_CELL) { open = true }
+    if (open) DialPickerDialog(title, minute, false, { open = false }) {
         onChange(it)
         open = false
     }
@@ -215,8 +234,8 @@ private fun StartCell(minute: Int, onChange: (Int) -> Unit, tag: String, descrip
 @Composable
 private fun DurationCell(minutes: Int, onChange: (Int) -> Unit, tag: String, description: String) {
     var open by rememberSaveable { mutableStateOf(false) }
-    SelectorCell("%d:%02d".format(java.util.Locale.US, minutes / 60, minutes % 60), tag, description, 64.dp) { open = true }
-    if (open) DialPickerDialog("Duration", minutes, true, { open = false }) {
+    SelectorCell(PlanTime.formatDuration(minutes), tag, description, DURATION_CELL) { open = true }
+    if (open) DurationPickerDialog(minutes, { open = false }) {
         onChange(it)
         open = false
     }
@@ -224,32 +243,17 @@ private fun DurationCell(minutes: Int, onChange: (Int) -> Unit, tag: String, des
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DialPickerDialog(title: String, initial: Int, duration: Boolean,
+private fun DialPickerDialog(title: String, initial: Int, is24Hour: Boolean,
                              onDismiss: () -> Unit, onSet: (Int) -> Unit) {
     val time = rememberTimePickerState(initialHour = initial / 60 % 24,
-        initialMinute = initial % 60, is24Hour = duration)
-    var fullDay by rememberSaveable { mutableStateOf(duration && initial == 1440) }
-    val selected = if (fullDay) 1440 else time.hour * 60 + time.minute
+        initialMinute = initial % 60, is24Hour = is24Hour)
     AlertDialog(onDismissRequest = onDismiss, title = { Text(title) },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                if (fullDay) {
-                    Text("24:00", style = MaterialTheme.typography.displayMedium,
-                        modifier = Modifier.padding(24.dp))
-                } else {
-                    TimePicker(time, modifier = Modifier.testTag("selector-clock"))
-                }
-                if (duration) {
-                    FilterChip(selected = fullDay, onClick = { fullDay = !fullDay },
-                        label = { Text("24 hours") }, modifier = Modifier.testTag("full-day-duration"))
-                    if (selected == 0) Text("Choose at least one minute.", color = MaterialTheme.colorScheme.error)
-                }
+                TimePicker(time, modifier = Modifier.testTag("selector-clock"))
             }
         },
-        confirmButton = {
-            TextButton(enabled = !duration || selected in 1..1440,
-                onClick = { onSet(selected) }) { Text("Set") }
-        },
+        confirmButton = { TextButton(onClick = { onSet(time.hour * 60 + time.minute) }) { Text("Set") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
 }
 
@@ -295,7 +299,7 @@ private fun ValidationHint(nameMissing: Boolean, invalidTime: Boolean, invalidDu
     val hint = when {
         nameMissing -> "Enter a task name."
         invalidTime -> "Start time must be HH:mm, from 00:00 to 23:59."
-        invalidDuration -> "Duration must be 1–1440 minutes."
+        invalidDuration -> "Duration must be 0:01 to 24:00."
         else -> null
     }
     if (hint != null) Text(hint, color = MaterialTheme.colorScheme.error,

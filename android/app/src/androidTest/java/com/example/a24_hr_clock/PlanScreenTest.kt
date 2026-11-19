@@ -61,6 +61,10 @@ class PlanScreenTest {
         }
         compose.onNodeWithTag("new-task-start").assertTextEquals("1:30 AM")
         val id = tasks.single().id
+        compose.onNodeWithTag("task-end-$id").assertTextEquals("1:30 AM") // 23:30 + 2 h wraps
+        selectTime("task-end-$id", "2", "00", "AM")
+        compose.onNodeWithTag("task-duration-$id").assertTextEquals("2:30")
+        compose.onNodeWithTag("cancel-task-$id").performClick()
         val color = tasks.single().color
         compose.onNodeWithTag("task-duration-$id").performClick()
         chooseDial(3, 0, true)
@@ -91,13 +95,14 @@ class PlanScreenTest {
         compose.onNodeWithTag("new-task-row").assertExists()
         compose.onNodeWithText("Start").assertExists()
         compose.onNodeWithText("Dur.").assertExists()
+        compose.onNodeWithText("End").assertExists()
         compose.onNodeWithText("Drag a wedge around the clock to change its start time. Durations stay fixed.").assertDoesNotExist()
         compose.onNodeWithText("Tasks stay visible in this editor. Choose Home and Lock Screen visibility in Display.").assertDoesNotExist()
         compose.onNodeWithText("No tasks yet. Add a task with a start time and estimated duration.").assertDoesNotExist()
     }
 
     @Test fun clockDialogsShowDials() {
-        compose.setContent { MaterialTheme { PlanScreen(emptyList(), {}, {}, {}) } }
+        compose.setContent { MaterialTheme { PlanScreen(emptyList(), {}, {}, clock = {}) } }
         compose.waitForIdle()
         compose.onNodeWithTag("new-task-start").performClick()
         val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
@@ -109,9 +114,13 @@ class PlanScreenTest {
         screenshot("start-dial.png")
         compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithTag("new-task-duration").performClick()
-        compose.onNodeWithTag("selector-clock").assertExists()
+        compose.onNodeWithTag("duration-dial").assertExists()
+        compose.onNodeWithContentDescription("12 hours").assertExists()
         screenshot("duration-dial.png")
-        compose.onNodeWithTag("full-day-duration").performClick()
+        compose.onNodeWithTag("duration-mode").performClick()
+        compose.onNodeWithTag("duration-typed").performTextReplacement("24:01")
+        compose.onNodeWithText("Set").assertIsNotEnabled()
+        compose.onNodeWithTag("duration-typed").performTextReplacement("24:00")
         compose.onNodeWithText("Set").performClick()
         compose.onNodeWithTag("new-task-duration").assertTextEquals("24:00")
     }
