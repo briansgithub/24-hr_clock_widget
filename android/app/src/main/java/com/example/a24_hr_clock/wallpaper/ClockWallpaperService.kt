@@ -255,6 +255,7 @@ class ClockWallpaperService : WallpaperService() {
         override fun onVisibilityChanged(visible: Boolean) {
             if (visible) {
                 updateLockState()
+                if (!isPreview) DailyClearScheduler.launchCatchUp(applicationContext)
                 if (zoomSettled) startRendering()
             } else {
                 touchedTask = null
