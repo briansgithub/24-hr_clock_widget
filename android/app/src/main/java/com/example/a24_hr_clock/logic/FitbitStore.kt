@@ -115,7 +115,7 @@ class FitbitStore(context: Context) : FitbitCredentialStore {
     }
     suspend fun setRetry(time: Long, count: Int) { data.edit { it[statusKey] = json.encodeToString(status(it).copy(nextRetryAt = time, retryCount = count)) } }
     /** Switch credentials/cache/status together; retain the last legacy snapshot for recovery. */
-    suspend fun activateGoogle(credentials: FitbitCredentials, logs: List<SleepLogEntry>, now: Long) {
+    suspend fun activateGoogle(credentials: FitbitCredentials, logs: List<SleepLogEntry>, now: Long, processingRetryAt: Long = 0) {
         require(credentials.provider == "google_health" && credentials.accountId.isNotBlank())
         data.edit { p ->
             if (auth(p).provider == "fitbit") {
@@ -124,7 +124,10 @@ class FitbitStore(context: Context) : FitbitCredentialStore {
             }
             p[authKey] = json.encodeToString(credentials)
             p[logsKey] = json.encodeToString(logs)
-            p[statusKey] = json.encodeToString(SleepSyncStatus(lastAttemptAt = now, lastVerifiedAt = now, lastDataChangedAt = now, phase = SleepSyncPhase.CURRENT, lastSavedAt = now))
+            p[statusKey] = json.encodeToString(SleepSyncStatus(lastAttemptAt = now, lastVerifiedAt = if (processingRetryAt > 0) status(p).lastVerifiedAt else now, lastDataChangedAt = now,
+                phase = if (processingRetryAt > 0) SleepSyncPhase.PROCESSING else SleepSyncPhase.CURRENT,
+                nextRetryAt = processingRetryAt, serverRetryAt = processingRetryAt, lastSavedAt = now,
+                connectAttemptAt = now, connectResult = "Connected"))
             p.remove(retryKey); p.remove(notifiedKey)
             p.remove(doublePreferencesKey("bathyphase"))
         }
@@ -143,6 +146,8 @@ class FitbitStore(context: Context) : FitbitCredentialStore {
         data.edit { p -> attempt = p[oauthKey]?.let { try { json.decodeFromString<OAuthAttempt>(it) } catch (_: Exception) { null } }; p.remove(oauthKey) }
         return attempt
     }
+    /** Connect failures leave the login unchanged; only the reason is kept for the Sleep tab. */
+    suspend fun recordConnectResult(result: String, now: Long) { data.edit { it[statusKey] = json.encodeToString(status(it).copy(connectAttemptAt = now, connectResult = result)) } }
     suspend fun clearAfterLogout() { data.edit { it.remove(oauthKey); it.remove(retryKey); it[statusKey] = json.encodeToString(status(it).copy(phase = SleepSyncPhase.DISCONNECTED, error = null, nextRetryAt = 0)) } }
 }
 

@@ -90,9 +90,17 @@ class MainActivity : ComponentActivity() {
         if (result.resultCode == RESULT_OK && result.data != null) {
             try {
                 finishHealthAuthorization(FitbitSession.get(this).googleAuth.client.getAuthorizationResultFromIntent(result.data!!))
-            } catch (_: com.google.android.gms.common.api.ApiException) {
-                Toast.makeText(this, "Google Health connection was not completed. Cached sleep remains visible.", Toast.LENGTH_LONG).show()
+            } catch (e: com.google.android.gms.common.api.ApiException) {
+                connectNotCompleted(com.example.a24_hr_clock.logic.HealthConnectRules.signInFailure(result.resultCode, e.statusCode))
             }
+        } else {
+            // Google returns a refusal as RESULT_CANCELED with its status in the data; read it rather than guess.
+            val status = result.data?.let { data ->
+                try { FitbitSession.get(this).googleAuth.client.getAuthorizationResultFromIntent(data); null }
+                catch (e: com.google.android.gms.common.api.ApiException) { e.statusCode }
+            }
+            android.util.Log.w("GoogleHealthAuth", "Sign-in result: code=${result.resultCode} status=$status extras=${result.data?.extras?.keySet()}")
+            connectNotCompleted(com.example.a24_hr_clock.logic.HealthConnectRules.signInFailure(result.resultCode, status))
         }
     }
 
@@ -219,14 +227,22 @@ class MainActivity : ComponentActivity() {
                 val result = FitbitSession.get(this@MainActivity).googleAuth.begin()
                 if (result.hasResolution()) healthAuthorization.launch(androidx.activity.result.IntentSenderRequest.Builder(result.pendingIntent!!.intentSender).build())
                 else finishHealthAuthorization(result)
-            } catch (_: FitbitRequestException) {
+            } catch (e: FitbitRequestException) {
+                FitbitSession.get(this@MainActivity).store.recordConnectResult("Failed: Google sign-in is unavailable (${e.category})", System.currentTimeMillis())
                 Toast.makeText(this@MainActivity, "Google Health authorization is unavailable. Cached sleep remains visible.", Toast.LENGTH_LONG).show()
             }
         }
     }
 
+    private fun connectNotCompleted(reason: String) {
+        android.util.Log.w("GoogleHealthAuth", "Connect not completed: $reason")
+        Toast.makeText(this, "Google Health connection was not completed. Cached sleep remains visible.", Toast.LENGTH_LONG).show()
+        lifecycleScope.launch { FitbitSession.get(this@MainActivity).store.recordConnectResult("Failed: $reason", System.currentTimeMillis()) }
+    }
+
     private fun finishHealthAuthorization(result: com.google.android.gms.auth.api.identity.AuthorizationResult) {
-        lifecycleScope.launch {
+        // The checks take a few network calls; leaving the app or locking the phone must not cancel them halfway.
+        lifecycleScope.launch(kotlinx.coroutines.NonCancellable) {
             try {
                 FitbitSession.get(this@MainActivity).googleAuth.complete(result)
                 Toast.makeText(this@MainActivity, "Google Health connected. Sleep updated.", Toast.LENGTH_SHORT).show()
@@ -235,6 +251,10 @@ class MainActivity : ComponentActivity() {
             } catch (e: FitbitRequestException) {
                 android.util.Log.w("GoogleHealthAuth", "Connection verification failed: category=${e.category}")
                 Toast.makeText(this@MainActivity, "Connection could not be verified (${e.category}). Cached sleep remains visible.", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                android.util.Log.e("GoogleHealthAuth", "Connect crashed: ${e.javaClass.simpleName}")
+                FitbitSession.get(this@MainActivity).store.recordConnectResult("Failed: unexpected ${e.javaClass.simpleName}", System.currentTimeMillis())
+                Toast.makeText(this@MainActivity, "Google Health connection failed. Cached sleep remains visible.", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -379,6 +399,10 @@ fun MainScreen(
                 enabledIds = primaryIds.ifEmpty { calendarSettings.enabledIds },
                 initialized = true
             ))
+        } else if (calendarSettings.initialized && ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
+            // Saved IDs from another phone (backup restore) or a re-added account no longer exist.
+            val reconciled = CalendarSelection.reconcile(calendarSettings.enabledIds, calendarManager.getAllCalendars())
+            if (reconciled != calendarSettings.enabledIds) settingsManager.updateCalendarSettings(calendarSettings.copy(enabledIds = reconciled))
         }
     }
 
@@ -1239,6 +1263,7 @@ fun SleepLogScreen(
         fun stamp(time: Long) = if (time == 0L) "Never" else java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(time))
         Text("Last checked: ${stamp(syncStatus.lastAttemptAt)}")
         Text("Last successful check: ${stamp(syncStatus.lastVerifiedAt)}")
+        if (syncStatus.connectAttemptAt > 0) Text("Last connect: ${stamp(syncStatus.connectAttemptAt)}, ${syncStatus.connectResult}")
         Text("Latest sleep: ${sleepLogs.maxByOrNull { it.endTime }?.let { "${it.dateOfSleep}, ${it.startTime.substringAfter('T').take(5)} to ${it.endTime.substringAfter('T').take(5)}" } ?: "None"}")
         Text("Sleep records last changed: ${stamp(syncStatus.lastDataChangedAt)}")
         Text("Push delivery: ${pushStatus.message}")

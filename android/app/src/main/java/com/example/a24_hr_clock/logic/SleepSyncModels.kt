@@ -22,7 +22,10 @@ data class SleepSyncStatus(
     val nextRetryAt: Long = 0,
     val retryCount: Int = 0,
     val serverRetryAt: Long = 0,
-    val lastSavedAt: Long = 0
+    val lastSavedAt: Long = 0,
+    /** Outcome of the last Connect Google Health tap, kept so a failure outlives its toast and logcat. */
+    val connectAttemptAt: Long = 0,
+    val connectResult: String = ""
 ) {
     fun opacity(now: Long, reconnectRequired: Boolean = false): Float = when {
         reconnectRequired || phase == SleepSyncPhase.DISCONNECTED || error == SyncError.AUTH_REQUIRED || lastVerifiedAt == 0L -> .3f
