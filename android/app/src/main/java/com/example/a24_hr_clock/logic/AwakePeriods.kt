@@ -14,7 +14,7 @@ object AwakePeriods {
     /** Wakes closer together than this read as one period. */
     const val MERGE_GAP_SEC = 60
     /** A 1-minute wake is a quarter degree; draw at least this much so it shows. */
-    const val MIN_SWEEP_DEG = 1.2f
+    const val MIN_SWEEP_DEG = 2.0f
 
     /** Clamp raw (startSec, endSec) intervals to the log, sort them and merge near neighbours. */
     fun normalize(raw: List<Pair<Long, Long>>, logDurationSec: Long): List<AwakePeriod> {

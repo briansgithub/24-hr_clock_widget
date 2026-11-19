@@ -93,8 +93,8 @@ class AwakePeriodsTest {
         assertEquals(3, arcs.size)
         assertEquals(60f, arcs[0].startDeg, 1e-4f)                       // pinned to wedge start
         assertEquals(180f, arcs[2].startDeg + arcs[2].sweepDeg, 1e-4f)   // pinned to wedge end
-        // Two 1-min wakes 1 min apart each grow to 1.2 deg and overlap: one arc.
-        assertEquals(0.5f + 1.2f, arcs[1].sweepDeg, 1e-3f)
+        // Two 1-min wakes 1 min apart each grow to the minimum and overlap: one arc.
+        assertEquals(0.5f + AwakePeriods.MIN_SWEEP_DEG, arcs[1].sweepDeg, 1e-3f)
     }
     @Test fun arcsWrapPastMidnightHours() {
         // A nap starting 23:30 in a wedge that started at hour 23.5: angle keeps increasing past 90.

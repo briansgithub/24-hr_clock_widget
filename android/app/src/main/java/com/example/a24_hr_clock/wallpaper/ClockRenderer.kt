@@ -1270,7 +1270,7 @@ class ClockRenderer {
         // Drawn after every wedge so a nap wedge never covers a marker; the stroke straddles the rim.
         val rimR = radius * 0.85f
         val rect = RectF(cx - rimR, cy - rimR, cx + rimR, cy + rimR)
-        awakeMarkerPaint.strokeWidth = maxOf(4f, radius * 0.035f)
+        awakeMarkerPaint.strokeWidth = maxOf(5f, radius * 0.055f)
         awakeMarkerPaint.alpha = (255 * opacity.coerceIn(0f, 1f)).toInt()
         markers.forEach { canvas.drawArc(rect, it.startDeg, it.sweepDeg, false, awakeMarkerPaint) }
     }
