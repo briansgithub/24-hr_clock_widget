@@ -55,22 +55,36 @@ class GoogleHealthAuthorization(context: Context, private val store: FitbitStore
     }
 
     suspend fun complete(result: AuthorizationResult) = mutex.withLock {
-        val token = result.accessToken?.takeIf { it.isNotBlank() } ?: throw FitbitRequestException(SyncError.AUTH_REQUIRED)
-        if (!result.grantedScopes.containsAll(scopes.map { it.scopeUri })) throw FitbitRequestException(SyncError.AUTH_REQUIRED)
+        val now = System.currentTimeMillis()
+        // Each refusal is logged and kept in the sync status: a toast and logcat both vanish too fast to debug.
+        suspend fun fail(reason: String, category: SyncError, retryAt: Long = 0): Nothing {
+            android.util.Log.w("GoogleHealthAuth", "Connect failed: $reason ($category)")
+            store.recordConnectResult("Failed: $reason", now)
+            throw FitbitRequestException(category, retryAt)
+        }
+        val token = result.accessToken?.takeIf { it.isNotBlank() } ?: fail("Google returned no access token", SyncError.AUTH_REQUIRED)
+        val missing = scopes.map { it.scopeUri } - result.grantedScopes.toSet()
+        if (missing.isNotEmpty()) fail("Health access not granted for ${missing.joinToString { it.substringAfterLast('.') }}", SyncError.AUTH_REQUIRED)
         val account = result.toGoogleSignInAccount()?.account?.name.orEmpty()
         android.util.Log.i("GoogleHealthAuth", "Authorization received: accountHintAvailable=${account.isNotBlank()}")
         val candidate = candidate(token)
-        val identity = candidate.identity()
+        val identity = try { candidate.identity() } catch (e: CancellationException) { throw e }
+            catch (e: FitbitRequestException) { fail("Could not read the Google Health identity", e.category, e.retryAt) }
+            catch (e: Exception) { fail("Unreadable Google Health identity", SyncError.DECODING) }
         val current = store.credentials()
-        if (!HealthIdentityRules.connectMatches(identity, current.provider, current.accountId, BuildConfig.HEALTH_LEGACY_ACCOUNT))
-            throw FitbitRequestException(SyncError.CONFIGURATION)
+        HealthIdentityRules.connectMismatch(identity, current.provider, current.accountId, BuildConfig.HEALTH_LEGACY_ACCOUNT)
+            ?.let { fail(it, SyncError.CONFIGURATION) }
         val today = LocalDate.now()
-        when (val result = candidate.sleep(today.minusDays(14).toString(), today.toString())) {
-            is SleepFetchResult.Complete -> store.activateGoogle(FitbitCredentials(accessToken = token, expiresAt = System.currentTimeMillis() + 3_500_000,
-                accountId = identity.healthUserId, provider = "google_health", googleAccount = account), result.logs, System.currentTimeMillis())
-            is SleepFetchResult.Pending -> throw FitbitRequestException(SyncError.SERVER, System.currentTimeMillis() + result.retryAfter)
-            is SleepFetchResult.Failed -> throw FitbitRequestException(result.category, result.retryAt)
-        }
+        val start = today.minusDays(14).toString()
+        val end = today.toString()
+        val fetched = candidate.sleep(start, end)
+        val (logs, processingRetryAt) = HealthConnectRules.activation(fetched, now)
+            ?: (fetched as SleepFetchResult.Failed).let { fail("Could not read sleep", it.category, it.retryAt) }
+        // Google may still be processing last night; the login is valid, so keep it and let sync finish the data.
+        val saved = if (processingRetryAt > 0) SleepCache.merge(store.snapshot().logs, logs, start, end, false) else logs
+        store.activateGoogle(FitbitCredentials(accessToken = token, expiresAt = now + 3_500_000,
+            accountId = identity.healthUserId, provider = "google_health", googleAccount = account), saved, now, processingRetryAt)
+        android.util.Log.i("GoogleHealthAuth", "Connected: sleepProcessing=${processingRetryAt > 0}")
     }
 
     private fun candidate(token: String) = GoogleHealthClient(object : CredentialProvider {
@@ -101,6 +115,16 @@ object HealthIdentityRules {
         storedHealthUserId.isNotBlank() && identity.healthUserId == storedHealthUserId &&
             (configuredLegacy.isBlank() || identity.legacyUserId == configuredLegacy)
 
+    /** Why [connectMatches] refused, in words for the Sleep tab; null when the account matches. */
+    fun connectMismatch(identity: HealthIdentity, provider: String, storedAccountId: String, configuredLegacy: String): String? = when {
+        connectMatches(identity, provider, storedAccountId, configuredLegacy) -> null
+        provider == "google_health" && storedAccountId.isBlank() -> "No stored Google Health user to match"
+        provider == "google_health" && identity.healthUserId != storedAccountId -> "A different Google Health user signed in"
+        provider != "google_health" && storedAccountId.ifBlank { configuredLegacy }.isBlank() ->
+            "This build has no HEALTH_LEGACY_ACCOUNT to check the account against"
+        else -> "The Google account is not the Fitbit account this app was set up with"
+    }
+
     fun connectMatches(identity: HealthIdentity, provider: String, storedAccountId: String, configuredLegacy: String): Boolean =
         if (provider == "google_health") renewalMatches(identity, storedAccountId, configuredLegacy)
         else {
@@ -108,4 +132,16 @@ object HealthIdentityRules {
             val expected = storedAccountId.ifBlank { configuredLegacy }
             expected.isNotBlank() && identity.legacyUserId == expected
         }
+}
+
+object HealthConnectRules {
+    /**
+     * Sleep to save when a verified login connects, and when to check again if Google is still
+     * processing some of it (0 = complete). Null only when sleep could not be read at all.
+     */
+    fun activation(result: SleepFetchResult, now: Long): Pair<List<SleepLogEntry>, Long>? = when (result) {
+        is SleepFetchResult.Complete -> result.logs to 0L
+        is SleepFetchResult.Pending -> result.partialLogs to now + result.retryAfter
+        is SleepFetchResult.Failed -> null
+    }
 }
