@@ -38,7 +38,14 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.example.a24_hr_clock.logic.ClockDial
 import com.example.a24_hr_clock.logic.PlanTime
+import com.example.a24_hr_clock.logic.NewTaskTimes
+import com.example.a24_hr_clock.logic.PlanField
 import com.example.a24_hr_clock.logic.PlannedTask
+import com.example.a24_hr_clock.logic.endMinute
+import com.example.a24_hr_clock.logic.taskNameCapitalization
+import com.example.a24_hr_clock.logic.withDuration
+import com.example.a24_hr_clock.logic.withEnd
+import com.example.a24_hr_clock.logic.withStart
 import java.time.LocalTime
 
 @Composable
@@ -102,94 +109,78 @@ fun PlanScreen(
 
 @Composable
 private fun TaskTableRow(task: PlannedTask, onSave: (PlannedTask) -> Unit, onDelete: (String) -> Unit) {
-    // A clock drag refreshes the start cell without discarding unsaved name/duration edits.
+    // Times save the moment they are picked. The name saves when the field loses focus or the
+    // keyboard sends Done; a blank name is never saved and reverts to the saved one.
     var name by rememberSaveable(task.id, task.name) { mutableStateOf(task.name) }
-    var start by rememberSaveable(task.id, task.startMinute) { mutableStateOf(PlannedTask.formatStartTime(task.startMinute)) }
-    var duration by rememberSaveable(task.id, task.durationMinutes) { mutableStateOf(task.durationMinutes.toString()) }
-    val minute = PlannedTask.parseStartTime(start)
-    val minutes = duration.toIntOrNull()?.takeIf { it in 1..1440 }
-    val dirty = name != task.name || start != PlannedTask.formatStartTime(task.startMinute) || duration != task.durationMinutes.toString()
-    val valid = name.isNotBlank() && minute != null && minutes != null
     val focus = LocalFocusManager.current
-    fun save() {
-        if (valid && dirty) {
-            onSave(task.copy(name = name.trim(), startMinute = minute!!, durationMinutes = minutes!!))
-            name = name.trim()
-            start = PlannedTask.formatStartTime(minute!!)
-            duration = minutes!!.toString()
-            focus.clearFocus()
-        }
+    fun commitName() {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) name = task.name
+        else if (trimmed != task.name) onSave(task.copy(name = trimmed))
+        else name = trimmed
     }
     Column(Modifier.fillMaxWidth().testTag("task-${task.id}").padding(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.weight(1f)) {
                 TableCell(name, { name = it }, "Task name", "Task name for ${task.name}",
-                    "task-name-${task.id}", Modifier.fillMaxWidth(), dirty && name.isBlank(),
-                    color = Color(task.color))
+                    "task-name-${task.id}", Modifier.fillMaxWidth(), name.isBlank(),
+                    color = Color(task.color), onDone = { commitName(); focus.clearFocus() },
+                    onFocusLost = { commitName() })
             }
             // Start keeps the duration; End changes the duration; Duration moves the end.
-            val startNow = minute ?: task.startMinute
-            val durationNow = minutes ?: task.durationMinutes
-            StartCell(startNow, { start = PlannedTask.formatStartTime(it) },
-                "task-start-${task.id}", "Start time for ${task.name}")
-            TimeCell("End time", PlanTime.endMinute(startNow, durationNow),
-                { duration = PlanTime.durationTo(startNow, it).toString() },
-                "task-end-${task.id}", "End time for ${task.name}")
-            DurationCell(durationNow, { duration = it.toString() },
+            TimeCell("Start time", task.startMinute, task.startMinute,
+                { onSave(task.withStart(it)) }, "task-start-${task.id}", "Start time for ${task.name}")
+            TimeCell("End time", task.endMinute, task.endMinute,
+                { onSave(task.withEnd(it)) }, "task-end-${task.id}", "End time for ${task.name}")
+            DurationCell(task.durationMinutes, task.durationMinutes, { onSave(task.withDuration(it)) },
                 "task-duration-${task.id}", "Duration for ${task.name}")
             IconButton(onClick = { onDelete(task.id) }) {
                 Icon(Icons.Default.Delete, contentDescription = "Delete ${task.name}")
             }
         }
-        if (dirty) {
-            ValidationHint(name.isBlank(), minute == null, minutes == null)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = {
-                    name = task.name
-                    start = PlannedTask.formatStartTime(task.startMinute)
-                    duration = task.durationMinutes.toString()
-                    focus.clearFocus()
-                }, modifier = Modifier.testTag("cancel-task-${task.id}")) { Text("Cancel") }
-                TextButton(onClick = { save() }, enabled = valid,
-                    modifier = Modifier.testTag("save-task-${task.id}")) { Text("Save") }
-            }
-        }
+        if (name.isBlank()) ValidationHint(true)
     }
 }
 
 @Composable
 private fun NewTaskRow(onSave: (PlannedTask) -> Unit) {
+    // The row adds itself once it has a name and any two of Start, End and Duration; see
+    // NewTaskTimes. Times are picked in dialogs, so each pick is a whole value and can add the
+    // row right away. The name adds on focus loss or Done, never per keystroke.
     var name by rememberSaveable { mutableStateOf("") }
-    var start by rememberSaveable {
-        mutableStateOf(PlannedTask.formatStartTime(LocalTime.now().let { it.hour * 60 + it.minute }))
-    }
-    var duration by rememberSaveable { mutableStateOf("60") }
-    val minute = PlannedTask.parseStartTime(start)
-    val minutes = duration.toIntOrNull()?.takeIf { it in 1..1440 }
-    val valid = name.isNotBlank() && minute != null && minutes != null
+    var times by rememberSaveable { mutableStateOf(NewTaskTimes()) }
     val focus = LocalFocusManager.current
-    fun add() {
-        if (valid) {
-            onSave(PlannedTask.create(name, minute!!, minutes!!))
-            name = ""
-            start = PlannedTask.formatStartTime((minute + minutes) % 1440)
-            focus.clearFocus()
-        }
+    fun tryAdd(current: NewTaskTimes = times): Boolean {
+        val task = NewTaskTimes.taskFor(name, current) ?: return false
+        onSave(task)
+        name = ""
+        times = NewTaskTimes()
+        return true
     }
+    fun pick(field: PlanField, value: Int) {
+        val next = times.with(field, value)
+        times = next
+        if (tryAdd(next)) focus.clearFocus()
+    }
+    val resolved = times.resolve()
+    val now = LocalTime.now().let { it.hour * 60 + it.minute }
+    val shownStart = resolved?.first ?: times.start
+    val shownDuration = resolved?.second ?: times.duration
+    val shownEnd = resolved?.let { PlanTime.endMinute(it.first, it.second) } ?: times.end
     Column(Modifier.fillMaxWidth().testTag("new-task-row").padding(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TableCell(name, { name = it }, "New task", "New task name", "new-task-name", Modifier.weight(1f))
-            val startNow = minute ?: 0
-            val durationNow = minutes ?: 60
-            StartCell(startNow, { start = PlannedTask.formatStartTime(it) }, "new-task-start", "New task start time")
-            TimeCell("End time", PlanTime.endMinute(startNow, durationNow),
-                { duration = PlanTime.durationTo(startNow, it).toString() }, "new-task-end", "New task end time")
-            DurationCell(durationNow, { duration = it.toString() }, "new-task-duration", "New task duration")
-            FilledTonalIconButton(onClick = { add() }, enabled = valid) {
+            TableCell(name, { name = it }, "New task", "New task name", "new-task-name", Modifier.weight(1f),
+                onDone = { tryAdd(); focus.clearFocus() }, onFocusLost = { tryAdd() })
+            TimeCell("Start time", shownStart, shownStart ?: now,
+                { pick(PlanField.START, it) }, "new-task-start", "New task start time")
+            TimeCell("End time", shownEnd, shownEnd ?: PlanTime.endMinute(shownStart ?: now, shownDuration ?: 60),
+                { pick(PlanField.END, it) }, "new-task-end", "New task end time")
+            DurationCell(shownDuration, shownDuration ?: 60, { pick(PlanField.DURATION, it) },
+                "new-task-duration", "New task duration")
+            FilledTonalIconButton(onClick = { tryAdd() }, enabled = NewTaskTimes.taskFor(name, times) != null) {
                 Icon(Icons.Default.Add, contentDescription = "Add task")
             }
         }
-        ValidationHint(false, minute == null, minutes == null)
     }
 }
 
@@ -217,25 +208,23 @@ private fun SelectorCell(value: String, tag: String, description: String, width:
 private val TIME_CELL = 76.dp
 private val DURATION_CELL = 56.dp
 
+/** [minute] is null while the new-task row has not been given this time; [initial] is where the dial opens. */
 @Composable
-private fun StartCell(minute: Int, onChange: (Int) -> Unit, tag: String, description: String) =
-    TimeCell("Start time", minute, onChange, tag, description)
-
-@Composable
-private fun TimeCell(title: String, minute: Int, onChange: (Int) -> Unit, tag: String, description: String) {
+private fun TimeCell(title: String, minute: Int?, initial: Int, onChange: (Int) -> Unit,
+                     tag: String, description: String) {
     var open by rememberSaveable { mutableStateOf(false) }
-    SelectorCell(startLabel(minute), tag, description, TIME_CELL) { open = true }
-    if (open) DialPickerDialog(title, minute, false, { open = false }) {
+    SelectorCell(minute?.let(::startLabel) ?: "--:--", tag, description, TIME_CELL) { open = true }
+    if (open) DialPickerDialog(title, initial, false, { open = false }) {
         onChange(it)
         open = false
     }
 }
 
 @Composable
-private fun DurationCell(minutes: Int, onChange: (Int) -> Unit, tag: String, description: String) {
+private fun DurationCell(minutes: Int?, initial: Int, onChange: (Int) -> Unit, tag: String, description: String) {
     var open by rememberSaveable { mutableStateOf(false) }
-    SelectorCell(PlanTime.formatDuration(minutes), tag, description, DURATION_CELL) { open = true }
-    if (open) DurationPickerDialog(minutes, { open = false }) {
+    SelectorCell(minutes?.let(PlanTime::formatDuration) ?: "-:--", tag, description, DURATION_CELL) { open = true }
+    if (open) DurationPickerDialog(initial, { open = false }) {
         onChange(it)
         open = false
     }
@@ -261,20 +250,26 @@ private fun DialPickerDialog(title: String, initial: Int, is24Hour: Boolean,
 private fun TableCell(
     value: String, onChange: (String) -> Unit, placeholder: String, description: String,
     tag: String, modifier: Modifier, error: Boolean = false, numeric: Boolean = false,
-    color: Color? = null, onDone: (() -> Unit)? = null
+    color: Color? = null, onDone: (() -> Unit)? = null, onFocusLost: (() -> Unit)? = null
 ) {
     var focused by remember { mutableStateOf(false) }
+    val latestFocusLost by rememberUpdatedState(onFocusLost)
+    val latestDone by rememberUpdatedState(onDone)
     val shape = RoundedCornerShape(6.dp)
     val scheme = MaterialTheme.colorScheme
     BasicTextField(value, onChange, singleLine = true,
         textStyle = MaterialTheme.typography.bodyMedium.copy(color = scheme.onSurface),
         cursorBrush = SolidColor(scheme.primary),
         keyboardOptions = KeyboardOptions(
+            capitalization = taskNameCapitalization(value),
             keyboardType = if (numeric) KeyboardType.Number else KeyboardType.Text,
             imeAction = if (onDone == null) ImeAction.Next else ImeAction.Done),
-        keyboardActions = KeyboardActions(onDone = { onDone?.invoke() }),
+        keyboardActions = KeyboardActions(onDone = { latestDone?.invoke() }),
         modifier = modifier.testTag(tag).semantics { contentDescription = description }
-            .onFocusChanged { focused = it.isFocused },
+            .onFocusChanged {
+                if (focused && !it.isFocused) latestFocusLost?.invoke()
+                focused = it.isFocused
+            },
         decorationBox = { input ->
             Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
                 .background(scheme.surface, shape)
@@ -295,14 +290,8 @@ private fun TableCell(
 }
 
 @Composable
-private fun ValidationHint(nameMissing: Boolean, invalidTime: Boolean, invalidDuration: Boolean) {
-    val hint = when {
-        nameMissing -> "Enter a task name."
-        invalidTime -> "Start time must be HH:mm, from 00:00 to 23:59."
-        invalidDuration -> "Duration must be 0:01 to 24:00."
-        else -> null
-    }
-    if (hint != null) Text(hint, color = MaterialTheme.colorScheme.error,
+private fun ValidationHint(nameMissing: Boolean) {
+    if (nameMissing) Text("Enter a task name.", color = MaterialTheme.colorScheme.error,
         style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
 }
 
