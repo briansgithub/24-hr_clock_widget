@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.foundation.Canvas
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import com.example.a24_hr_clock.logic.*
 import com.example.a24_hr_clock.ui.*
@@ -127,6 +128,9 @@ class MainActivity : ComponentActivity() {
         
         checkPermissions()
         
+        // Catch up a missed 6:00 plan clear and arm the next one.
+        DailyClearScheduler.launchCatchUp(this)
+
         // Initialize Bedtime Notifications
         lifecycleScope.launch {
             val bedtimeManager = BedtimeNotificationManager(this@MainActivity)
@@ -339,6 +343,21 @@ fun MainScreen(
     fun movePlanTask(task: PlannedTask) = editPlan { tasks ->
         tasks.map { if (it.id == task.id) it.copy(startMinute = task.startMinute) else it }
     }
+    val dailyClear by settingsManager.dailyClearFlow.collectAsState(initial = DailyClearState())
+    // Make today's automatic clear undoable: if the plan is still empty, the emptied tasks
+    // become one undo step. Offered once per clear per session.
+    val dailyClearBackup by settingsManager.dailyClearBackupFlow.collectAsState(initial = null)
+    var offeredClearDate by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(dailyClearBackup) {
+        val (date, cleared) = dailyClearBackup ?: return@LaunchedEffect
+        if (date != java.time.LocalDate.now().toString() || date == offeredClearDate) return@LaunchedEffect
+        offeredClearDate = date
+        val current = settingsManager.plannedTasksFlow.first()
+        if (current.isEmpty() && cleared.isNotEmpty()) {
+            planHistory.record(cleared, current)
+            planHistoryVersion++
+        }
+    }
     fun stepPlan(undo: Boolean) {
         val restored = (if (undo) planHistory.undo(plannedTasks) else planHistory.redo(plannedTasks)) ?: return
         planHistoryVersion++
@@ -433,7 +452,7 @@ fun MainScreen(
         EnergyCalculator.computeSleepDebt(mappedLogs, metrics.third, modelSettings.includeNaps, modelSettings.excludedDates)
     }
 
-    var currentScreen by remember { mutableStateOf(Screen.PREVIEW) }
+    var currentScreen by remember { mutableStateOf(Screen.PLAN) }
     var previewIsLockScreen by remember { mutableStateOf(true) }
 
     LaunchedEffect(initialAction) {
@@ -517,7 +536,14 @@ fun MainScreen(
                     canUndo = planHistoryVersion >= 0 && planHistory.canUndo,
                     canRedo = planHistoryVersion >= 0 && planHistory.canRedo,
                     onUndo = { stepPlan(true) },
-                    onRedo = { stepPlan(false) }
+                    onRedo = { stepPlan(false) },
+                    dailyClearEnabled = dailyClear.enabled,
+                    onDailyClearChange = { enabled ->
+                        scope.launch {
+                            settingsManager.setDailyClearEnabled(enabled, System.currentTimeMillis())
+                            DailyClearScheduler.catchUpAndArm(context)
+                        }
+                    }
                 ) { previewModifier ->
                     ClockPreviewScreen(
                         sleepStatus = sleepSnapshot.status,
