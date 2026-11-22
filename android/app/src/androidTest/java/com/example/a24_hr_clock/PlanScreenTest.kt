@@ -44,52 +44,71 @@ class PlanScreenTest {
             }
         }
         compose.waitForIdle()
+        compose.onNodeWithTag("new-task-start").assertTextEquals("--:--")
         compose.onNodeWithTag("new-task-name").performClick().performTextInput("Read")
         selectTime("new-task-start", "11", "30", "PM")
+        compose.runOnIdle { assertTrue(tasks.isEmpty()) } // a name and only one time
         compose.onNodeWithTag("new-task-duration").performClick()
         chooseDial(0, 0, true)
         compose.onNodeWithText("Set").assertIsNotEnabled()
         compose.onNodeWithText("Cancel").performClick()
+        compose.runOnIdle { assertTrue(tasks.isEmpty()) }
         compose.onNodeWithTag("new-task-duration").performClick()
         chooseDial(2, 0, true)
-        compose.onNodeWithText("Set").performClick()
-        compose.onNodeWithTag("new-task-duration").assertTextEquals("2:00")
-        compose.onNodeWithContentDescription("Add task").performClick()
+        compose.onNodeWithText("Set").performClick() // the second time adds the task
         compose.runOnIdle {
             assertEquals(1410, tasks.single().startMinute)
             assertEquals(120, tasks.single().durationMinutes)
         }
-        compose.onNodeWithTag("new-task-start").assertTextEquals("1:30 AM")
+        compose.onNodeWithTag("new-task-start").assertTextEquals("--:--")
+        compose.onNodeWithTag("new-task-name").assertTextEquals("")
         val id = tasks.single().id
         compose.onNodeWithTag("task-end-$id").assertTextEquals("1:30 AM") // 23:30 + 2 h wraps
+        // Existing rows save as soon as a time is picked, updating rather than duplicating.
         selectTime("task-end-$id", "2", "00", "AM")
         compose.onNodeWithTag("task-duration-$id").assertTextEquals("2:30")
-        compose.onNodeWithTag("cancel-task-$id").performClick()
         val color = tasks.single().color
         compose.onNodeWithTag("task-duration-$id").performClick()
         chooseDial(3, 0, true)
         compose.onNodeWithText("Set").performClick()
-        compose.onNodeWithTag("save-task-$id").performClick()
         compose.runOnIdle {
             assertEquals(180, tasks.single().durationMinutes)
             assertEquals(color, tasks.single().color)
         }
         selectTime("task-start-$id", "12", "00", "AM")
-        compose.onNodeWithTag("task-start-$id").assertTextEquals("12:00 AM")
-        compose.onNodeWithTag("cancel-task-$id").performClick()
-        compose.onNodeWithTag("task-start-$id").assertTextEquals("11:30 PM")
-        selectTime("task-start-$id", "12", "00", "PM")
-        compose.onNodeWithTag("save-task-$id").performClick()
-        compose.runOnIdle { assertEquals(720, tasks.single().startMinute) }
+        compose.runOnIdle {
+            assertEquals(1, tasks.size)
+            assertEquals(0, tasks.single().startMinute)
+            assertEquals(180, tasks.single().durationMinutes)
+        }
         compose.onNodeWithTag("task-name-$id").performTextReplacement("Read a book")
         compose.runOnIdle { tasks[0] = tasks[0].copy(startMinute = 600) }
         compose.onNodeWithTag("task-name-$id").assertTextEquals("Read a book")
         compose.onNodeWithTag("task-start-$id").assertTextEquals("10:00 AM")
-        compose.onNodeWithTag("save-task-$id").performClick()
+        compose.runOnIdle { assertEquals("Read", tasks.single().name) } // not saved mid-typing
+        compose.onNodeWithTag("task-name-$id").performImeAction()
         compose.runOnIdle {
             assertEquals("Read a book", tasks.single().name)
             assertEquals(600, tasks.single().startMinute)
         }
+        compose.onNodeWithTag("task-name-$id").performTextReplacement("  ")
+        compose.onNodeWithText("Enter a task name.").assertExists()
+        compose.onNodeWithTag("task-name-$id").performImeAction()
+        compose.runOnIdle { assertEquals("Read a book", tasks.single().name) }
+        // Times first, then the name: Enter adds it. Start and end give the duration.
+        selectTime("new-task-start", "1", "00", "PM")
+        selectTime("new-task-end", "2", "15", "PM")
+        compose.onNodeWithTag("new-task-duration").assertTextEquals("1:15")
+        compose.runOnIdle { assertEquals(1, tasks.size) }
+        compose.onNodeWithTag("new-task-name").performTextInput("Walk")
+        compose.onNodeWithTag("new-task-name").performImeAction()
+        compose.runOnIdle {
+            assertEquals(2, tasks.size)
+            assertEquals("Walk", tasks[1].name)
+            assertEquals(13 * 60, tasks[1].startMinute)
+            assertEquals(75, tasks[1].durationMinutes)
+        }
+        compose.runOnIdle { tasks.removeAt(1) }
         compose.onNodeWithContentDescription("Delete Read a book").performClick()
         compose.onNodeWithTag("task-$id").assertDoesNotExist()
         compose.onNodeWithTag("new-task-row").assertExists()
