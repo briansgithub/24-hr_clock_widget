@@ -4,15 +4,16 @@ Active branch inventory and merge order. Consult the linked handoff when resumin
 
 Each active branch has a replacement-style handoff plus an adjacent append-only history. Closed branches are **archived** (not deleted): see [archive/](archive/) and the global close-only ledger [HISTORY.md](HISTORY.md).
 
-Last verified: 2026-11-05
+Last verified: 2026-11-18
 
 | Branch | Tip/state | Role | Handoff | History |
 |---|---|---|---|---|
 | `main` | `7173dca` (local) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
+| `feature/android-task-planner` | Implementation from `7cc8d39` | Android Plan tab; installed and tested on both Pixels | [handoff](feature/android-task-planner.md) | [history](feature/android-task-planner.history.md) |
 
 ## Current merge order
 
-Local `main` is the integration tip. No feature branch is waiting to merge.
+`feature/android-task-planner` is pushed for owner review before integration into `main`.
 
 Parallel agents must use separate Git worktrees — see [MULTI_AGENT.md](MULTI_AGENT.md).
 

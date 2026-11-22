@@ -4,7 +4,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.time.Duration
 import java.time.LocalDate
+import java.time.LocalDateTime
 
 @Serializable
 enum class SyncError { AUTH_REQUIRED, NETWORK, RATE_LIMIT, SERVER, CONFIGURATION, DECODING }
@@ -22,7 +24,10 @@ data class SleepSyncStatus(
     val nextRetryAt: Long = 0,
     val retryCount: Int = 0,
     val serverRetryAt: Long = 0,
-    val lastSavedAt: Long = 0
+    val lastSavedAt: Long = 0,
+    /** Outcome of the last Connect Google Health tap, kept so a failure outlives its toast and logcat. */
+    val connectAttemptAt: Long = 0,
+    val connectResult: String = ""
 ) {
     fun opacity(now: Long, reconnectRequired: Boolean = false): Float = when {
         reconnectRequired || phase == SleepSyncPhase.DISCONNECTED || error == SyncError.AUTH_REQUIRED || lastVerifiedAt == 0L -> .3f
@@ -46,7 +51,8 @@ object SleepResponseParser {
         val response = json.decodeFromString<SleepResponse>(body)
         val logs = response.sleep.orEmpty().mapIndexed { index, log ->
             val raw = root["sleep"]?.let { it as? kotlinx.serialization.json.JsonArray }?.get(index)?.jsonObject
-            log.copy(sourceRecordId = raw?.get("logId")?.jsonPrimitive?.content ?: log.sourceRecordId)
+            log.copy(sourceRecordId = raw?.get("logId")?.jsonPrimitive?.content ?: log.sourceRecordId,
+                awakePeriods = raw?.let { fitbitAwake(it, log) })
         }
         if (response.meta?.state == "pending") {
             SleepFetchResult.Pending(logs, (response.meta.retryDuration ?: 3000L).coerceAtLeast(1000L))
@@ -54,6 +60,17 @@ object SleepResponseParser {
             SleepFetchResult.Complete(logs)
         } else SleepFetchResult.Failed(SyncError.DECODING)
     } catch (_: Exception) { SleepFetchResult.Failed(SyncError.DECODING) }
+
+    /** `levels.data` wake (stages) or awake (classic) entries; a bad list drops only the markers. */
+    private fun fitbitAwake(raw: kotlinx.serialization.json.JsonObject, log: SleepLogEntry): List<AwakePeriod>? = runCatching {
+        val data = raw["levels"]?.jsonObject?.get("data") as? kotlinx.serialization.json.JsonArray ?: return@runCatching null
+        val start = LocalDateTime.parse(log.startTime)
+        val duration = Duration.between(start, LocalDateTime.parse(log.endTime)).seconds
+        AwakePeriods.normalize(data.map { it.jsonObject }.filter { AwakePeriods.isAwake(it.getValue("level").jsonPrimitive.content) }.map {
+            val s = Duration.between(start, LocalDateTime.parse(it.getValue("dateTime").jsonPrimitive.content)).seconds
+            s to s + it.getValue("seconds").jsonPrimitive.content.toLong()
+        }, duration)
+    }.getOrNull()
 }
 
 object SleepCache {
@@ -67,6 +84,6 @@ object SleepCache {
             result.add(log)
         }
         val cutoff = LocalDate.parse(end).minusDays(14).toString()
-        return result.filter { it.dateOfSleep >= cutoff }.sortedWith(compareBy({ it.endTime }, { it.startTime }, { it.sourceRecordId })).reversed()
+        return AwakePeriods.trim(result.filter { it.dateOfSleep >= cutoff }).sortedWith(compareBy({ it.endTime }, { it.startTime }, { it.sourceRecordId })).reversed()
     }
 }

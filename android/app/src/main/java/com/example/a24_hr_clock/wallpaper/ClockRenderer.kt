@@ -9,6 +9,8 @@ import com.example.a24_hr_clock.logic.EnergyPrediction
 import com.example.a24_hr_clock.logic.ModelSettings
 import com.example.a24_hr_clock.logic.SleepLogEntry
 import com.example.a24_hr_clock.logic.SleepModelContext
+import com.example.a24_hr_clock.logic.ClockDial
+import com.example.a24_hr_clock.logic.PlannedTask
 import com.example.a24_hr_clock.logic.TimeZoneUtils
 import java.util.*
 import kotlin.math.*
@@ -137,6 +139,14 @@ class ClockRenderer {
 
     private val sleepArcPaint = Paint().apply {
         style = Paint.Style.FILL
+        isAntiAlias = true
+    }
+
+    /** Awake periods: a bold red line on the sleep wedge's rim. Width scales with the dial. */
+    private val awakeMarkerPaint = Paint().apply {
+        color = Color.parseColor("#FF2A2A")
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.BUTT
         isAntiAlias = true
     }
 
@@ -272,7 +282,10 @@ class ClockRenderer {
         modelSettings: ModelSettings? = null,
         topInsetPx: Float = 150f,
         sideInsetPx: Float = 80f,
-        dialMarginPx: Float = 150f
+        dialMarginPx: Float = 150f,
+        plannedTasks: List<PlannedTask> = emptyList(),
+        showTasks: Boolean = true,
+        centerDial: Boolean = false
     ) {
         // Clear background to OLED black
         canvas.drawColor(Color.BLACK)
@@ -282,22 +295,8 @@ class ClockRenderer {
             lifeCalendarRenderer.draw(canvas, width, height)
         }
 
-        val centerX: Float
-        val centerY: Float
-        val radius: Float
-
-        if (smallTopRight) {
-            // Small clock in top right (~10% smaller than original /6 sizing)
-            radius = min(width, height) / 6f * 0.9f
-            centerX = width - radius - sideInsetPx
-            centerY = radius + topInsetPx
-        } else {
-            // Large centered clock
-            centerX = width / 2f
-            radius = min(width, height) / 2f - dialMarginPx
-            val moonDiameter = max(12f, radius / 7f)
-            centerY = height / 2f - (1.75f * moonDiameter)
-        }
+        val dial = ClockDial.create(width, height, smallTopRight, topInsetPx, sideInsetPx, dialMarginPx, centerDial)
+        val (centerX, centerY, radius) = dial
 
         if (radius < 20) return
 
@@ -458,6 +457,9 @@ class ClockRenderer {
         if (showSunMoon) {
             drawSunAndMoon(canvas, centerX, centerY, radius, sunRad, moonRad, moonPhaseValue, sunElevation)
         }
+
+        // Tasks cover the clock, sleep, wind-down and grogginess, but the now hand stays above them.
+        if (showTasks) drawTaskWedges(canvas, dial, plannedTasks)
 
         // 11. Draw Clock Hand
         val hour = now.get(Calendar.HOUR_OF_DAY)
@@ -701,6 +703,24 @@ class ClockRenderer {
             val colorStr = if (event.isAllDay) "#8C7EFF" else eventColors[i % eventColors.size]
             eventPaint.color = Color.parseColor(colorStr)
             canvas.drawArc(rect, startAngle.toFloat(), sweepAngle.toFloat(), false, eventPaint)
+        }
+    }
+
+    private fun drawTaskWedges(canvas: Canvas, dial: ClockDial, tasks: List<PlannedTask>) {
+        val bounds = RectF(dial.centerX - dial.radius, dial.centerY - dial.radius,
+            dial.centerX + dial.radius, dial.centerY + dial.radius)
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+        val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f }
+        for (task in tasks.filter { it.isValid }) {
+            fill.color = task.color
+            fill.alpha = 170
+            edge.color = task.color
+            edge.alpha = 255
+            val startAngle = task.startMinute / 4f - 270f
+            val sweep = task.durationMinutes / 4f
+            // useCenter pins both radial edges to the clock's center.
+            canvas.drawArc(bounds, startAngle, sweep, true, fill)
+            canvas.drawArc(bounds, startAngle, sweep, true, edge)
         }
     }
 
@@ -1213,6 +1233,7 @@ class ClockRenderer {
         showTotalBedtime: Boolean,
         opacity: Float
     ) {
+        val markers = mutableListOf<com.example.a24_hr_clock.logic.AwakeArc>()
         targetLogs.forEach { log ->
             if (!includeNaps && !log.isMainSleep) return@forEach
             
@@ -1239,8 +1260,19 @@ class ClockRenderer {
                 sleepArcPaint.color = if (log.isMainSleep) Color.parseColor("#6A5ACD") else Color.parseColor("#8A7AED")
                 sleepArcPaint.alpha = (255 * opacity.coerceIn(0f, 1f)).toInt()
                 canvas.drawArc(rect, sleepStartAngle.toFloat(), sleepSweep.toFloat(), true, sleepArcPaint)
+                // In time-asleep mode the wedge slides off the clock times, so awake times would land wrong: skip them.
+                if (showTotalBedtime) log.awakePeriods?.let {
+                    markers += com.example.a24_hr_clock.logic.AwakePeriods.arcs(sH, sleepSweep, it)
+                }
             } catch (e: Exception) {}
         }
+        if (markers.isEmpty()) return
+        // Drawn after every wedge so a nap wedge never covers a marker; the stroke straddles the rim.
+        val rimR = radius * 0.85f
+        val rect = RectF(cx - rimR, cy - rimR, cx + rimR, cy + rimR)
+        awakeMarkerPaint.strokeWidth = maxOf(5f, radius * 0.055f)
+        awakeMarkerPaint.alpha = (255 * opacity.coerceIn(0f, 1f)).toInt()
+        markers.forEach { canvas.drawArc(rect, it.startDeg, it.sweepDeg, false, awakeMarkerPaint) }
     }
 
     private fun drawGrogginessArc(

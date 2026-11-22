@@ -24,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -34,6 +35,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -69,6 +71,7 @@ import kotlin.math.*
 
 enum class Screen {
     PREVIEW,
+    PLAN,
     DISPLAY,
     ENERGY,
     SLEEP,
@@ -87,9 +90,17 @@ class MainActivity : ComponentActivity() {
         if (result.resultCode == RESULT_OK && result.data != null) {
             try {
                 finishHealthAuthorization(FitbitSession.get(this).googleAuth.client.getAuthorizationResultFromIntent(result.data!!))
-            } catch (_: com.google.android.gms.common.api.ApiException) {
-                Toast.makeText(this, "Google Health connection was not completed. Cached sleep remains visible.", Toast.LENGTH_LONG).show()
+            } catch (e: com.google.android.gms.common.api.ApiException) {
+                connectNotCompleted(com.example.a24_hr_clock.logic.HealthConnectRules.signInFailure(result.resultCode, e.statusCode))
             }
+        } else {
+            // Google returns a refusal as RESULT_CANCELED with its status in the data; read it rather than guess.
+            val status = result.data?.let { data ->
+                try { FitbitSession.get(this).googleAuth.client.getAuthorizationResultFromIntent(data); null }
+                catch (e: com.google.android.gms.common.api.ApiException) { e.statusCode }
+            }
+            android.util.Log.w("GoogleHealthAuth", "Sign-in result: code=${result.resultCode} status=$status extras=${result.data?.extras?.keySet()}")
+            connectNotCompleted(com.example.a24_hr_clock.logic.HealthConnectRules.signInFailure(result.resultCode, status))
         }
     }
 
@@ -216,14 +227,22 @@ class MainActivity : ComponentActivity() {
                 val result = FitbitSession.get(this@MainActivity).googleAuth.begin()
                 if (result.hasResolution()) healthAuthorization.launch(androidx.activity.result.IntentSenderRequest.Builder(result.pendingIntent!!.intentSender).build())
                 else finishHealthAuthorization(result)
-            } catch (_: FitbitRequestException) {
+            } catch (e: FitbitRequestException) {
+                FitbitSession.get(this@MainActivity).store.recordConnectResult("Failed: Google sign-in is unavailable (${e.category})", System.currentTimeMillis())
                 Toast.makeText(this@MainActivity, "Google Health authorization is unavailable. Cached sleep remains visible.", Toast.LENGTH_LONG).show()
             }
         }
     }
 
+    private fun connectNotCompleted(reason: String) {
+        android.util.Log.w("GoogleHealthAuth", "Connect not completed: $reason")
+        Toast.makeText(this, "Google Health connection was not completed. Cached sleep remains visible.", Toast.LENGTH_LONG).show()
+        lifecycleScope.launch { FitbitSession.get(this@MainActivity).store.recordConnectResult("Failed: $reason", System.currentTimeMillis()) }
+    }
+
     private fun finishHealthAuthorization(result: com.google.android.gms.auth.api.identity.AuthorizationResult) {
-        lifecycleScope.launch {
+        // The checks take a few network calls; leaving the app or locking the phone must not cancel them halfway.
+        lifecycleScope.launch(kotlinx.coroutines.NonCancellable) {
             try {
                 FitbitSession.get(this@MainActivity).googleAuth.complete(result)
                 Toast.makeText(this@MainActivity, "Google Health connected. Sleep updated.", Toast.LENGTH_SHORT).show()
@@ -232,6 +251,10 @@ class MainActivity : ComponentActivity() {
             } catch (e: FitbitRequestException) {
                 android.util.Log.w("GoogleHealthAuth", "Connection verification failed: category=${e.category}")
                 Toast.makeText(this@MainActivity, "Connection could not be verified (${e.category}). Cached sleep remains visible.", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                android.util.Log.e("GoogleHealthAuth", "Connect crashed: ${e.javaClass.simpleName}")
+                FitbitSession.get(this@MainActivity).store.recordConnectResult("Failed: unexpected ${e.javaClass.simpleName}", System.currentTimeMillis())
+                Toast.makeText(this@MainActivity, "Google Health connection failed. Cached sleep remains visible.", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -299,6 +322,28 @@ fun MainScreen(
     val lockSettings by settingsManager.lockSettingsFlow.collectAsState(initial = ClockSettings())
     val modelSettings by settingsManager.modelSettingsFlow.collectAsState(initial = ModelSettings())
     val calendarSettings by settingsManager.calendarSettingsFlow.collectAsState(initial = CalendarSettings())
+    val plannedTasks by settingsManager.plannedTasksFlow.collectAsState(initial = emptyList())
+    // Session-only undo/redo of plan edits; the version counter makes the buttons recompose.
+    val planHistory = remember { PlanHistory() }
+    var planHistoryVersion by remember { mutableIntStateOf(0) }
+    fun editPlan(after: (List<PlannedTask>) -> List<PlannedTask>) {
+        val before = plannedTasks
+        val next = after(before)
+        planHistory.record(before, next)
+        planHistoryVersion++
+        scope.launch { settingsManager.replacePlannedTasks(next) }
+    }
+    fun savePlanTask(task: PlannedTask) = editPlan { tasks ->
+        if (tasks.any { it.id == task.id }) tasks.map { if (it.id == task.id) task else it } else tasks + task
+    }
+    fun movePlanTask(task: PlannedTask) = editPlan { tasks ->
+        tasks.map { if (it.id == task.id) it.copy(startMinute = task.startMinute) else it }
+    }
+    fun stepPlan(undo: Boolean) {
+        val restored = (if (undo) planHistory.undo(plannedTasks) else planHistory.redo(plannedTasks)) ?: return
+        planHistoryVersion++
+        scope.launch { settingsManager.replacePlannedTasks(restored) }
+    }
     
     // Automatic cleanup: when "today" becomes "yesterday", if it was excluded, re-include it.
     val todayDate = java.time.LocalDate.now().toString()
@@ -354,6 +399,10 @@ fun MainScreen(
                 enabledIds = primaryIds.ifEmpty { calendarSettings.enabledIds },
                 initialized = true
             ))
+        } else if (calendarSettings.initialized && ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
+            // Saved IDs from another phone (backup restore) or a re-added account no longer exist.
+            val reconciled = CalendarSelection.reconcile(calendarSettings.enabledIds, calendarManager.getAllCalendars())
+            if (reconciled != calendarSettings.enabledIds) settingsManager.updateCalendarSettings(calendarSettings.copy(enabledIds = reconciled))
         }
     }
 
@@ -407,6 +456,12 @@ fun MainScreen(
                     icon = { Icon(Icons.Default.Visibility, contentDescription = null) }
                 )
                 NavigationBarItem(
+                    selected = currentScreen == Screen.PLAN,
+                    onClick = { currentScreen = Screen.PLAN },
+                    label = { Text("Plan") },
+                    icon = { Icon(Icons.Default.EditCalendar, contentDescription = null) }
+                )
+                NavigationBarItem(
                     selected = currentScreen == Screen.DISPLAY,
                     onClick = { currentScreen = Screen.DISPLAY },
                     label = { Text("Display") },
@@ -446,6 +501,8 @@ fun MainScreen(
                     celestialPositions = celestialPositions,
                     solarIrradiance = solarIrradiance,
                     calendarEvents = calendarEvents,
+                    plannedTasks = plannedTasks,
+                    onMoveTask = { task -> movePlanTask(task) },
                     sleepDebt = sleepDebt,
                     userLatitude = deviceLatitude,
                     userLongitude = deviceLongitude,
@@ -453,6 +510,37 @@ fun MainScreen(
                     showSetWallpaper = true,
                     modifier = Modifier.clickable { previewIsLockScreen = !previewIsLockScreen }
                 )
+                Screen.PLAN -> PlanScreen(
+                    tasks = plannedTasks,
+                    onSave = { savePlanTask(it) },
+                    onDelete = { id -> editPlan { tasks -> tasks.filterNot { it.id == id } } },
+                    canUndo = planHistoryVersion >= 0 && planHistory.canUndo,
+                    canRedo = planHistoryVersion >= 0 && planHistory.canRedo,
+                    onUndo = { stepPlan(true) },
+                    onRedo = { stepPlan(false) }
+                ) { previewModifier ->
+                    ClockPreviewScreen(
+                        sleepStatus = sleepSnapshot.status,
+                        reconnectRequired = reconnect,
+                        settings = lockSettings.copy(smallTopRight = false, showTasks = true,
+                            showTimezoneMap = false, showLifeCalendar = false,
+                            showWakeSunriseInfo = false, showBedtimeCountdown = false),
+                        modelSettings = modelSettings,
+                        sleepLogs = sleepLogs,
+                        metrics = metrics,
+                        sunTimes = sunTimes,
+                        celestialPositions = celestialPositions,
+                        solarIrradiance = solarIrradiance,
+                        calendarEvents = calendarEvents,
+                        plannedTasks = plannedTasks,
+                        onMoveTask = { task -> movePlanTask(task) },
+                        sleepDebt = sleepDebt,
+                        title = "",
+                        showSetWallpaper = false,
+                        compact = true,
+                        modifier = previewModifier
+                    )
+                }
                 Screen.DISPLAY -> DisplaySettingsScreen(
                     calendarSettings = calendarSettings,
                     homeSettings = homeSettings,
@@ -536,10 +624,17 @@ fun ClockPreviewScreen(
     userLongitude: Double? = null,
     title: String = "Home Screen Preview",
     showSetWallpaper: Boolean = true,
+    plannedTasks: List<PlannedTask> = emptyList(),
+    onMoveTask: (PlannedTask) -> Unit = {},
+    compact: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val renderer = remember { ClockRenderer() }
+    var draggingTask by remember { mutableStateOf<PlannedTask?>(null) }
+    val displayedTasks = plannedTasks.map { task -> draggingTask?.takeIf { it.id == task.id } ?: task }
+    val insets = clockInsets(context)
+    val dialMargin = if (compact) with(LocalDensity.current) { 16.dp.toPx() } else insets.dialMarginPx
     var tick by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     LaunchedEffect(Unit) {
@@ -560,7 +655,14 @@ fun ClockPreviewScreen(
             .background(Color.Black),
         contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
+        Canvas(modifier = Modifier.fillMaxSize().clipToBounds().taskWedgeDrag(
+            tasks = plannedTasks,
+            enabled = settings.showTasks,
+            geometry = { size -> ClockDial.create(size.width, size.height, settings.smallTopRight,
+                insets.topPx, insets.sidePx, dialMargin, centered = compact) },
+            onPreview = { draggingTask = it },
+            onCommit = onMoveTask
+        )) {
             drawIntoCanvas { canvas ->
                 renderer.draw(
                     canvas.nativeCanvas,
@@ -610,17 +712,20 @@ fun ClockPreviewScreen(
                     showGrogginess = settings.showGrogginess,
                     showWindDown = settings.showWindDown,
                     showBedtimeCountdown = settings.showBedtimeCountdown,
-                    isPreview = true,
+                    isPreview = !compact,
                     previewIsLockScreen = title.contains("Lock Screen"),
                     modelSettings = modelSettings,
-                    topInsetPx = clockInsets(context).topPx,
-                    sideInsetPx = clockInsets(context).sidePx,
-                    dialMarginPx = clockInsets(context).dialMarginPx
+                    topInsetPx = insets.topPx,
+                    sideInsetPx = insets.sidePx,
+                    dialMarginPx = dialMargin,
+                    plannedTasks = displayedTasks,
+                    showTasks = settings.showTasks,
+                    centerDial = compact
                 )
             }
         }
         
-        Text(
+        if (title.isNotEmpty()) Text(
             text = title,
             color = Color.White.copy(alpha = 0.5f),
             modifier = Modifier.align(Alignment.TopCenter).padding(top = 48.dp),
@@ -725,6 +830,11 @@ fun DisplaySettingsScreen(
         }
         SettingToggle("Sun & Moon Icons", currentSettings.showSunMoon, { GlyphSunMoon() }) {
             updateFunc(currentSettings.copy(showSunMoon = it))
+        }
+        SettingToggle("Show Planned Tasks", currentSettings.showTasks, {
+            Icon(Icons.Default.EditCalendar, contentDescription = null)
+        }) {
+            updateFunc(currentSettings.copy(showTasks = it))
         }
         SettingToggle("Small Clock in Top-Right", currentSettings.smallTopRight, { GlyphSmallTopRight() }) {
             updateFunc(currentSettings.copy(smallTopRight = it))
@@ -1153,6 +1263,7 @@ fun SleepLogScreen(
         fun stamp(time: Long) = if (time == 0L) "Never" else java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(time))
         Text("Last checked: ${stamp(syncStatus.lastAttemptAt)}")
         Text("Last successful check: ${stamp(syncStatus.lastVerifiedAt)}")
+        if (syncStatus.connectAttemptAt > 0) Text("Last connect: ${stamp(syncStatus.connectAttemptAt)}, ${syncStatus.connectResult}")
         Text("Latest sleep: ${sleepLogs.maxByOrNull { it.endTime }?.let { "${it.dateOfSleep}, ${it.startTime.substringAfter('T').take(5)} to ${it.endTime.substringAfter('T').take(5)}" } ?: "None"}")
         Text("Sleep records last changed: ${stamp(syncStatus.lastDataChangedAt)}")
         Text("Push delivery: ${pushStatus.message}")

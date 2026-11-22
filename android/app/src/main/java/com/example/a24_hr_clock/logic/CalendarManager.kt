@@ -21,11 +21,10 @@ data class CalendarInfo(
 class CalendarManager(private val context: Context) {
 
     fun getTodayEvents(enabledIds: Set<Long>? = null): List<CalendarEvent> {
-        val events = mutableListOf<CalendarEvent>()
-        
         // 1. Find all Visible Calendars
         val visibleCalendarIds = getVisibleCalendarIds()
-        if (visibleCalendarIds.isEmpty()) {
+        val wanted = enabledIds?.let { CalendarSelection.reconcile(it, getAllCalendars()) }
+        if (visibleCalendarIds.isEmpty() && wanted == null) {
             Log.w("CalendarManager", "No visible calendars found")
             return emptyList()
         }
@@ -50,7 +49,7 @@ class CalendarManager(private val context: Context) {
             CalendarContract.Instances.CALENDAR_ID
         )
         
-        val rawEvents = mutableListOf<RawEvent>()
+        val rawEvents = mutableListOf<CalendarRawEvent>()
 
         try {
             val cursor = context.contentResolver.query(
@@ -73,13 +72,13 @@ class CalendarManager(private val context: Context) {
                     val calId = if (calIdIdx != -1) it.getLong(calIdIdx) else -1L
                     
                     // Filter by enabled IDs if provided, otherwise fallback to system visibility
-                    if (enabledIds != null) {
-                        if (!enabledIds.contains(calId)) continue
+                    if (wanted != null) {
+                        if (!wanted.contains(calId)) continue
                     } else if (visibleCalendarIds.isNotEmpty() && !visibleCalendarIds.contains(calId)) {
                         continue
                     }
 
-                    rawEvents.add(RawEvent(
+                    rawEvents.add(CalendarRawEvent(
                         title = if (titleIdx != -1) it.getString(titleIdx) ?: "No Title" else "No Title",
                         begin = if (beginIdx != -1) it.getLong(beginIdx) else 0L,
                         end = if (endIdx != -1) it.getLong(endIdx) else 0L,
@@ -92,74 +91,8 @@ class CalendarManager(private val context: Context) {
             Log.e("CalendarManager", "Error querying calendar", e)
         }
 
-        if (rawEvents.isEmpty()) return emptyList()
-
-        // 3. Process Logic
-        // Determine the end of the current event if one is happening
-        var currentEventEnd = nowMilli
-        val currentEvents = rawEvents.filter { it.begin <= nowMilli && it.end > nowMilli && !it.allDay }
-        if (currentEvents.isNotEmpty()) {
-            currentEventEnd = currentEvents.maxOf { it.end }
-        }
-
-        val windowEnd = currentEventEnd + 24 * 60 * 60 * 1000
-        val truncationLimit = nowMilli + 24 * 60 * 60 * 1000
-
-        val zoneId = ZoneId.systemDefault()
-        val nowDt = LocalDateTime.ofInstant(now, zoneId)
-        val nowHour = nowDt.hour + nowDt.minute / 60.0 + nowDt.second / 3600.0
-
-        rawEvents.forEach { raw ->
-            if (raw.allDay) return@forEach
-
-            val isCurrent = raw.begin <= nowMilli && raw.end > nowMilli
-            
-            // Criteria: 
-            // 1. Currently occurring
-            // 2. Starts between now and windowEnd
-            val shouldInclude = isCurrent || (raw.begin >= nowMilli && raw.begin < windowEnd)
-            
-            if (shouldInclude) {
-                var displayStartMilli = raw.begin
-                var displayEndMilli = raw.end
-
-                // "if an event is currently occurring... then show the event arc from now clock hand until its end time."
-                if (isCurrent) {
-                    displayStartMilli = nowMilli
-                }
-
-                // "If an event has a start time between now and now+24h 
-                // but an end time after 'now +24h', then only display the event arc 
-                // from it's start time up to the clock hand."
-                if (!isCurrent && raw.begin < truncationLimit && raw.end > truncationLimit) {
-                    displayEndMilli = nowMilli // Clock hand position
-                }
-
-                val startDt = LocalDateTime.ofInstant(Instant.ofEpochMilli(displayStartMilli), zoneId)
-                val endDt = LocalDateTime.ofInstant(Instant.ofEpochMilli(displayEndMilli), zoneId)
-                
-                var sH = startDt.hour + startDt.minute / 60.0 + startDt.second / 3600.0
-                var eH = endDt.hour + endDt.minute / 60.0 + endDt.second / 3600.0
-
-                // Special handling for arcs crossing 24h boundaries or truncation
-                // If it's truncated to nowMilli, eH becomes nowHour.
-                
-                events.add(CalendarEvent(raw.title, sH, eH, raw.allDay, raw.color, isCurrent))
-            }
-        }
-
-        // Sort so current events are last (drawn on top)
-        return events.sortedWith(compareBy({ it.isCurrent }, { it.startHour }))
+        return CalendarWindow.build(rawEvents, nowMilli, ZoneId.systemDefault())
     }
-
-    private data class RawEvent(
-        val title: String,
-        val begin: Long,
-        val end: Long,
-        val allDay: Boolean,
-        val color: Int
-    )
-
 
     fun getAllCalendars(): List<CalendarInfo> {
         val calendars = mutableListOf<CalendarInfo>()
@@ -255,3 +188,58 @@ data class CalendarEvent(
     val color: Int,
     val isCurrent: Boolean = false
 )
+
+data class CalendarRawEvent(
+    val title: String,
+    val begin: Long,
+    val end: Long,
+    val allDay: Boolean,
+    val color: Int
+)
+
+/** Which events to draw on the 24-hour dial at a given moment. Pure, so it can be tested. */
+object CalendarWindow {
+    private const val DAY = 24 * 60 * 60 * 1000L
+
+    fun build(rawEvents: List<CalendarRawEvent>, nowMilli: Long, zoneId: ZoneId): List<CalendarEvent> {
+        val timed = rawEvents.filter { !it.allDay }
+        // An event running now pushes the window out so the next day's events still fit after it.
+        val currentEventEnd = timed.filter { it.begin <= nowMilli && it.end > nowMilli }.maxOfOrNull { it.end } ?: nowMilli
+        val windowEnd = currentEventEnd + DAY
+        val truncationLimit = nowMilli + DAY
+        val events = mutableListOf<CalendarEvent>()
+        for (raw in timed) {
+            val isCurrent = raw.begin <= nowMilli && raw.end > nowMilli
+            if (!isCurrent && !(raw.begin >= nowMilli && raw.begin < windowEnd)) continue
+            // A current event is drawn from the clock hand to its end.
+            val displayStart = if (isCurrent) nowMilli else raw.begin
+            // A future event that runs past now+24h is drawn from its start up to the clock hand.
+            val displayEnd = if (!isCurrent && raw.begin < truncationLimit && raw.end > truncationLimit) nowMilli else raw.end
+            events.add(CalendarEvent(raw.title, hourOf(displayStart, zoneId), hourOf(displayEnd, zoneId), false, raw.color, isCurrent))
+        }
+        // Current events last, so they are drawn on top.
+        return events.sortedWith(compareBy({ it.isCurrent }, { it.startHour }))
+    }
+
+    private fun hourOf(milli: Long, zoneId: ZoneId): Double {
+        val t = LocalDateTime.ofInstant(Instant.ofEpochMilli(milli), zoneId)
+        return t.hour + t.minute / 60.0 + t.second / 3600.0
+    }
+}
+
+object CalendarSelection {
+    /**
+     * Calendar row IDs are local to one device. After a backup restore onto a new phone, or after
+     * an account is removed and added again, the saved IDs can point at calendars that no longer
+     * exist, or at a different calendar that is hidden and not synced here, which hides every
+     * event. Keep the saved IDs that still exist. If none of them is a visible calendar, the
+     * choice can never show anything, so fall back to the primary calendars, as on first run.
+     * An empty choice stays empty.
+     */
+    fun reconcile(enabled: Set<Long>, calendars: List<CalendarInfo>): Set<Long> {
+        if (enabled.isEmpty() || calendars.isEmpty()) return enabled
+        val kept = calendars.filter { it.id in enabled }
+        if (kept.any { it.isVisible }) return kept.map { it.id }.toSet()
+        return calendars.filter { it.isPrimary }.map { it.id }.toSet().ifEmpty { kept.map { it.id }.toSet() }
+    }
+}

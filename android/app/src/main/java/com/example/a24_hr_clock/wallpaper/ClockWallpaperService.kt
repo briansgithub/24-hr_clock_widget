@@ -81,12 +81,22 @@ class ClockWallpaperService : WallpaperService() {
 
         private var currentSettings = ClockSettings()
         private var modelSettings = ModelSettings()
+        private var plannedTasks = emptyList<PlannedTask>()
+        private var taskDial: ClockDial? = null
+        private var draggingTask: PlannedTask? = null
+        private var touchedTask: PlannedTask? = null
+        private var initialPointerMinute = 0.0
+        private var touchX = 0f
+        private var touchY = 0f
+        private var touchMoved = false
+        private val touchSlop by lazy { android.view.ViewConfiguration.get(applicationContext).scaledTouchSlop }
         private val isLockedState = MutableStateFlow(false)
         private var previewLockScreen = false
         private var zoomSettled = true
 
         override fun onCreate(surfaceHolder: SurfaceHolder?) {
             super.onCreate(surfaceHolder)
+            setTouchEventsEnabled(true)
             fitbitManager = FitbitManager(applicationContext)
             settingsManager = SettingsManager(applicationContext)
             celestialManager = CelestialManager(40.7128, -74.0060)
@@ -148,9 +158,43 @@ class ClockWallpaperService : WallpaperService() {
 
         override fun onTouchEvent(event: android.view.MotionEvent?) {
             super.onTouchEvent(event)
-            if (isPreview && event?.action == android.view.MotionEvent.ACTION_DOWN) {
-                previewLockScreen = !previewLockScreen
-                updateLockState()
+            if (event == null) return
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    touchX = event.x
+                    touchY = event.y
+                    touchMoved = false
+                    draggingTask = null
+                    touchedTask = if (currentSettings.showTasks) taskDial?.taskAt(event.x, event.y, plannedTasks) else null
+                    initialPointerMinute = taskDial?.minuteAt(event.x, event.y) ?: 0.0
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    if (kotlin.math.hypot(event.x - touchX, event.y - touchY) > touchSlop) touchMoved = true
+                    val task = touchedTask
+                    if (touchMoved && task != null && currentSettings.showTasks) {
+                        val start = taskDial?.rotatedStart(task, initialPointerMinute, event.x, event.y) ?: task.startMinute
+                        draggingTask = task.copy(startMinute = start)
+                        drawFrame()
+                    }
+                }
+                android.view.MotionEvent.ACTION_UP -> {
+                    val task = touchedTask
+                    if (touchMoved && task != null && currentSettings.showTasks) {
+                        val start = taskDial?.rotatedStart(task, initialPointerMinute, event.x, event.y) ?: task.startMinute
+                        scope.launch { settingsManager.movePlannedTask(task.id, start) }
+                    } else if (isPreview && !touchMoved) {
+                        previewLockScreen = !previewLockScreen
+                        updateLockState()
+                    }
+                    touchedTask = null
+                    draggingTask = null
+                    drawFrame()
+                }
+                android.view.MotionEvent.ACTION_CANCEL -> {
+                    touchedTask = null
+                    draggingTask = null
+                    drawFrame()
+                }
             }
         }
 
@@ -168,6 +212,12 @@ class ClockWallpaperService : WallpaperService() {
         private fun observeAllData() {
             settingsJob?.cancel()
             settingsJob = scope.launch {
+                launch {
+                    settingsManager.plannedTasksFlow.collect {
+                        plannedTasks = it
+                        drawFrame()
+                    }
+                }
                 val uiFlow = combine(
                     settingsManager.homeSettingsFlow,
                     settingsManager.lockSettingsFlow,
@@ -207,6 +257,8 @@ class ClockWallpaperService : WallpaperService() {
                 updateLockState()
                 if (zoomSettled) startRendering()
             } else {
+                touchedTask = null
+                draggingTask = null
                 stopRendering()
             }
         }
@@ -263,6 +315,8 @@ class ClockWallpaperService : WallpaperService() {
             val canvas = surfaceHolder.lockCanvas() ?: return
             try {
                 val insets = clockInsets(applicationContext)
+                taskDial = ClockDial.create(canvas.width, canvas.height, currentSettings.smallTopRight,
+                    insets.topPx, insets.sidePx, insets.dialMarginPx)
                 renderer.draw(
                     canvas = canvas,
                     width = canvas.width,
@@ -316,7 +370,9 @@ class ClockWallpaperService : WallpaperService() {
                     modelSettings = modelSettings,
                     topInsetPx = insets.topPx,
                     sideInsetPx = insets.sidePx,
-                    dialMarginPx = insets.dialMarginPx
+                    dialMarginPx = insets.dialMarginPx,
+                    plannedTasks = plannedTasks.map { task -> draggingTask?.takeIf { it.id == task.id } ?: task },
+                    showTasks = currentSettings.showTasks
                 )
             } finally {
                 surfaceHolder.unlockCanvasAndPost(canvas)
