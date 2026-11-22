@@ -787,7 +787,6 @@ fun DisplaySettingsScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
         Text(text = "Display Settings", style = MaterialTheme.typography.headlineMedium)
@@ -808,6 +807,13 @@ fun DisplaySettingsScreen(
             )
         }
 
+        // Everything above stays pinned; only the settings below scroll.
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+        ) {
         Spacer(modifier = Modifier.height(16.dp))
         Button(
             onClick = if (selectedTab == 0) onResetLock else onResetHome,
@@ -1007,6 +1013,7 @@ fun DisplaySettingsScreen(
             ) {
                 Text("Sync Calendar Now")
             }
+        }
         }
     }
 }
