@@ -59,6 +59,6 @@ object AwakePeriods {
     /** Keep periods only on the newest [nights] dates; older logs never reach the dial. */
     fun trim(logs: List<SleepLogEntry>, nights: Int = 3): List<SleepLogEntry> {
         val keep = logs.map { it.dateOfSleep }.distinct().sortedDescending().take(nights).toSet()
-        return logs.map { if (it.dateOfSleep in keep || it.awakePeriods == null) it else it.copy(awakePeriods = null) }
+        return logs.map { if (it.dateOfSleep in keep || (it.awakePeriods == null && it.stages == null)) it else it.copy(awakePeriods = null, stages = null) }
     }
 }

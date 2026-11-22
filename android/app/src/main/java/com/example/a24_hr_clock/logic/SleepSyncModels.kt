@@ -52,7 +52,7 @@ object SleepResponseParser {
         val logs = response.sleep.orEmpty().mapIndexed { index, log ->
             val raw = root["sleep"]?.let { it as? kotlinx.serialization.json.JsonArray }?.get(index)?.jsonObject
             log.copy(sourceRecordId = raw?.get("logId")?.jsonPrimitive?.content ?: log.sourceRecordId,
-                awakePeriods = raw?.let { fitbitAwake(it, log) })
+                awakePeriods = raw?.let { fitbitAwake(it, log) }, stages = raw?.let { fitbitStages(it, log) })
         }
         if (response.meta?.state == "pending") {
             SleepFetchResult.Pending(logs, (response.meta.retryDuration ?: 3000L).coerceAtLeast(1000L))
@@ -60,6 +60,18 @@ object SleepResponseParser {
             SleepFetchResult.Complete(logs)
         } else SleepFetchResult.Failed(SyncError.DECODING)
     } catch (_: Exception) { SleepFetchResult.Failed(SyncError.DECODING) }
+
+    /** `levels.data` stage entries (shortData's sub-3-minute wakes are ignored); a bad list drops only the curve. */
+    private fun fitbitStages(raw: kotlinx.serialization.json.JsonObject, log: SleepLogEntry): List<StageSeg>? = runCatching {
+        val data = raw["levels"]?.jsonObject?.get("data") as? kotlinx.serialization.json.JsonArray ?: return@runCatching null
+        val start = LocalDateTime.parse(log.startTime)
+        val duration = Duration.between(start, LocalDateTime.parse(log.endTime)).seconds
+        SleepStages.normalize(data.map { it.jsonObject }.mapNotNull {
+            val level = SleepStages.levelOf(it.getValue("level").jsonPrimitive.content) ?: return@mapNotNull null
+            val s = Duration.between(start, LocalDateTime.parse(it.getValue("dateTime").jsonPrimitive.content)).seconds
+            Triple(s, s + it.getValue("seconds").jsonPrimitive.content.toLong(), level)
+        }, duration).takeIf { it.isNotEmpty() }
+    }.getOrNull()
 
     /** `levels.data` wake (stages) or awake (classic) entries; a bad list drops only the markers. */
     private fun fitbitAwake(raw: kotlinx.serialization.json.JsonObject, log: SleepLogEntry): List<AwakePeriod>? = runCatching {

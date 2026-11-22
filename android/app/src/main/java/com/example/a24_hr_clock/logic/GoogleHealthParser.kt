@@ -45,7 +45,7 @@ object GoogleHealthParser {
                 start.format(civilFormat), end.format(civilFormat), duration, name,
                 provider = "google_health", startInstant = startInstant, endInstant = endInstant,
                 startUtcOffset = startOffset, endUtcOffset = endOffset,
-                isNap = metadata["nap"]?.jsonPrimitive?.boolean ?: false, processed = processed, awakePeriods = awake)
+                isNap = metadata["nap"]?.jsonPrimitive?.boolean ?: false, processed = processed, awakePeriods = awake, stages = stages(sleep, Instant.parse(startInstant), duration / 1000))
         }
         val inferred = logs.groupBy { it.dateOfSleep }.values.flatMap { day ->
             val unknown = day.filter { flags[it.sourceRecordId] == null }
@@ -57,6 +57,16 @@ object GoogleHealthParser {
         }
         if (pending) SleepFetchResult.Pending(inferred, 3000) else SleepFetchResult.Complete(inferred)
     } catch (_: Exception) { SleepFetchResult.Failed(SyncError.DECODING) }
+
+    /** A bad or missing stage list costs only the stage curve, never the night. */
+    private fun stages(sleep: JsonObject, start: Instant, durationSec: Long): List<StageSeg>? = runCatching {
+        val arr = sleep["stages"]?.jsonArray ?: return@runCatching null
+        SleepStages.normalize(arr.map { it.jsonObject }.mapNotNull {
+            val level = SleepStages.levelOf(it.text("type")) ?: return@mapNotNull null
+            Triple(java.time.Duration.between(start, Instant.parse(it.text("startTime"))).seconds,
+                java.time.Duration.between(start, Instant.parse(it.text("endTime"))).seconds, level)
+        }, durationSec).takeIf { it.isNotEmpty() }
+    }.getOrNull()
 
     /** A bad or missing stage list costs only the awake markers, never the night. */
     private fun awakePeriods(sleep: JsonObject, start: Instant, durationSec: Long): List<AwakePeriod>? = runCatching {

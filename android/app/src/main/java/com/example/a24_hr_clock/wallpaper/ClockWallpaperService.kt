@@ -340,6 +340,7 @@ class ClockWallpaperService : WallpaperService() {
                     showSunMoon = currentSettings.showSunMoon,
                     showSleepDebtText = currentSettings.showSleepDebtText,
                     showEnergy = currentSettings.showEnergy,
+                    showSleepStages = currentSettings.showSleepStages,
                     showCalendar = currentSettings.showCalendar,
                     smallTopRight = currentSettings.smallTopRight,
                     showLifeCalendar = currentSettings.showLifeCalendar,

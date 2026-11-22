@@ -687,6 +687,7 @@ fun ClockPreviewScreen(
                     showSunMoon = settings.showSunMoon,
                     showSleepDebtText = settings.showSleepDebtText,
                     showEnergy = settings.showEnergy,
+                    showSleepStages = settings.showSleepStages,
                     showCalendar = settings.showCalendar,
                     smallTopRight = settings.smallTopRight,
                     showLifeCalendar = settings.showLifeCalendar,
@@ -889,6 +890,9 @@ fun DisplaySettingsScreen(
 
         SettingToggle("Show Energy Curve", currentSettings.showEnergy, { GlyphEnergyCurve() }) {
             updateFunc(currentSettings.copy(showEnergy = it))
+        }
+        SettingToggle("Show Sleep Stages", currentSettings.showSleepStages, { GlyphSleepStages() }) {
+            updateFunc(currentSettings.copy(showSleepStages = it))
         }
         SettingToggle("Show Energy %", currentSettings.showEnergyPct, { GlyphEnergyPct() }) {
             updateFunc(currentSettings.copy(showEnergyPct = it))

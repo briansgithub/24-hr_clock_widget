@@ -243,6 +243,7 @@ data class ClockSettings(
     val showNumbers: Boolean = false,
     val showSleep: Boolean = false,
     val showEnergy: Boolean = false,
+    val showSleepStages: Boolean = false,
     val showSunMoon: Boolean = true,
     val showSleepDebtText: Boolean = false,
     val smallTopRight: Boolean = false,
