@@ -213,6 +213,12 @@ class ClockRenderer {
         isAntiAlias = true
     }
 
+    private val stageCurvePaint = Paint().apply {
+        style = Paint.Style.STROKE
+        isAntiAlias = true
+        strokeCap = Paint.Cap.ROUND
+    }
+
     private val energyCurvePaint = Paint().apply {
         style = Paint.Style.STROKE
         strokeWidth = 8f
@@ -252,6 +258,7 @@ class ClockRenderer {
         showSunMoon: Boolean = true,
         showSleepDebtText: Boolean = true,
         showEnergy: Boolean = false,
+        showSleepStages: Boolean = false,
         showCalendar: Boolean = true,
         smallTopRight: Boolean = false,
         showLifeCalendar: Boolean = false,
@@ -323,6 +330,10 @@ class ClockRenderer {
                 lastSleepSavedAt = sleepSavedAt
                 android.util.Log.i("SleepRender", "savedAt=$sleepSavedAt drawLatencyMs=${System.currentTimeMillis() - sleepSavedAt}")
             }
+        }
+
+        if (showSleepStages && showTotalBedtime) {
+            drawSleepStageCurve(canvas, centerX, centerY, radius, activeLogs, includeNaps, sleepOpacity)
         }
 
         // 3.5 Draw Wind-down Arc (90 min before asleep)
@@ -1273,6 +1284,50 @@ class ClockRenderer {
         awakeMarkerPaint.strokeWidth = maxOf(5f, radius * 0.055f)
         awakeMarkerPaint.alpha = (255 * opacity.coerceIn(0f, 1f)).toInt()
         markers.forEach { canvas.drawArc(rect, it.startDeg, it.sweepDeg, false, awakeMarkerPaint) }
+    }
+
+    private fun drawSleepStageCurve(
+        canvas: Canvas, cx: Float, cy: Float, radius: Float,
+        logs: List<com.example.a24_hr_clock.logic.SleepLogEntry>, includeNaps: Boolean, opacity: Float
+    ) {
+        stageCurvePaint.strokeWidth = maxOf(2.5f, radius * 0.018f)
+        stageCurvePaint.alpha = (255 * opacity.coerceIn(0f, 1f)).toInt().coerceAtLeast(160)
+        logs.forEach { log ->
+            if (!includeNaps && !log.isMainSleep) return@forEach
+            val segs = log.stages ?: return@forEach
+            try {
+                val startDt = java.time.LocalDateTime.parse(log.startTime.replace("Z", ""))
+                val endDt = java.time.LocalDateTime.parse(log.endTime.replace("Z", ""))
+                val durSec = java.time.Duration.between(startDt, endDt).seconds.toInt()
+                val startHour = startDt.hour + startDt.minute / 60.0 + startDt.second / 3600.0
+                var prev: Pair<Float, Float>? = null
+                for (p in com.example.a24_hr_clock.logic.SleepStages.curve(segs, durSec)) {
+                    val hour = startHour + p.offsetSec / 3600.0
+                    val rad = Math.toRadians((hour - 18.0) * 15.0)
+                    val r = (radius * p.fraction).toFloat()
+                    val x = cx + r * cos(rad).toFloat()
+                    val y = cy + r * sin(rad).toFloat()
+                    prev?.let { (lx, ly) ->
+                        stageCurvePaint.color = stageColor(p.fraction)
+                        canvas.drawLine(lx, ly, x, y, stageCurvePaint)
+                    }
+                    prev = x to y
+                }
+            } catch (e: Exception) {}
+        }
+    }
+
+    /** Deep indigo, light blue, REM violet, wake red along the stage radii (0.30 to 0.85). */
+    private fun stageColor(fraction: Double): Int {
+        val stops = listOf(0.30 to 0xFF3F51B5.toInt(), 0.50 to 0xFF4FC3F7.toInt(), 0.65 to 0xFFBA68C8.toInt(), 0.85 to 0xFFFF5252.toInt())
+        val f = fraction.coerceIn(stops.first().first, stops.last().first)
+        for (i in 1 until stops.size) {
+            if (f <= stops[i].first) {
+                val t = ((f - stops[i - 1].first) / (stops[i].first - stops[i - 1].first)).toFloat()
+                return androidx.core.graphics.ColorUtils.blendARGB(stops[i - 1].second, stops[i].second, t)
+            }
+        }
+        return stops.last().second
     }
 
     private fun drawGrogginessArc(

@@ -10,6 +10,7 @@ Last verified: 2026-11-18
 |---|---|---|---|---|
 | `main` | `7173dca` (local) | Shared integration branch | [main.md](main.md) | [history](main.history.md) |
 | `feature/android-task-planner` | Implementation from `7cc8d39` | Android Plan tab; installed and tested on both Pixels | [handoff](feature/android-task-planner.md) | [history](feature/android-task-planner.history.md) |
+| `feat/sleep-stage-curve` | From `feat/sleep-awake-markers` | Sleep-stage polar curve toggle | [handoff](feat/sleep-stage-curve.md) | [history](feat/sleep-stage-curve.history.md) |
 
 ## Current merge order
 

@@ -38,7 +38,9 @@ data class SleepLogEntry(
     val isNap: Boolean = false,
     val processed: Boolean = true,
     /** Awake stretches from the stage list; null when the log has no usable stage data. */
-    val awakePeriods: List<AwakePeriod>? = null
+    val awakePeriods: List<AwakePeriod>? = null,
+    /** All stage stretches for the sleep-stage curve; null when the log has no usable stage data. */
+    val stages: List<StageSeg>? = null
 )
 
 @Serializable

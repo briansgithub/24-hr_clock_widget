@@ -583,3 +583,25 @@ fun GlyphNormalizeEnergy(modifier: Modifier = Modifier) {
         )
     }
 }
+
+/** Stepped sleep-stage ring: deep indigo, light blue, REM violet, wake red. */
+@Composable
+fun GlyphSleepStages(modifier: Modifier = Modifier) {
+    Canvas(modifier.size(40.dp)) {
+        val c = Offset(size.width / 2f, size.height / 2f)
+        val m = min(size.width, size.height)
+        val levels = listOf(0.30f, 0.50f, 0.30f, 0.38f, 0.50f, 0.42f, 0.30f, 0.50f)
+        val cols = listOf(Color(0xFF3F51B5), Color(0xFF4FC3F7), Color(0xFF3F51B5), Color(0xFFBA68C8), Color(0xFF4FC3F7), Color(0xFFBA68C8), Color(0xFF3F51B5), Color(0xFFFF5252))
+        val steps = 48
+        var last: Offset? = null
+        for (i in 0..steps) {
+            val t = i.toDouble() / steps
+            val k = (t * levels.size).toInt().coerceAtMost(levels.size - 1)
+            val rad = Math.toRadians(t * 360.0 - 90.0)
+            val r = m * (0.24f + 0.5f * levels[k] * 0.9f)
+            val p = Offset(c.x + r * cos(rad).toFloat(), c.y + r * sin(rad).toFloat())
+            if (last != null) drawLine(cols[k], last, p, strokeWidth = 2.4f, cap = StrokeCap.Round)
+            last = p
+        }
+    }
+}
