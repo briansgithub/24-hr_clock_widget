@@ -3,6 +3,8 @@ package com.example.a24_hr_clock.logic
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -24,6 +26,10 @@ class SettingsManager(private val dataStore: DataStore<Preferences>) {
         private val MODEL_SETTINGS_JSON = stringPreferencesKey("model_settings_json")
         private val CALENDAR_SETTINGS_JSON = stringPreferencesKey("calendar_settings_json")
         private val PLANNED_TASKS_JSON = stringPreferencesKey("planned_tasks_json")
+        private val DAILY_CLEAR_ENABLED = booleanPreferencesKey("daily_clear_enabled")
+        private val DAILY_CLEAR_ARMED_AT = longPreferencesKey("daily_clear_armed_at")
+        private val DAILY_CLEAR_LAST_DATE = stringPreferencesKey("daily_clear_last_date")
+        private val DAILY_CLEAR_BACKUP_JSON = stringPreferencesKey("daily_clear_backup_json")
         private val DEVICE_LATITUDE = doublePreferencesKey("device_latitude")
         private val DEVICE_LONGITUDE = doublePreferencesKey("device_longitude")
 
@@ -172,6 +178,49 @@ class SettingsManager(private val dataStore: DataStore<Preferences>) {
     /** Replace the whole plan (undo/redo restores a snapshot). */
     suspend fun replacePlannedTasks(tasks: List<PlannedTask>) {
         dataStore.edit { prefs -> prefs[PLANNED_TASKS_JSON] = json.encodeToString(tasks.filter { it.isValid }) }
+    }
+
+    val dailyClearFlow: Flow<DailyClearState> = dataStore.data.map { prefs -> dailyClearState(prefs) }
+
+    /** Tasks emptied by the latest automatic clear, keyed by that clear's local date. */
+    val dailyClearBackupFlow: Flow<Pair<String, List<PlannedTask>>?> = dataStore.data.map { prefs ->
+        val date = prefs[DAILY_CLEAR_LAST_DATE] ?: return@map null
+        prefs[DAILY_CLEAR_BACKUP_JSON]?.let { date to decodePlannedTasks(it) }
+    }
+
+    private fun dailyClearState(prefs: Preferences) = DailyClearState(
+        enabled = prefs[DAILY_CLEAR_ENABLED] ?: true,
+        armedAtMillis = prefs[DAILY_CLEAR_ARMED_AT],
+        lastClearDate = prefs[DAILY_CLEAR_LAST_DATE]
+    )
+
+    /** Turning the clear on re-arms it from [nowMillis], so an earlier 6:00 is never caught up. */
+    suspend fun setDailyClearEnabled(enabled: Boolean, nowMillis: Long) {
+        dataStore.edit { prefs ->
+            prefs[DAILY_CLEAR_ENABLED] = enabled
+            if (enabled) prefs[DAILY_CLEAR_ARMED_AT] = nowMillis
+        }
+    }
+
+    /**
+     * Runs a due daily clear in one transaction, so two callers can't both clear.
+     * Returns what happened; CLEAR also keeps the emptied tasks so the app can offer undo.
+     */
+    suspend fun runDailyClear(now: java.time.ZonedDateTime): DailyPlanClear.Decision {
+        var decision = DailyPlanClear.Decision.NONE
+        dataStore.edit { prefs ->
+            decision = DailyPlanClear.decide(dailyClearState(prefs), now)
+            when (decision) {
+                DailyPlanClear.Decision.ARM -> prefs[DAILY_CLEAR_ARMED_AT] = now.toInstant().toEpochMilli()
+                DailyPlanClear.Decision.CLEAR -> {
+                    prefs[DAILY_CLEAR_BACKUP_JSON] = prefs[PLANNED_TASKS_JSON] ?: "[]"
+                    prefs[PLANNED_TASKS_JSON] = "[]"
+                    prefs[DAILY_CLEAR_LAST_DATE] = DailyPlanClear.latestDue(now).toLocalDate().toString()
+                }
+                DailyPlanClear.Decision.NONE -> Unit
+            }
+        }
+        return decision
     }
 
     suspend fun deletePlannedTask(id: String) {
