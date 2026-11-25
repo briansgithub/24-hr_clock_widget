@@ -30,8 +30,19 @@ data class NewTaskTimes(
         }
     }
 
-    /** The start and duration these times mean, or null while fewer than two are set. */
-    fun resolve(): Pair<Int, Int>? {
+    /**
+     * The start and duration these times mean, or null while fewer than two are set. A
+     * [defaultStart] (the end of the previous task) stands in as the oldest-set Start while the
+     * user has not picked one, so one more time is enough; any two picked times override it.
+     */
+    fun resolve(defaultStart: Int? = null): Pair<Int, Int>? {
+        val t = if (start == null && defaultStart != null) {
+            copy(start = defaultStart, order = "S$order")
+        } else this
+        return t.resolveExplicit()
+    }
+
+    private fun resolveExplicit(): Pair<Int, Int>? {
         val set = order.filter { isSet(it) }
         if (set.length < 2) return null
         val pair = set.takeLast(2).toSet()
@@ -49,10 +60,13 @@ data class NewTaskTimes(
     }
 
     companion object {
+        /** Where a new task starts by default: the end of the last task in the list, wrapping past midnight. */
+        fun defaultStartAfter(tasks: List<PlannedTask>): Int? = tasks.lastOrNull()?.endMinute
+
         /** The task to add for [name] and [times], or null while the row is incomplete. */
-        fun taskFor(name: String, times: NewTaskTimes): PlannedTask? {
+        fun taskFor(name: String, times: NewTaskTimes, defaultStart: Int? = null): PlannedTask? {
             if (name.isBlank()) return null
-            val (start, duration) = times.resolve() ?: return null
+            val (start, duration) = times.resolve(defaultStart) ?: return null
             return PlannedTask.create(name, start, duration)
         }
     }

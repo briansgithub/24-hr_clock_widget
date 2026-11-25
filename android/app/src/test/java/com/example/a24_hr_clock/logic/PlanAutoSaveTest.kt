@@ -15,6 +15,31 @@ class PlanAutoSaveTest {
         assertNull(none.resolve())
     }
 
+    @Test fun defaultStartIsTheEndOfThePreviousTask() {
+        fun task(start: Int, dur: Int) = PlannedTask("a", "A", start, dur, 0)
+        assertEquals(null, NewTaskTimes.defaultStartAfter(emptyList()))
+        assertEquals(10 * 60, NewTaskTimes.defaultStartAfter(listOf(task(9 * 60, 60))))
+        assertEquals(60, NewTaskTimes.defaultStartAfter(listOf(task(23 * 60, 120)))) // wraps past midnight
+        assertEquals(30, NewTaskTimes.defaultStartAfter(listOf(task(0, 60), task(22 * 60, 150))))
+    }
+
+    @Test fun defaultStartNeedsOnlyOnePickedTime() {
+        val d = 10 * 60
+        assertNull(none.resolve(d))
+        assertEquals(d to 45, none.with(PlanField.DURATION, 45).resolve(d))
+        assertEquals(d to 120, none.with(PlanField.END, 12 * 60).resolve(d))
+        assertNull(none.with(PlanField.DURATION, 45).resolve(null))
+    }
+
+    @Test fun pickedStartOverridesDefaultStart() {
+        val d = 10 * 60
+        assertEquals(8 * 60 to 30, none.with(PlanField.START, 8 * 60).with(PlanField.DURATION, 30).resolve(d))
+        // Duration and End picked: both win over the default start.
+        assertEquals(9 * 60 to 60, none.with(PlanField.DURATION, 60).with(PlanField.END, 10 * 60).resolve(d))
+        assertNull(NewTaskTimes.taskFor(" ", none.with(PlanField.DURATION, 30), d))
+        assertEquals(d, NewTaskTimes.taskFor("x", none.with(PlanField.DURATION, 30), d)!!.startMinute)
+    }
+
     @Test fun startAndDurationDeriveEnd() {
         val times = none.with(PlanField.START, 23 * 60).with(PlanField.DURATION, 120)
         assertEquals(23 * 60 to 120, times.resolve())
