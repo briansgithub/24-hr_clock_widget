@@ -310,7 +310,20 @@ data class ClockSettings(
     val showGrogginess: Boolean = false,
     val showWindDown: Boolean = false,
     val showBedtimeCountdown: Boolean = false
-)
+) {
+    /** How many of the three sleep-group toggles (sleep, wind-down, grogginess) are on. */
+    val sleepGroupOnCount: Int
+        get() = listOf(showSleep, showWindDown, showGrogginess).count { it }
+
+    /** The group switch is on only when all three are on; a mix reads as off with a "n of 3" note. */
+    val sleepGroupAllOn: Boolean get() = sleepGroupOnCount == 3
+
+    val sleepGroupMixed: Boolean get() = sleepGroupOnCount in 1..2
+
+    /** Master switch: sets all three sleep-group toggles at once. */
+    fun withSleepGroup(on: Boolean): ClockSettings =
+        copy(showSleep = on, showWindDown = on, showGrogginess = on)
+}
 
 @Serializable
 data class CalendarSettings(
