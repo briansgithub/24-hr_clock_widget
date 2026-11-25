@@ -101,7 +101,7 @@ fun PlanScreen(
                         HorizontalDivider()
                     }
                 }
-                NewTaskRow(onSave)
+                NewTaskRow(NewTaskTimes.defaultStartAfter(tasks), onSave)
             }
         }
     }
@@ -143,7 +143,7 @@ private fun TaskTableRow(task: PlannedTask, onSave: (PlannedTask) -> Unit, onDel
 }
 
 @Composable
-private fun NewTaskRow(onSave: (PlannedTask) -> Unit) {
+private fun NewTaskRow(defaultStart: Int?, onSave: (PlannedTask) -> Unit) {
     // The row adds itself once it has a name and any two of Start, End and Duration; see
     // NewTaskTimes. Times are picked in dialogs, so each pick is a whole value and can add the
     // row right away. The name adds on focus loss or Done, never per keystroke.
@@ -151,7 +151,7 @@ private fun NewTaskRow(onSave: (PlannedTask) -> Unit) {
     var times by rememberSaveable { mutableStateOf(NewTaskTimes()) }
     val focus = LocalFocusManager.current
     fun tryAdd(current: NewTaskTimes = times): Boolean {
-        val task = NewTaskTimes.taskFor(name, current) ?: return false
+        val task = NewTaskTimes.taskFor(name, current, defaultStart) ?: return false
         onSave(task)
         name = ""
         times = NewTaskTimes()
@@ -162,9 +162,9 @@ private fun NewTaskRow(onSave: (PlannedTask) -> Unit) {
         times = next
         if (tryAdd(next)) focus.clearFocus()
     }
-    val resolved = times.resolve()
+    val resolved = times.resolve(defaultStart)
     val now = LocalTime.now().let { it.hour * 60 + it.minute }
-    val shownStart = resolved?.first ?: times.start
+    val shownStart = resolved?.first ?: times.start ?: defaultStart
     val shownDuration = resolved?.second ?: times.duration
     val shownEnd = resolved?.let { PlanTime.endMinute(it.first, it.second) } ?: times.end
     Column(Modifier.fillMaxWidth().testTag("new-task-row").padding(8.dp)) {
@@ -177,7 +177,7 @@ private fun NewTaskRow(onSave: (PlannedTask) -> Unit) {
                 { pick(PlanField.END, it) }, "new-task-end", "New task end time")
             DurationCell(shownDuration, shownDuration ?: 60, { pick(PlanField.DURATION, it) },
                 "new-task-duration", "New task duration")
-            FilledTonalIconButton(onClick = { tryAdd() }, enabled = NewTaskTimes.taskFor(name, times) != null) {
+            FilledTonalIconButton(onClick = { tryAdd() }, enabled = NewTaskTimes.taskFor(name, times, defaultStart) != null) {
                 Icon(Icons.Default.Add, contentDescription = "Add task")
             }
         }
