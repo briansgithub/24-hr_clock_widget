@@ -885,8 +885,22 @@ fun DisplaySettingsScreen(
         Spacer(modifier = Modifier.height(16.dp))
         DisplaySectionHeader("SLEEP")
 
-        SettingToggle("Show Sleep on Clock", currentSettings.showSleep, { GlyphSleepArc(showTotalBedtime = true) }) {
-            updateFunc(currentSettings.copy(showSleep = it))
+        SettingToggle(
+            if (currentSettings.sleepGroupMixed) "Sleep · ${currentSettings.sleepGroupOnCount} of 3 on" else "Sleep",
+            currentSettings.sleepGroupAllOn
+        ) {
+            updateFunc(currentSettings.withSleepGroup(it))
+        }
+        Column(modifier = Modifier.padding(start = 16.dp)) {
+            SettingToggle("Show Sleep on Clock", currentSettings.showSleep, { GlyphSleepArc(showTotalBedtime = true) }) {
+                updateFunc(currentSettings.copy(showSleep = it))
+            }
+            SettingToggle("Wind-down Wedge", currentSettings.showWindDown, { GlyphWindDown() }) {
+                updateFunc(currentSettings.copy(showWindDown = it))
+            }
+            SettingToggle("Grogginess Wedge", currentSettings.showGrogginess, { GlyphGrogginess() }) {
+                updateFunc(currentSettings.copy(showGrogginess = it))
+            }
         }
         SettingToggle("Show Sleep Debt Text", currentSettings.showSleepDebtText, { GlyphSleepDebtText() }) {
             updateFunc(currentSettings.copy(showSleepDebtText = it))
@@ -906,12 +920,6 @@ fun DisplaySettingsScreen(
         }
         SettingToggle("Acrophase Indicator", currentSettings.showAcrophase, { GlyphAcrophase() }) {
             updateFunc(currentSettings.copy(showAcrophase = it))
-        }
-        SettingToggle("Grogginess Wedge", currentSettings.showGrogginess, { GlyphGrogginess() }) {
-            updateFunc(currentSettings.copy(showGrogginess = it))
-        }
-        SettingToggle("Wind-down Wedge", currentSettings.showWindDown, { GlyphWindDown() }) {
-            updateFunc(currentSettings.copy(showWindDown = it))
         }
         SettingToggle("Bedtime Countdown", currentSettings.showBedtimeCountdown, { GlyphBedtimeCountdown() }) {
             updateFunc(currentSettings.copy(showBedtimeCountdown = it))
