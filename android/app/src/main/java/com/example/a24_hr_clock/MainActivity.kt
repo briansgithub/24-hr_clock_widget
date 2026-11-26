@@ -886,7 +886,7 @@ fun DisplaySettingsScreen(
         DisplaySectionHeader("SLEEP")
 
         SettingToggle(
-            if (currentSettings.sleepGroupMixed) "Sleep · ${currentSettings.sleepGroupOnCount} of 3 on" else "Sleep",
+            if (currentSettings.sleepGroupMixed) "Sleep 💤 · ${currentSettings.sleepGroupOnCount} of 4 on" else "Sleep 💤",
             currentSettings.sleepGroupAllOn
         ) {
             updateFunc(currentSettings.withSleepGroup(it))
@@ -900,6 +900,9 @@ fun DisplaySettingsScreen(
             }
             SettingToggle("Grogginess Wedge", currentSettings.showGrogginess, { GlyphGrogginess() }) {
                 updateFunc(currentSettings.copy(showGrogginess = it))
+            }
+            SettingToggle("Show Sleep Stages", currentSettings.showSleepStages, { GlyphSleepStages() }) {
+                updateFunc(currentSettings.copy(showSleepStages = it))
             }
         }
         SettingToggle("Show Sleep Debt Text", currentSettings.showSleepDebtText, { GlyphSleepDebtText() }) {
@@ -930,9 +933,6 @@ fun DisplaySettingsScreen(
 
         SettingToggle("Show Energy Curve", currentSettings.showEnergy, { GlyphEnergyCurve() }) {
             updateFunc(currentSettings.copy(showEnergy = it))
-        }
-        SettingToggle("Show Sleep Stages", currentSettings.showSleepStages, { GlyphSleepStages() }) {
-            updateFunc(currentSettings.copy(showSleepStages = it))
         }
         SettingToggle("Show Energy %", currentSettings.showEnergyPct, { GlyphEnergyPct() }) {
             updateFunc(currentSettings.copy(showEnergyPct = it))
