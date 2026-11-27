@@ -533,6 +533,7 @@ fun MainScreen(
                     tasks = plannedTasks,
                     onSave = { savePlanTask(it) },
                     onDelete = { id -> editPlan { tasks -> tasks.filterNot { it.id == id } } },
+                    onMove = { id, toIndex -> editPlan { tasks -> PlanOrder.move(tasks, id, toIndex) } },
                     canUndo = planHistoryVersion >= 0 && planHistory.canUndo,
                     canRedo = planHistoryVersion >= 0 && planHistory.canRedo,
                     onUndo = { stepPlan(true) },
